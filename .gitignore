@@ -1,0 +1,33 @@
+# Ambientes e segredos
+.env
+*.key
+*.pem
+/run/secrets/
+
+# Imagens de disco e pacotes pesados (nunca versionar no Git)
+*.img
+*.ext4
+*.tar.gz
+*.tar.xz
+*.tar.bz2
+*.iso
+
+# Buildroot e compilação
+/buildroot/
+/output/
+/output-*/
+/dl/
+/ccache/
+.cache/
+
+# Binários Go compilados e dependências
+/coldchain-app/coldchain
+/coldchain-app/simulator
+/coldchain-app/dist/
+vendor/
+
+# Logs e arquivos temporários
+*.log
+/tmp/
+.DS_Store
+Thumbs.db

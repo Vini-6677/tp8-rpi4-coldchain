@@ -1,0 +1,33 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV CCACHE_DIR=/ccache
+ENV BR2_DL_DIR=/dl
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libncurses-dev \
+    bison \
+    flex \
+    libssl-dev \
+    bc \
+    qemu-system-aarch64 \
+    qemu-utils \
+    git \
+    rsync \
+    unzip \
+    whois \
+    ccache \
+    wget \
+    curl \
+    file \
+    cpio \
+    python3 \
+    dosfstools \
+    mtools \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /workspace /ccache /dl
+
+WORKDIR /workspace
