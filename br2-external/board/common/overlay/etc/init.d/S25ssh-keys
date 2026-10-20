@@ -1,0 +1,24 @@
+#!/bin/sh
+# S25ssh-keys - Geração de chaves do host Dropbear na partição /data
+case "$1" in
+  start)
+    mkdir -p /data/dropbear
+    chmod 0700 /data/dropbear
+
+    if [ ! -f /data/dropbear/dropbear_ed25519_host_key ]; then
+        echo "[+] Gerando chave SSH host ED25519 em /data/dropbear..."
+        dropbearkey -t ed25519 -f /data/dropbear/dropbear_ed25519_host_key >/dev/null 2>&1
+    fi
+
+    if [ ! -f /data/dropbear/dropbear_rsa_host_key ]; then
+        echo "[+] Gerando chave SSH host RSA em /data/dropbear..."
+        dropbearkey -t rsa -f /data/dropbear/dropbear_rsa_host_key -s 2048 >/dev/null 2>&1
+    fi
+    ;;
+  stop)
+    ;;
+  *)
+    echo "Usage: $0 {start|stop}"
+    exit 1
+    ;;
+esac

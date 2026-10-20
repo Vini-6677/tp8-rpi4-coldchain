@@ -1,0 +1,7 @@
+# Flags do Dropbear conforme Seção 7 do Documento de Arquitetura:
+# -s: Bloqueia autenticação por senha (apenas chave pública)
+# -w: Proíbe login como root
+# -j: Desativa port forwarding local
+# -k: Desativa port forwarding remoto
+# -r: Aponta as chaves do host para a partição com escrita /data/dropbear
+DROPBEAR_ARGS="-w -j -k -r /data/dropbear/dropbear_rsa_host_key -r /data/dropbear/dropbear_ed25519_host_key"
