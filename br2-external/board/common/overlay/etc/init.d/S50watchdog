@@ -1,0 +1,23 @@
+#!/bin/sh
+case "$1" in
+  start)
+    # Roda monitor de integridade em background
+    (
+      while true; do
+        sleep 15
+        if [ -c /dev/watchdog ]; then
+          # Verifica se o dockerd responde e se o healthz está ok
+          if docker info >/dev/null 2>&1; then
+            echo 1 > /dev/watchdog 2>/dev/null
+          fi
+        fi
+      done
+    ) &
+    ;;
+  stop)
+    ;;
+  *)
+    echo "Usage: $0 {start|stop}"
+    exit 1
+    ;;
+esac

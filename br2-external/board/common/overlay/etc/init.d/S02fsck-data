@@ -1,0 +1,35 @@
+#!/bin/sh
+# S02fsck-data: Validação e montagem resiliente de /data
+
+DEV=""
+if [ -b /dev/disk/by-label/data ]; then
+  DEV="/dev/disk/by-label/data"
+elif [ -b /dev/mmcblk0p3 ]; then
+  DEV="/dev/mmcblk0p3"
+elif [ -b /dev/vda3 ]; then
+  DEV="/dev/vda3"
+elif [ -b /dev/vda2 ]; then
+  # Emulação QEMU direta de 2 partições
+  DEV="/dev/vda2"
+fi
+
+if [ -n "$DEV" ]; then
+  e2fsck -p "$DEV"
+  rc=$?
+  if [ "$rc" -ge 4 ]; then
+    e2fsck -fy "$DEV" || { touch /run/safe-mode; exit 1; }
+  fi
+  mount "$DEV" /data || { touch /run/safe-mode; exit 1; }
+else
+  mount /data || { touch /run/safe-mode; exit 1; }
+fi
+
+# Criação explícita de diretórios sem expansão {a,b} do ash
+for d in docker containerd mosquitto coldchain dropbear; do
+  mkdir -p /data/$d
+done
+
+# Permissões estritas por UID
+chown 1883:1883 /data/mosquitto && chmod 0700 /data/mosquitto
+chown 10001:10001 /data/coldchain && chmod 0700 /data/coldchain
+chmod 0700 /data/dropbear /data/containerd

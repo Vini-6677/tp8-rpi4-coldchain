@@ -1,0 +1,19 @@
+#!/bin/sh
+case "$1" in
+  start)
+    # Restaura o último horário salvo se não houver RTC
+    if [ -f /data/last-time ]; then
+      date -s "@$(cat /data/last-time)" >/dev/null 2>&1
+    fi
+    mkdir -p /var/lib/chrony
+    chronyd -f /etc/chrony.conf
+    ;;
+  stop)
+    date +%s > /data/last-time 2>/dev/null
+    killall chronyd 2>/dev/null
+    ;;
+  *)
+    echo "Usage: $0 {start|stop}"
+    exit 1
+    ;;
+esac
