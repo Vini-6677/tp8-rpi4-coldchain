@@ -1,0 +1,8 @@
+#!/bin/sh
+# Hook chamado pelo udhcpc ao obter concessão de IP
+[ "$1" = "bound" ] || [ "$1" = "renew" ] || exit 0
+
+if [ -n "$ip" ] && [ -n "$subnet" ]; then
+  # Recarrega S15firewall se necessário
+  /etc/init.d/S15firewall start >/dev/null 2>&1
+fi

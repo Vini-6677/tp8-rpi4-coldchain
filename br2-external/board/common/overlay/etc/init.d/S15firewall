@@ -1,0 +1,38 @@
+#!/bin/sh
+# S15firewall - Inicialização da chain DOCKER-USER
+
+case "$1" in
+  start)
+    # Lista de sub-redes permitidas (RFC1918 de reserva ou passada via .env)
+    LAN_CIDR=${LAN_CIDR:-"192.168.0.0/16 10.0.0.0/8 172.16.0.0/12"}
+
+    # Cria a chain DOCKER-USER caso não exista, ou limpa se já existir
+    iptables -N DOCKER-USER 2>/dev/null || iptables -F DOCKER-USER
+
+    # Permite tráfego interno da rede do container na bridge br-coldchain
+    iptables -A DOCKER-USER -i br-coldchain -o br-coldchain -j RETURN
+
+    # Permite pacotes de conexões já estabelecidas
+    iptables -A DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
+
+    # Permite acesso às portas 5000 (Web) e 1883 (MQTT) apenas a partir da LAN
+    for NET in $LAN_CIDR; do
+      iptables -A DOCKER-USER -p tcp -m multiport --dports 5000,1883 -s "$NET" -j RETURN
+    done
+
+    # Permite acesso local da própria máquina (loopback)
+    iptables -A DOCKER-USER -p tcp -m multiport --dports 5000,1883 -s 127.0.0.0/8 -j RETURN
+
+    # Bloqueia qualquer outro IP externo tentando acessar as portas 5000 e 1883
+    iptables -A DOCKER-USER -p tcp -m multiport --dports 5000,1883 -j DROP
+
+    # Retorna o tráfego padrão não filtrado
+    iptables -A DOCKER-USER -j RETURN
+    ;;
+  stop)
+    ;;
+  *)
+    echo "Usage: $0 {start|stop}"
+    exit 1
+    ;;
+esac

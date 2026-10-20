@@ -1,0 +1,31 @@
+#!/bin/sh
+# S40docker - Inicialização determinística de containerd e dockerd
+
+case "$1" in
+  start)
+    mkdir -p /run/containerd /run/docker /data/containerd /data/docker
+
+    # 1. Inicia o containerd com o arquivo de configuração sem CRI
+    containerd --config /etc/containerd/config.toml >/var/log/containerd.log 2>&1 &
+
+    # 2. Aguarda o socket do containerd aparecer (máximo 5 s)
+    WAIT=0
+    while [ ! -S /run/containerd/containerd.sock ] && [ $WAIT -lt 50 ]; do
+      usleep 100000
+      WAIT=$((WAIT + 1))
+    done
+
+    # 3. Inicia o dockerd apontando para o socket externo
+    dockerd --containerd=/run/containerd/containerd.sock >/var/log/dockerd.log 2>&1 &
+    ;;
+  stop)
+    # Parada limpa na ordem inversa conforme Seção 2
+    killall dockerd 2>/dev/null
+    sleep 1
+    killall containerd 2>/dev/null
+    ;;
+  *)
+    echo "Usage: $0 {start|stop}"
+    exit 1
+    ;;
+esac

@@ -1,0 +1,11 @@
+{
+  "data-root": "/data/docker",
+  "exec-root": "/run/docker",
+  "pidfile": "/run/docker.pid",
+  "storage-driver": "overlay2",
+  "userland-proxy": true,
+  "ip6tables": false,
+  "log-driver": "local",
+  "log-opts": {"max-size": "5m", "max-file": "3"},
+  "no-new-privileges": true
+}
