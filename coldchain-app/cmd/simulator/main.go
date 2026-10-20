@@ -26,6 +26,8 @@ type TelemetryPayload struct {
 func main() {
 	deviceID := flag.String("device", "esp32-sensor-01", "Identificador do sensor ESP32")
 	broker := flag.String("broker", "tcp://127.0.0.1:1883", "Endereço do broker MQTT")
+	username := flag.String("user", "esp32-sensor-01", "Usuário MQTT")
+	password := flag.String("pass", "SensorSecret2026!", "Senha MQTT")
 	interval := flag.Duration("interval", 2*time.Second, "Intervalo entre telemetrias")
 	flag.Parse()
 
@@ -35,6 +37,10 @@ func main() {
 	opts.AddBroker(*broker)
 	opts.SetClientID(*deviceID)
 	opts.SetCleanSession(false)
+	if *username != "" {
+		opts.SetUsername(*username)
+		opts.SetPassword(*password)
+	}
 	opts.SetWill(fmt.Sprintf("coldchain/%s/status", *deviceID), "offline", 1, true)
 
 	client := mqtt.NewClient(opts)
