@@ -1,5 +1,11 @@
 BR2_aarch64=y
 BR2_cortex_a72=y
+
+# Toolchain Externa Pre-compilada Bootlin (acelera o build em ~30 minutos)
+BR2_TOOLCHAIN_EXTERNAL=y
+BR2_TOOLCHAIN_EXTERNAL_BOOTLIN=y
+BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_AARCH64_GLIBC_STABLE=y
+
 BR2_ARM_FPU_VFPV4=y
 
 # Build determinístico e reprodutível
@@ -56,3 +62,5 @@ BR2_TARGET_ROOTFS_EXT2_SIZE="400M"
 BR2_PACKAGE_HOST_GENIMAGE=y
 BR2_PACKAGE_HOST_DOSFSTOOLS=y
 BR2_PACKAGE_HOST_MTOOLS=y
+
+BR2_ROOTFS_DEVICE_TABLE="system/device_table.txt $(BR2_EXTERNAL_TP8_COLDCHAIN_PATH)/device_table.txt"

@@ -1,0 +1,9 @@
+# Syntax: <username> <uid> <group> <gid> <password> <home> <shell> <groups> <comment>
+# Root bloqueado com senha desabilitada (!)
+
+# Usuário administrativo coldadmin com hash SHA-512 gerado no build
+coldadmin 1000 coldadmin 1000 $6$I07/L5VA68JPcX/m$abdKjucq2wH4ABkAsqvalL7GD8FatlceJvgVLqU3oG/cMX7uMXwz2IOLIAaREsloU3KsaRpsDTC1okM4gJh/10 /home/coldadmin /bin/sh sudo,docker -
+
+# Usuários de serviço para os containers
+mosquitto 1883 mosquitto 1883 =* /var/empty /bin/false - "Mosquitto MQTT"
+coldchain 10001 coldchain 10001 =* /var/empty /bin/false - "Coldchain App"

@@ -1,0 +1,5 @@
+# Dispositivos e permissoes especiais (sudo setuid root)
+/usr/bin/sudo			f	4755	0	0	-	-	-	-	-
+/etc/sudoers			f	440	0	0	-	-	-	-	-
+/etc/sudoers.d			d	750	0	0	-	-	-	-	-
+/etc/sudoers.d/coldadmin	f	440	0	0	-	-	-	-	-

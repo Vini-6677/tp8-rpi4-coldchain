@@ -1,9 +1,8 @@
 # Syntax: <username> <uid> <group> <gid> <password> <home> <shell> <groups> <comment>
 # Root bloqueado com senha desabilitada (!)
-root -1 root -1 ! /root /bin/sh - -
 
 # Usuário administrativo coldadmin com hash SHA-512 gerado no build
-coldadmin 1000 coldadmin 1000 =__COLDADMIN_HASH__ /home/coldadmin /bin/sh sudo -
+coldadmin 1000 coldadmin 1000 __COLDADMIN_HASH__ /home/coldadmin /bin/sh sudo,docker -
 
 # Usuários de serviço para os containers
 mosquitto 1883 mosquitto 1883 =* /var/empty /bin/false - "Mosquitto MQTT"

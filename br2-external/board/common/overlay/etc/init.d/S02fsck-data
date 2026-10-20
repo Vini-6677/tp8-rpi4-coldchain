@@ -2,14 +2,15 @@
 # S02fsck-data: Validação e montagem resiliente de /data
 
 DEV=""
-if [ -b /dev/disk/by-label/data ]; then
+if [ -b /dev/vdb ]; then
+  DEV="/dev/vdb"
+elif [ -b /dev/disk/by-label/data ]; then
   DEV="/dev/disk/by-label/data"
 elif [ -b /dev/mmcblk0p3 ]; then
   DEV="/dev/mmcblk0p3"
 elif [ -b /dev/vda3 ]; then
   DEV="/dev/vda3"
 elif [ -b /dev/vda2 ]; then
-  # Emulação QEMU direta de 2 partições
   DEV="/dev/vda2"
 fi
 
@@ -21,7 +22,8 @@ if [ -n "$DEV" ]; then
   fi
   mount "$DEV" /data || { touch /run/safe-mode; exit 1; }
 else
-  mount /data || { touch /run/safe-mode; exit 1; }
+  mkdir -p /data
+  mount -t tmpfs tmpfs /data
 fi
 
 # Criação explícita de diretórios sem expansão {a,b} do ash

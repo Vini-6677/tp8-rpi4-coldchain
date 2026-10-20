@@ -6,6 +6,10 @@
   "userland-proxy": true,
   "ip6tables": false,
   "log-driver": "local",
-  "log-opts": {"max-size": "5m", "max-file": "3"},
-  "no-new-privileges": true
+  "log-opts": {
+    "max-size": "5m",
+    "max-file": "3"
+  },
+  "no-new-privileges": true,
+  "group": "docker"
 }

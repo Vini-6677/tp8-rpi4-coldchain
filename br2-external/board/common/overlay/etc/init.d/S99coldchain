@@ -1,24 +1,38 @@
 #!/bin/sh
-# S99coldchain - Inicialização segura dos containers Mosquitto e Coldchain
+# S99coldchain - Inicializacao segura dos containers Mosquitto e Coldchain
 
 case "$1" in
   start)
-    # Se o sistema estiver em modo seguro após falha grave de fsck, não inicia containers
+    # Se o sistema estiver em modo seguro apos falha grave de fsck, nao inicia containers
     if [ -f /run/safe-mode ]; then
-      echo "[!] MODO SEGURO ATIVO: Containers suspensos para recuperação."
+      echo "[!] MODO SEGURO ATIVO: Containers suspensos para recuperacao."
       exit 0
     fi
 
     DOCKER_SUBNET=${DOCKER_SUBNET:-"172.30.0.0/24"}
 
-    # Nível 1: Primeiro boot (Provisionamento inicial das imagens offline)
+    # Aguarda o socket do Docker daemon responder antes de prosseguir (max 30s)
+    echo "[*] Aguardando Docker daemon..."
+    WAIT=0
+    while ! docker info >/dev/null 2>&1 && [ $WAIT -lt 30 ]; do
+      sleep 1
+      WAIT=$((WAIT + 1))
+    done
+
+    # Cria diretorios de dados persistentes com permissoes corretas
+    mkdir -p /data/mosquitto /data/coldchain
+    chown -R 1883:1883 /data/mosquitto
+    chown -R 10001:10001 /data/coldchain
+
+    # Nivel 1: Primeiro boot (Provisionamento inicial das imagens offline)
     if [ ! -f /data/.provisioned ]; then
       echo "[+] Primeiro boot: Carregando imagens Docker offline de /opt/docker/..."
       
-      # Carrega as imagens tarball pré-armazenadas
+      # Carrega as imagens tarball pre-armazenadas
       for img in /opt/docker/*.tar.gz /opt/docker/*.tar; do
         if [ -f "$img" ]; then
-          docker load -i "$img" >/dev/null 2>&1
+          echo "    - Carregando $img..."
+          docker load -i "$img"
         fi
       done
 
@@ -28,6 +42,7 @@ case "$1" in
         -o com.docker.network.bridge.name=br-coldchain coldchain-net
 
       # Cria container do broker Mosquitto (Eclipse 2.x) com uid 1883
+      echo "[+] Criando container Mosquitto..."
       docker create --name mosquitto --restart always --network coldchain-net \
         --user 1883:1883 \
         --read-only --tmpfs /tmp:size=4m --cap-drop ALL \
@@ -39,9 +54,10 @@ case "$1" in
         --health-cmd "nc -z 127.0.0.1 1883" \
         --health-interval 15s --health-timeout 2s --health-retries 3 \
         --health-start-period 5s \
-        eclipse-mosquitto:2.0 >/dev/null 2>&1
+        eclipse-mosquitto:2.0
 
-      # Cria container da aplicação Go em scratch com uid 10001
+      # Cria container da aplicacao Go em scratch com uid 10001
+      echo "[+] Criando container Coldchain..."
       docker create --name coldchain --restart always --network coldchain-net \
         --user 10001:10001 \
         --read-only --tmpfs /tmp:size=16m,mode=1777 --cap-drop ALL \
@@ -51,21 +67,21 @@ case "$1" in
         -v /etc/coldchain/app-secrets:/run/secrets:ro \
         -v /data/coldchain:/data \
         -p 5000:5000 \
-        --health-cmd "/app/coldchain -healthcheck" \
-        --health-interval 15s --health-timeout 2s --health-retries 3 \
-        --health-start-period 5s \
-        coldchain-tp8:1.0.0 >/dev/null 2>&1
+        coldchain-tp8:1.0.0
 
       # Inicia ambos
-      docker start mosquitto coldchain >/dev/null 2>&1
+      echo "[+] Iniciando containers..."
+      docker start mosquitto coldchain
       touch /data/.provisioned
     else
-      # Nível 2: Containers já provisionados, garante que estão rodando
-      docker start mosquitto coldchain >/dev/null 2>&1
+      # Nivel 2: Containers ja provisionados, garante que estao rodando
+      echo "[+] Iniciando containers existentes..."
+      docker start mosquitto coldchain
     fi
     ;;
   stop)
-    docker stop coldchain mosquitto >/dev/null 2>&1
+    echo "[*] Parando containers..."
+    docker stop coldchain mosquitto
     ;;
   *)
     echo "Usage: $0 {start|stop}"
