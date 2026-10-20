@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web-Server Cold Chain Gateway</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: rgba(22, 31, 50, 0.8);
+      --border: rgba(255, 255, 255, 0.1);
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.25);
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 2rem; min-height: 100vh; }
+    .header { margin-bottom: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; }
+    h1 { font-size: 1.8rem; font-weight: 700; color: var(--accent); margin-bottom: 0.5rem; }
+    .badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; background: var(--accent-glow); color: var(--accent); border: 1px solid var(--accent); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; backdrop-filter: blur(8px); }
+    .card h2 { font-size: 1rem; color: var(--text-muted); margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .metric { font-size: 2.2rem; font-weight: 700; }
+    .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--success); margin-right: 6px; box-shadow: 0 0 8px var(--success); }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { text-align: left; padding: 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+    th { color: var(--text-muted); font-weight: 600; }
+    .btn { display: inline-block; padding: 0.5rem 1rem; border-radius: 6px; background: var(--accent); color: #000; font-weight: 600; text-decoration: none; margin-top: 1rem; cursor: pointer; border: none; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Helooowww world eng. Computacional!!!!!!!</h1>
+    <span class="badge"><span class="status-dot"></span>Gateway Operacional (QEMU AArch64 / RPi4)</span>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Temperatura Média</h2>
+      <div class="metric" id="temp-val">-- °C</div>
+      <p style="color: var(--text-muted); margin-top: 0.5rem;">Faixa segura: 2.0 °C a 8.0 °C</p>
+    </div>
+    <div class="card">
+      <h2>Dispositivos Ativos</h2>
+      <div class="metric" id="dev-count">0</div>
+      <p style="color: var(--text-muted); margin-top: 0.5rem;">ESP32 via MQTT (QoS 1)</p>
+    </div>
+    <div class="card">
+      <h2>Persistência SQLite</h2>
+      <div class="metric" id="readings-count">0</div>
+      <p style="color: var(--text-muted); margin-top: 0.5rem;">WAL + synchronous=FULL</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <h2>Últimas Leituras de Telemetria</h2>
+      <a href="/api/export.csv" class="btn">Exportar CSV</a>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Dispositivo</th>
+          <th>Temp (°C)</th>
+          <th>Umidade (%)</th>
+          <th>Porta</th>
+          <th>Seq</th>
+        </tr>
+      </thead>
+      <tbody id="telemetry-body">
+        <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Aguardando telemetria dos sensores...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
