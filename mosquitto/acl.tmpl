@@ -1,0 +1,12 @@
+# Permissões do Gateway Central
+user coldchain-app
+topic read coldchain/+/telemetry
+topic read coldchain/+/status
+topic write coldchain/+/cmd
+topic write coldchain/+/ack
+
+# Permissões Dinâmicas por Dispositivo (%u = username do ESP32)
+pattern write coldchain/%u/telemetry
+pattern write coldchain/%u/status
+pattern read coldchain/%u/cmd
+pattern read coldchain/%u/ack
