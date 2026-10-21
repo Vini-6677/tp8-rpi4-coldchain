@@ -3,13 +3,18 @@ package main
 import (
 	"coldchain-app/web"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/csv"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -23,9 +28,6 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-
-
-
 const mandatoryPhrase = "Helooowww world eng. Computacional!!!!!!!"
 
 type Telemetry struct {
@@ -37,6 +39,33 @@ type Telemetry struct {
 	Seq      int64   `json:"seq"`
 	Sync     int     `json:"sync"`
 	FW       string  `json:"fw"`
+}
+
+type User struct {
+	ID        int64  `json:"id"`
+	Username  string `json:"username"`
+	Name      string `json:"name"`
+	Role      string `json:"role"`
+	IsBlocked int    `json:"is_blocked"`
+	CreatedAt string `json:"created_at"`
+}
+
+type AuditLog struct {
+	ID        int64  `json:"id"`
+	Timestamp string `json:"timestamp"`
+	Username  string `json:"username"`
+	Role      string `json:"role"`
+	Action    string `json:"action"`
+	Details   string `json:"details"`
+	IPAddress string `json:"ip_address"`
+}
+
+type Session struct {
+	Token     string    `json:"token"`
+	Username  string    `json:"username"`
+	Role      string    `json:"role"`
+	Name      string    `json:"name"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 type App struct {
@@ -64,7 +93,7 @@ func main() {
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
-	slog.Info("Iniciando Web-Server Cold Chain Gateway", "versao", "3.2.0")
+	slog.Info("Iniciando Web-Server Cold Chain Gateway com RBAC e Auditoria", "versao", "3.3.0")
 
 	// 1. Inicializa o banco de dados SQLite com WAL e synchronous=FULL
 	dbPath := os.Getenv("DB_PATH")
@@ -129,6 +158,125 @@ func main() {
 	slog.Info("Gateway encerrado de forma limpa.")
 }
 
+func hashPassword(password, salt string) string {
+	h := sha256.New()
+	h.Write([]byte(password + ":" + salt))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func generateSalt() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+func generateToken() string {
+	b := make([]byte, 32)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+func getClientIP(r *http.Request) string {
+	xff := r.Header.Get("X-Forwarded-For")
+	if xff != "" {
+		parts := strings.Split(xff, ",")
+		return strings.TrimSpace(parts[0])
+	}
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil {
+		return ip
+	}
+	return r.RemoteAddr
+}
+
+func (a *App) logAudit(username, role, action, details, ip string) {
+	if ip == "" {
+		ip = "127.0.0.1"
+	}
+	_, err := a.db.Exec(`
+		INSERT INTO audit_logs (username, role, action, details, ip_address)
+		VALUES (?, ?, ?, ?, ?)
+	`, username, role, action, details, ip)
+	if err != nil {
+		slog.Error("Falha ao registrar auditoria", "erro", err, "action", action)
+	}
+}
+
+func (a *App) getSession(r *http.Request) (*Session, bool) {
+	cookie, err := r.Cookie("session_token")
+	if err != nil || cookie.Value == "" {
+		return nil, false
+	}
+
+	var sess Session
+	var expiresStr string
+	err = a.db.QueryRow(`
+		SELECT token, username, role, name, expires_at 
+		FROM sessions 
+		WHERE token = ?
+	`, cookie.Value).Scan(&sess.Token, &sess.Username, &sess.Role, &sess.Name, &expiresStr)
+
+	if err != nil {
+		return nil, false
+	}
+
+	expires, err := time.Parse("2006-01-02 15:04:05", expiresStr)
+	if err != nil {
+		expires, err = time.Parse(time.RFC3339, expiresStr)
+	}
+	if err == nil && time.Now().After(expires) {
+		_, _ = a.db.Exec("DELETE FROM sessions WHERE token = ?", sess.Token)
+		return nil, false
+	}
+
+	var isBlocked int
+	err = a.db.QueryRow("SELECT is_blocked FROM users WHERE username = ?", sess.Username).Scan(&isBlocked)
+	if err == nil && isBlocked == 1 {
+		_, _ = a.db.Exec("DELETE FROM sessions WHERE token = ?", sess.Token)
+		return nil, false
+	}
+
+	return &sess, true
+}
+
+func seedUsers(db *sql.DB) error {
+	var count int
+	_ = db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
+	if count > 0 {
+		return nil
+	}
+
+	seeds := []struct {
+		username string
+		password string
+		name     string
+		role     string
+	}{
+		{"admin", "admin123", "Administrador Geral", "admin"},
+		{"gerente", "gerente123", "Dra. Mariana Costa (Gerente)", "gerente"},
+		{"enfermeiro", "enfermeiro123", "Enf. Carlos Mendes (Enfermeiro)", "enfermeiro"},
+		{"tecnico", "tecnico123", "Téc. Lucas Silva (Técnico)", "tecnico"},
+	}
+
+	for _, s := range seeds {
+		salt := generateSalt()
+		hash := hashPassword(s.password, salt)
+		_, err := db.Exec(`
+			INSERT INTO users (username, password_hash, salt, name, role, is_blocked)
+			VALUES (?, ?, ?, ?, ?, 0)
+		`, s.username, hash, salt, s.name, s.role)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, _ = db.Exec(`
+		INSERT INTO audit_logs (username, role, action, details, ip_address)
+		VALUES ('SYSTEM', 'system', 'SYSTEM_INIT', 'Base de dados inicializada com usuários padrão RBAC', '127.0.0.1')
+	`)
+	return nil
+}
+
 func initDB(path string) (*sql.DB, error) {
 	_ = os.MkdirAll("/data/coldchain", 0700)
 	db, err := sql.Open("sqlite", path)
@@ -164,9 +312,54 @@ func initDB(path string) (*sql.DB, error) {
 		PRIMARY KEY (device_id, seq)
 	);
 	CREATE INDEX IF NOT EXISTS idx_readings_device_ts ON readings (device_id, ts);
+
+	CREATE TABLE IF NOT EXISTS users (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		username TEXT UNIQUE NOT NULL,
+		password_hash TEXT NOT NULL,
+		salt TEXT NOT NULL,
+		name TEXT NOT NULL,
+		role TEXT NOT NULL,
+		is_blocked INTEGER DEFAULT 0,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS audit_logs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+		username TEXT NOT NULL,
+		role TEXT NOT NULL,
+		action TEXT NOT NULL,
+		details TEXT NOT NULL,
+		ip_address TEXT NOT NULL
+	);
+
+	CREATE TRIGGER IF NOT EXISTS trg_audit_logs_no_update
+	BEFORE UPDATE ON audit_logs
+	BEGIN
+		SELECT RAISE(ABORT, 'Segurança: Logs de auditoria são estritamente imutáveis.');
+	END;
+
+	CREATE TRIGGER IF NOT EXISTS trg_audit_logs_no_delete
+	BEFORE DELETE ON audit_logs
+	BEGIN
+		SELECT RAISE(ABORT, 'Segurança: Logs de auditoria são estritamente append-only e não podem ser excluídos.');
+	END;
+
+	CREATE TABLE IF NOT EXISTS sessions (
+		token TEXT PRIMARY KEY,
+		username TEXT NOT NULL,
+		role TEXT NOT NULL,
+		name TEXT NOT NULL,
+		expires_at DATETIME NOT NULL
+	);
 	`
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("erro no schema: %w", err)
+	}
+
+	if err := seedUsers(db); err != nil {
+		return nil, fmt.Errorf("erro ao popular usuários padrão: %w", err)
 	}
 
 	return db, nil
@@ -198,7 +391,7 @@ func (a *App) routes() http.Handler {
 			return
 		}
 
-		// Resposta pura para curl
+		// Resposta pura para curl (Requisito 13)
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		fmt.Fprintln(w, mandatoryPhrase)
 	})
@@ -211,7 +404,7 @@ func (a *App) routes() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"status":   "ok",
-			"version":  "3.2.0",
+			"version":  "3.3.0",
 			"database": "ok",
 		})
 	})
@@ -226,10 +419,385 @@ func (a *App) routes() http.Handler {
 		a.mu.Unlock()
 		json.NewEncoder(w).Encode(map[string]any{
 			"status":         "running",
-			"version":        "3.2.0",
+			"version":        "3.3.0",
 			"readings_count": count,
 			"devices_count":  devCount,
 			"phrase":         mandatoryPhrase,
+		})
+	})
+
+	// API Auth: Login
+	mux.HandleFunc("/api/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Requisição inválida", http.StatusBadRequest)
+			return
+		}
+
+		req.Username = strings.TrimSpace(req.Username)
+		ip := getClientIP(r)
+
+		var (
+			id           int64
+			passwordHash string
+			salt         string
+			name         string
+			role         string
+			isBlocked    int
+		)
+		err := a.db.QueryRow(`
+			SELECT id, password_hash, salt, name, role, is_blocked
+			FROM users WHERE username = ?
+		`, req.Username).Scan(&id, &passwordHash, &salt, &name, &role, &isBlocked)
+
+		if err != nil {
+			a.logAudit(req.Username, "desconhecido", "LOGIN_FAILED", "Tentativa de login com usuário inexistente", ip)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Usuário ou senha incorretos."})
+			return
+		}
+
+		computed := hashPassword(req.Password, salt)
+		if subtle.ConstantTimeCompare([]byte(computed), []byte(passwordHash)) != 1 {
+			a.logAudit(req.Username, role, "LOGIN_FAILED", "Senha incorreta informada", ip)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Usuário ou senha incorretos."})
+			return
+		}
+
+		if isBlocked == 1 {
+			a.logAudit(req.Username, role, "LOGIN_BLOCKED", "Tentativa de login em conta bloqueada", ip)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Esta conta de usuário foi bloqueada pelo administrador."})
+			return
+		}
+
+		token := generateToken()
+		expires := time.Now().Add(24 * time.Hour)
+		_, err = a.db.Exec(`
+			INSERT INTO sessions (token, username, role, name, expires_at)
+			VALUES (?, ?, ?, ?, ?)
+		`, token, req.Username, role, name, expires.Format("2006-01-02 15:04:05"))
+
+		if err != nil {
+			http.Error(w, "Erro ao criar sessão", http.StatusInternalServerError)
+			return
+		}
+
+		a.logAudit(req.Username, role, "LOGIN_SUCCESS", "Autenticação bem-sucedida no sistema", ip)
+
+		http.SetCookie(w, &http.Cookie{
+			Name:     "session_token",
+			Value:    token,
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Expires:  expires,
+		})
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"status": "ok",
+			"user": map[string]any{
+				"username": req.Username,
+				"name":     name,
+				"role":     role,
+			},
+		})
+	})
+
+	// API Auth: Logout
+	mux.HandleFunc("/api/auth/logout", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		ip := getClientIP(r)
+		if sess, ok := a.getSession(r); ok {
+			a.logAudit(sess.Username, sess.Role, "LOGOUT", "Encerramento voluntário de sessão", ip)
+			_, _ = a.db.Exec("DELETE FROM sessions WHERE token = ?", sess.Token)
+		}
+		http.SetCookie(w, &http.Cookie{
+			Name:     "session_token",
+			Value:    "",
+			Path:     "/",
+			HttpOnly: true,
+			MaxAge:   -1,
+		})
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
+	})
+
+	// API Auth: Me
+	mux.HandleFunc("/api/auth/me", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		sess, ok := a.getSession(r)
+		if !ok {
+			json.NewEncoder(w).Encode(map[string]any{"authenticated": false})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"authenticated": true,
+			"user": map[string]any{
+				"username": sess.Username,
+				"name":     sess.Name,
+				"role":     sess.Role,
+			},
+		})
+	})
+
+	// API Auditoria: Logs de Auditoria (Restrito a Gerente e Admin)
+	mux.HandleFunc("/api/audit/logs", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		sess, ok := a.getSession(r)
+		if !ok || (sess.Role != "gerente" && sess.Role != "admin") {
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]any{
+				"error": "Acesso não autorizado. Apenas Gerente ou Administrador podem visualizar a trilha de auditoria.",
+			})
+			return
+		}
+
+		rows, err := a.db.Query(`
+			SELECT id, timestamp, username, role, action, details, ip_address
+			FROM audit_logs
+			ORDER BY id DESC
+			LIMIT 100
+		`)
+		if err != nil {
+			http.Error(w, "Erro ao buscar logs", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		var logs []AuditLog
+		for rows.Next() {
+			var l AuditLog
+			if err := rows.Scan(&l.ID, &l.Timestamp, &l.Username, &l.Role, &l.Action, &l.Details, &l.IPAddress); err == nil {
+				logs = append(logs, l)
+			}
+		}
+		if logs == nil {
+			logs = []AuditLog{}
+		}
+		json.NewEncoder(w).Encode(logs)
+	})
+
+	// API Admin: Listar Usuários
+	mux.HandleFunc("/api/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		sess, ok := a.getSession(r)
+		if !ok || sess.Role != "admin" {
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Acesso restrito ao Administrador do Sistema."})
+			return
+		}
+
+		rows, err := a.db.Query(`
+			SELECT id, username, name, role, is_blocked, created_at
+			FROM users
+			ORDER BY id ASC
+		`)
+		if err != nil {
+			http.Error(w, "Erro ao buscar usuários", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		var users []User
+		for rows.Next() {
+			var u User
+			if err := rows.Scan(&u.ID, &u.Username, &u.Name, &u.Role, &u.IsBlocked, &u.CreatedAt); err == nil {
+				users = append(users, u)
+			}
+		}
+		if users == nil {
+			users = []User{}
+		}
+		json.NewEncoder(w).Encode(users)
+	})
+
+	// API Admin: Criar Usuário
+	mux.HandleFunc("/api/admin/users/create", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		sess, ok := a.getSession(r)
+		if !ok || sess.Role != "admin" {
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Apenas o Administrador pode cadastrar novos usuários."})
+			return
+		}
+
+		var req struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+			Name     string `json:"name"`
+			Role     string `json:"role"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Dados inválidos."})
+			return
+		}
+
+		req.Username = strings.ToLower(strings.TrimSpace(req.Username))
+		req.Name = strings.TrimSpace(req.Name)
+		req.Role = strings.ToLower(strings.TrimSpace(req.Role))
+
+		if req.Username == "" || req.Password == "" || req.Name == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Todos os campos são obrigatórios."})
+			return
+		}
+
+		if req.Role != "enfermeiro" && req.Role != "tecnico" && req.Role != "gerente" {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Perfil inválido. Permitidos: enfermeiro, tecnico, gerente."})
+			return
+		}
+
+		salt := generateSalt()
+		hash := hashPassword(req.Password, salt)
+
+		_, err := a.db.Exec(`
+			INSERT INTO users (username, password_hash, salt, name, role, is_blocked)
+			VALUES (?, ?, ?, ?, ?, 0)
+		`, req.Username, hash, salt, req.Name, req.Role)
+
+		if err != nil {
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Nome de usuário já existe no sistema."})
+			return
+		}
+
+		ip := getClientIP(r)
+		a.logAudit(sess.Username, sess.Role, "USER_CREATED", fmt.Sprintf("Criado usuário '%s' (%s) com perfil '%s'", req.Username, req.Name, req.Role), ip)
+
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{"status": "ok", "message": "Usuário criado com sucesso!"})
+	})
+
+	// API Admin: Bloquear / Desbloquear Usuário
+	mux.HandleFunc("/api/admin/users/toggle-block", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		sess, ok := a.getSession(r)
+		if !ok || sess.Role != "admin" {
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Acesso restrito ao Administrador."})
+			return
+		}
+
+		var req struct {
+			Username string `json:"username"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Dados inválidos."})
+			return
+		}
+
+		if req.Username == sess.Username {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{"error": "O administrador não pode bloquear a si próprio."})
+			return
+		}
+
+		var currentBlock int
+		err := a.db.QueryRow("SELECT is_blocked FROM users WHERE username = ?", req.Username).Scan(&currentBlock)
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Usuário não encontrado."})
+			return
+		}
+
+		newBlock := 1 - currentBlock
+		_, err = a.db.Exec("UPDATE users SET is_blocked = ? WHERE username = ?", newBlock, req.Username)
+		if err != nil {
+			http.Error(w, "Erro ao atualizar status", http.StatusInternalServerError)
+			return
+		}
+
+		if newBlock == 1 {
+			_, _ = a.db.Exec("DELETE FROM sessions WHERE username = ?", req.Username)
+		}
+
+		ip := getClientIP(r)
+		actionDesc := "desbloqueado"
+		if newBlock == 1 {
+			actionDesc = "bloqueado"
+		}
+		a.logAudit(sess.Username, sess.Role, "USER_STATUS_CHANGE", fmt.Sprintf("Usuário '%s' foi %s pelo administrador", req.Username, actionDesc), ip)
+
+		json.NewEncoder(w).Encode(map[string]any{
+			"status":     "ok",
+			"is_blocked": newBlock,
+			"message":    fmt.Sprintf("Usuário %s com sucesso.", actionDesc),
+		})
+	})
+
+	// API Admin: Alterar Grau de Permissão
+	mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		sess, ok := a.getSession(r)
+		if !ok || sess.Role != "admin" {
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Acesso restrito ao Administrador."})
+			return
+		}
+
+		var req struct {
+			Username string `json:"username"`
+			Role     string `json:"role"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Dados inválidos."})
+			return
+		}
+
+		req.Role = strings.ToLower(strings.TrimSpace(req.Role))
+		if req.Role != "enfermeiro" && req.Role != "tecnico" && req.Role != "gerente" {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Perfil inválido. Permitidos: enfermeiro, tecnico, gerente."})
+			return
+		}
+
+		_, err := a.db.Exec("UPDATE users SET role = ? WHERE username = ?", req.Role, req.Username)
+		if err != nil {
+			http.Error(w, "Erro ao atualizar perfil", http.StatusInternalServerError)
+			return
+		}
+
+		_, _ = a.db.Exec("UPDATE sessions SET role = ? WHERE username = ?", req.Role, req.Username)
+
+		ip := getClientIP(r)
+		a.logAudit(sess.Username, sess.Role, "USER_ROLE_CHANGE", fmt.Sprintf("Perfil do usuário '%s' alterado para '%s' pelo administrador", req.Username, req.Role), ip)
+
+		json.NewEncoder(w).Encode(map[string]any{
+			"status":  "ok",
+			"role":    req.Role,
+			"message": fmt.Sprintf("Perfil de %s alterado para %s.", req.Username, req.Role),
 		})
 	})
 
@@ -254,7 +822,6 @@ func (a *App) routes() http.Handler {
 			var t, h float64
 			var door int
 			if err := rows.Scan(&dev, &seq, &ts, &t, &h, &door); err == nil {
-				// Sanitização contra CSV Formula Injection (=, +, -, @)
 				safeDev := dev
 				if strings.HasPrefix(safeDev, "=") || strings.HasPrefix(safeDev, "+") || strings.HasPrefix(safeDev, "-") || strings.HasPrefix(safeDev, "@") {
 					safeDev = "'" + safeDev
@@ -313,11 +880,10 @@ func (a *App) initMQTT(brokerURL string) {
 	opts := mqtt.NewClientOptions()
 	opts.AddBroker(brokerURL)
 	opts.SetClientID("coldchain-backend")
-	opts.SetCleanSession(false) // Sessão persistente
+	opts.SetCleanSession(false)
 	opts.SetAutoReconnect(true)
 	opts.SetMaxReconnectInterval(1 * time.Second)
 
-	// Lê credenciais de arquivo se existirem (Seção 7)
 	if secret, err := os.ReadFile("/run/secrets/mqtt_password"); err == nil {
 		opts.SetUsername("coldchain-app")
 		opts.SetPassword(strings.TrimSpace(string(secret)))
@@ -341,7 +907,6 @@ func (a *App) onTelemetry(client mqtt.Client, msg mqtt.Message) {
 		return
 	}
 
-	// Extrai ID do tópico: coldchain/<id>/telemetry
 	parts := strings.Split(msg.Topic(), "/")
 	if len(parts) >= 3 {
 		t.DeviceID = parts[1]
@@ -409,7 +974,6 @@ func (a *App) flushBatch() {
 		return
 	}
 
-	// Publica ACK ponta a ponta apenas após o commit no disco (Seção 8)
 	if a.mqttClient != nil && a.mqttClient.IsConnected() {
 		for dev, seq := range deviceMaxSeq {
 			ackTopic := fmt.Sprintf("coldchain/%s/ack", dev)

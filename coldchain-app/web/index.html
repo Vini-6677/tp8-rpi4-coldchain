@@ -3,80 +3,1159 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Web-Server Cold Chain Gateway</title>
+  <title>Sistema de Monitoramento e Telemetria</title>
   <style>
     :root {
-      --bg: #0b0f19;
-      --card-bg: rgba(22, 31, 50, 0.8);
-      --border: rgba(255, 255, 255, 0.1);
-      --accent: #38bdf8;
-      --accent-glow: rgba(56, 189, 248, 0.25);
-      --text: #f1f5f9;
-      --text-muted: #94a3b8;
-      --success: #10b981;
+      --bg: #0e131f;
+      --card-bg: #151b2a;
+      --card-border: rgba(255, 255, 255, 0.08);
+      --card-status-bg: linear-gradient(135deg, #1b3564 0%, #152445 100%);
+      --card-status-border: rgba(66, 126, 235, 0.45);
+      --text: #ffffff;
+      --text-muted: #7e90aa;
+      --success: #52d68a;
       --danger: #ef4444;
       --warning: #f59e0b;
+      --info: #38bdf8;
+      --btn-bg: #233454;
+      --btn-border: #364d76;
+      --btn-color: #9cb9e6;
+      --btn-export-bg: #85b0f2;
+      --btn-export-text: #0d1728;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { background: var(--bg); color: var(--text); padding: 2rem; min-height: 100vh; }
-    .header { margin-bottom: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; }
-    h1 { font-size: 1.8rem; font-weight: 700; color: var(--accent); margin-bottom: 0.5rem; }
-    .badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; background: var(--accent-glow); color: var(--accent); border: 1px solid var(--accent); }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
-    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; backdrop-filter: blur(8px); }
-    .card h2 { font-size: 1rem; color: var(--text-muted); margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
-    .metric { font-size: 2.2rem; font-weight: 700; }
-    .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--success); margin-right: 6px; box-shadow: 0 0 8px var(--success); }
-    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-    th, td { text-align: left; padding: 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
-    th { color: var(--text-muted); font-weight: 600; }
-    .btn { display: inline-block; padding: 0.5rem 1rem; border-radius: 6px; background: var(--accent); color: #000; font-weight: 600; text-decoration: none; margin-top: 1rem; cursor: pointer; border: none; }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Requisito 13: h1 obrigatório no DOM para testes automatizados */
+    h1 {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    /* ==========================================================================
+       TELA DE LOGIN
+       ========================================================================== */
+    #login-view {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 1.5rem;
+      background: radial-gradient(circle at 50% 20%, rgba(30, 58, 138, 0.22) 0%, rgba(14, 19, 31, 0.95) 75%);
+    }
+
+    .login-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45), 0 0 1px rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      width: 100%;
+      max-width: 440px;
+      padding: 2.25rem 2rem;
+    }
+
+    .login-brand {
+      text-align: center;
+      margin-bottom: 1.75rem;
+    }
+
+    .brand-icon-wrap {
+      width: 52px;
+      height: 52px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 0.85rem;
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);
+    }
+
+    .brand-icon-wrap svg {
+      width: 28px;
+      height: 28px;
+      color: #ffffff;
+    }
+
+    .login-brand h2 {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #ffffff;
+      margin-bottom: 0.35rem;
+    }
+
+    .login-brand p {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+
+    .login-form .form-group {
+      margin-bottom: 1.15rem;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 0.45rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .input-wrapper svg {
+      position: absolute;
+      left: 14px;
+      width: 17px;
+      height: 17px;
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+
+    .form-input {
+      width: 100%;
+      background: rgba(11, 15, 25, 0.85);
+      border: 1px solid var(--btn-border);
+      border-radius: 8px;
+      padding: 0.7rem 0.95rem 0.7rem 2.6rem;
+      color: #ffffff;
+      font-size: 0.9rem;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    .form-input:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    }
+
+    .btn-login {
+      width: 100%;
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      border: none;
+      color: #ffffff;
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      font-size: 0.92rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-top: 0.6rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .btn-login:hover {
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      box-shadow: 0 4px 16px rgba(37, 99, 235, 0.45);
+    }
+
+    .login-alert {
+      padding: 0.65rem 0.85rem;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      margin-bottom: 1rem;
+      display: none;
+    }
+
+    .login-alert.danger {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      color: #fca5a5;
+    }
+
+    .quick-roles {
+      margin-top: 1.5rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--card-border);
+    }
+
+    .quick-roles-title {
+      font-size: 0.74rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.65rem;
+      text-align: center;
+    }
+
+    .quick-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem;
+    }
+
+    .btn-quick {
+      background: var(--btn-bg);
+      border: 1px solid var(--btn-border);
+      color: var(--btn-color);
+      border-radius: 6px;
+      padding: 0.45rem 0.5rem;
+      font-size: 0.76rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: center;
+      font-weight: 500;
+    }
+
+    .btn-quick:hover {
+      background: rgba(59, 130, 246, 0.28);
+      border-color: #60a5fa;
+      color: #ffffff;
+    }
+
+    /* ==========================================================================
+       DASHBOARD & BARRA SUPERIOR AUTENTICADA
+       ========================================================================== */
+    #dashboard-view {
+      display: none;
+      padding: 1.5rem 2.25rem;
+    }
+
+    .user-nav-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(22, 29, 45, 0.8);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 0.65rem 1.25rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .user-info-capsule {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .avatar-circle {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: rgba(59, 130, 246, 0.2);
+      border: 1px solid rgba(59, 130, 246, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      color: #93c5fd;
+      font-size: 0.85rem;
+    }
+
+    .user-text-meta {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .user-full-name {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #ffffff;
+    }
+
+    .user-role-tag {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      border-radius: 4px;
+      padding: 0.1rem 0.45rem;
+      display: inline-block;
+      margin-top: 0.15rem;
+      width: fit-content;
+    }
+
+    .role-enfermeiro { background: rgba(6, 182, 212, 0.18); color: #22d3ee; border: 1px solid rgba(6, 182, 212, 0.4); }
+    .role-tecnico { background: rgba(245, 158, 11, 0.18); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); }
+    .role-gerente { background: rgba(139, 92, 246, 0.18); color: #c084fc; border: 1px solid rgba(139, 92, 246, 0.4); }
+    .role-admin { background: rgba(244, 63, 94, 0.18); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.4); }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .nav-tab-btn {
+      background: var(--btn-bg);
+      border: 1px solid var(--btn-border);
+      color: var(--btn-color);
+      border-radius: 6px;
+      padding: 0.45rem 0.85rem;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .nav-tab-btn:hover {
+      background: rgba(59, 130, 246, 0.28);
+      color: #ffffff;
+    }
+
+    .nav-tab-btn.active {
+      background: #2563eb;
+      border-color: #3b82f6;
+      color: #ffffff;
+      box-shadow: 0 0 10px rgba(37, 99, 235, 0.4);
+    }
+
+    .btn-logout {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      color: #fca5a5;
+      border-radius: 6px;
+      padding: 0.45rem 0.85rem;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .btn-logout:hover {
+      background: #ef4444;
+      color: #ffffff;
+    }
+
+    /* Role Notice Banner */
+    .role-banner {
+      background: rgba(30, 58, 138, 0.25);
+      border: 1px solid rgba(59, 130, 246, 0.35);
+      border-radius: 10px;
+      padding: 0.75rem 1rem;
+      font-size: 0.82rem;
+      color: #93c5fd;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 1.25rem;
+    }
+
+    /* Top Header */
+    .top-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 1.5rem;
+    }
+
+    .main-title {
+      font-size: 1.45rem;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      color: #ffffff;
+      text-transform: uppercase;
+      margin-bottom: 0.35rem;
+    }
+
+    .gateway-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.88rem;
+      color: var(--text-muted);
+    }
+
+    .online-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.12rem 0.65rem;
+      border-radius: 9999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      color: var(--success);
+      background: rgba(34, 197, 94, 0.12);
+      border: 1px solid rgba(34, 197, 94, 0.45);
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 6px var(--success);
+    }
+
+    .header-right {
+      text-align: right;
+    }
+
+    .clock-row {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.45rem;
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: 0.02em;
+    }
+
+    .clock-row svg {
+      width: 22px;
+      height: 22px;
+      color: var(--text-muted);
+    }
+
+    .date-row {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 0.15rem;
+    }
+
+    /* 3 Cards Grid */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1.35fr;
+      gap: 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+
+    @media (max-width: 1024px) {
+      .cards-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 1.35rem 1.5rem;
+      position: relative;
+    }
+
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.65rem;
+    }
+
+    .card-label {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .card-icon {
+      color: var(--text-muted);
+      width: 18px;
+      height: 18px;
+    }
+
+    .metric-value {
+      font-size: 2.1rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 0.65rem;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .metric-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--success);
+      display: inline-block;
+      box-shadow: 0 0 8px var(--success);
+      margin-left: 2px;
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 999px;
+      overflow: hidden;
+      margin-bottom: 0.5rem;
+      position: relative;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--success);
+      border-radius: 999px;
+      transition: width 0.4s ease, background 0.3s ease;
+      width: 48%;
+    }
+
+    .card-footer-text {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    /* Card Status do Sistema */
+    .card-status {
+      background: var(--card-status-bg);
+      border: 1px solid var(--card-status-border);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    }
+
+    .card-status .card-label {
+      color: #ffffff;
+      font-weight: 700;
+    }
+
+    .status-columns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      margin-top: 0.4rem;
+    }
+
+    .status-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .status-item-header {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+    }
+
+    .status-item-header svg {
+      width: 24px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+
+    .status-item-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: 0.02em;
+      line-height: 1.2;
+    }
+
+    .status-subtext {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.8rem;
+      color: #9cb2d2;
+      margin-top: 0.15rem;
+    }
+
+    .status-subtext svg {
+      width: 14px;
+      height: 14px;
+      color: #9cb2d2;
+    }
+
+    /* Main Table Card */
+    .main-table-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 1.35rem 1.5rem;
+    }
+
+    .table-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.25rem;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .table-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .actions-group {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+
+    .btn-action {
+      background: var(--btn-bg);
+      border: 1px solid var(--btn-border);
+      color: var(--btn-color);
+      border-radius: 6px;
+      padding: 0.45rem 0.95rem;
+      font-size: 0.82rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      text-decoration: none;
+    }
+
+    .btn-action:hover {
+      background: rgba(59, 130, 246, 0.28);
+      border-color: rgba(59, 130, 246, 0.6);
+      color: #ffffff;
+    }
+
+    .search-input {
+      background: var(--btn-bg);
+      border: 1px solid var(--btn-border);
+      color: #ffffff;
+      border-radius: 6px;
+      padding: 0.45rem 0.85rem;
+      font-size: 0.82rem;
+      outline: none;
+      width: 145px;
+      transition: all 0.2s ease;
+    }
+
+    .search-input::placeholder {
+      color: var(--btn-color);
+      opacity: 0.9;
+    }
+
+    .search-input:focus {
+      border-color: #60a5fa;
+      background: rgba(36, 53, 86, 0.9);
+      width: 175px;
+    }
+
+    .btn-export {
+      background: var(--btn-export-bg);
+      border: none;
+      color: var(--btn-export-text);
+      border-radius: 6px;
+      padding: 0.45rem 1.05rem;
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .btn-export:hover {
+      background: #9ec2f8;
+      box-shadow: 0 0 10px rgba(135, 178, 243, 0.4);
+    }
+
+    /* Table Styles */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    thead th {
+      text-align: left;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      padding: 0.75rem 0.85rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    tbody td {
+      padding: 0.85rem;
+      font-size: 0.88rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: #ffffff;
+    }
+
+    tbody tr:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .temp-good { color: var(--success); font-weight: 600; }
+    .temp-bad { color: var(--danger); font-weight: 600; }
+    .door-closed { color: var(--success); }
+    .door-open { color: var(--danger); font-weight: 600; }
+
+    /* ==========================================================================
+       VISTA 2: TRILHA DE AUDITORIA (GERENTE & ADMIN)
+       ========================================================================== */
+    .audit-worm-alert {
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+      font-size: 0.82rem;
+      color: #6ee7b7;
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .action-badge {
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      display: inline-block;
+      text-transform: uppercase;
+    }
+
+    .badge-login-success { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
+    .badge-login-failed { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+    .badge-login-blocked { background: rgba(220, 38, 38, 0.25); color: #fca5a5; }
+    .badge-user-created { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+    .badge-user-status { background: rgba(168, 85, 247, 0.2); color: #c084fc; }
+    .badge-role-change { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+    .badge-logout { background: rgba(148, 163, 184, 0.2); color: #94a3b8; }
+
+    /* ==========================================================================
+       VISTA 3: GESTÃO DE USUÁRIOS (ADMIN)
+       ========================================================================== */
+    .user-create-card {
+      background: rgba(15, 23, 42, 0.75);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .create-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) 140px;
+      gap: 0.85rem;
+      align-items: flex-end;
+    }
+
+    .btn-save-user {
+      background: #2563eb;
+      color: #ffffff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.65rem 1rem;
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      height: 40px;
+    }
+
+    .btn-save-user:hover {
+      background: #1d4ed8;
+    }
+
+    .btn-sm-action {
+      padding: 0.3rem 0.65rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.15s ease;
+    }
+
+    .btn-block { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); }
+    .btn-block:hover { background: #ef4444; color: #ffffff; }
+    .btn-unblock { background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4); }
+    .btn-unblock:hover { background: #22c55e; color: #ffffff; }
+
+    .role-select {
+      background: var(--btn-bg);
+      border: 1px solid var(--btn-border);
+      color: #ffffff;
+      border-radius: 6px;
+      padding: 0.3rem 0.5rem;
+      font-size: 0.8rem;
+      outline: none;
+    }
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>Helooowww world eng. Computacional!!!!!!!</h1>
-    <span class="badge"><span class="status-dot"></span>Gateway Operacional (QEMU AArch64 / RPi4)</span>
-  </div>
+  <!-- Requisito 13 Obrigatório: Frase Exata -->
+  <h1>Helooowww world eng. Computacional!!!!!!!</h1>
 
-  <div class="grid">
-    <div class="card">
-      <h2>Temperatura Média</h2>
-      <div class="metric" id="temp-val">-- °C</div>
-      <p style="color: var(--text-muted); margin-top: 0.5rem;">Faixa segura: 2.0 °C a 8.0 °C</p>
-    </div>
-    <div class="card">
-      <h2>Dispositivos Ativos</h2>
-      <div class="metric" id="dev-count">0</div>
-      <p style="color: var(--text-muted); margin-top: 0.5rem;">ESP32 via MQTT (QoS 1)</p>
-    </div>
-    <div class="card">
-      <h2>Persistência SQLite</h2>
-      <div class="metric" id="readings-count">0</div>
-      <p style="color: var(--text-muted); margin-top: 0.5rem;">WAL + synchronous=FULL</p>
-    </div>
-  </div>
+  <!-- =========================================================================
+       1. TELA DE LOGIN (Exibida quando não autenticado)
+       ========================================================================= -->
+  <section id="login-view">
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="brand-icon-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <h2>Sistema de Monitoramento</h2>
+        <p>Autenticação e Controle de Acesso Hospitalar</p>
+      </div>
 
-  <div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-      <h2>Últimas Leituras de Telemetria</h2>
-      <a href="/api/export.csv" class="btn">Exportar CSV</a>
+      <div id="login-alert" class="login-alert danger"></div>
+
+      <form class="login-form" id="login-form" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label class="form-label">Usuário</label>
+          <div class="input-wrapper">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <input type="text" id="login-user" class="form-input" placeholder="Digite seu usuário..." required autocomplete="username">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Senha</label>
+          <div class="input-wrapper">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <input type="password" id="login-pass" class="form-input" placeholder="Digite sua senha..." required autocomplete="current-password">
+          </div>
+        </div>
+
+        <button type="submit" class="btn-login" id="btn-login-submit">
+          <span>Acessar Sistema</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </button>
+      </form>
+
+      <div class="quick-roles">
+        <div class="quick-roles-title">Preenchimento Rápido (Demonstração)</div>
+        <div class="quick-buttons">
+          <button type="button" class="btn-quick" onclick="fillQuick('enfermeiro')">🧑‍⚕️ Enfermeiro</button>
+          <button type="button" class="btn-quick" onclick="fillQuick('tecnico')">🛠️ Técnico</button>
+          <button type="button" class="btn-quick" onclick="fillQuick('gerente')">📋 Gerente</button>
+          <button type="button" class="btn-quick" onclick="fillQuick('admin')">🛡️ Administrador</button>
+        </div>
+      </div>
     </div>
-    <table>
-      <thead>
-        <tr>
-          <th>Timestamp</th>
-          <th>Dispositivo</th>
-          <th>Temp (°C)</th>
-          <th>Umidade (%)</th>
-          <th>Porta</th>
-          <th>Seq</th>
-        </tr>
-      </thead>
-      <tbody id="telemetry-body">
-        <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Aguardando telemetria dos sensores...</td></tr>
-      </tbody>
-    </table>
+  </section>
+
+  <!-- =========================================================================
+       2. TELA DO PAINEL (Exibida após autenticação)
+       ========================================================================= -->
+  <div id="dashboard-view">
+    <!-- Barra de Usuário Autenticado e Navegação -->
+    <nav class="user-nav-bar">
+      <div class="user-info-capsule">
+        <div class="avatar-circle" id="user-avatar">US</div>
+        <div class="user-text-meta">
+          <span class="user-full-name" id="user-display-name">Carregando...</span>
+          <span class="user-role-tag" id="user-display-role">...</span>
+        </div>
+      </div>
+
+      <div class="nav-actions">
+        <button class="nav-tab-btn active" id="tab-telemetry" onclick="switchTab('telemetry')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+          Telemetria
+        </button>
+        
+        <button class="nav-tab-btn" id="tab-audit" onclick="switchTab('audit')" style="display: none;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          Logs de Auditoria
+        </button>
+
+        <button class="nav-tab-btn" id="tab-users" onclick="switchTab('users')" style="display: none;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Gestão de Usuários
+        </button>
+
+        <button class="btn-logout" onclick="handleLogout()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Sair
+        </button>
+      </div>
+    </nav>
+
+    <!-- Banner informativo de permissão -->
+    <div id="role-notice-banner" class="role-banner" style="display: none;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+      <span id="role-notice-text"></span>
+    </div>
+
+    <!-- =======================================================================
+         SUB-TELA 1: TELEMETRIA (Visual idêntico à imagem de referência)
+         ======================================================================= -->
+    <div id="section-telemetry">
+      <!-- Top Header -->
+      <header class="top-header">
+        <div class="header-left">
+          <div class="main-title">SISTEMA DE MONITORAMENTO E TELEMETRIA</div>
+          <div class="gateway-row">
+            <span>Gateway Operacional:</span>
+            <span class="online-badge">
+              <span class="status-dot"></span>ONLINE
+            </span>
+          </div>
+        </div>
+        <div class="header-right">
+          <div class="clock-row">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span id="live-time">19:59:47</span>
+          </div>
+          <div class="date-row" id="live-date">Quarta-feira, 21/10/2026</div>
+        </div>
+      </header>
+
+      <!-- Grade dos 3 Cards -->
+      <section class="cards-grid">
+        <!-- Card 1: Temperatura Média -->
+        <div class="card">
+          <div class="card-top">
+            <span class="card-label">TEMPERATURA MÉDIA</span>
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
+          </div>
+          <div class="metric-value" id="temp-val">4.4 °C</div>
+          <div class="progress-track">
+            <div class="progress-fill" id="temp-progress" style="width: 48%;"></div>
+          </div>
+          <div class="card-footer-text">Faixa segura: 2.0 °C a 8.0 °C</div>
+        </div>
+
+        <!-- Card 2: Dispositivos Ativos -->
+        <div class="card">
+          <div class="card-top">
+            <span class="card-label">DISPOSITIVOS ATIVOS</span>
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+          </div>
+          <div class="metric-value">
+            <span id="dev-count">1 / 1</span>
+            <span class="metric-dot"></span>
+          </div>
+          <div class="card-footer-text">ESP32</div>
+        </div>
+
+        <!-- Card 3: Status do Sistema (Destacado) -->
+        <div class="card card-status">
+          <div class="card-top">
+            <span class="card-label">STÁTUS DO SISTEMA</span>
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </div>
+          <div class="status-columns">
+            <div class="status-item">
+              <div class="status-item-header">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#52d68a" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+                <div class="status-item-title">OPERANDO<br>NORMALMENTE</div>
+              </div>
+              <div class="status-subtext">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+                <span>Conexão: Excelente</span>
+              </div>
+            </div>
+
+            <div class="status-item">
+              <div class="status-item-header">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="3">
+                  <circle cx="12" cy="12" r="9" stroke="rgba(255,255,255,0.18)" stroke-width="3"/>
+                  <path d="M12 3a9 9 0 0 1 9 9" stroke="#52d68a"/>
+                  <path d="M3 12a9 9 0 0 1 9-9" stroke="#52d68a"/>
+                </svg>
+                <div class="status-item-title">SISTEMA OK</div>
+              </div>
+              <div class="status-subtext">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                <span>Servidor: Ativo</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Card Principal: Tabela de Leituras -->
+      <main class="main-table-card">
+        <div class="table-header-row">
+          <div class="table-title">ÚLTIMAS LEITURAS DE TELEMETRIA</div>
+          <div class="actions-group">
+            <button class="btn-action" id="btn-filter" onclick="alert('Filtros: Todos os sensores ativos')">Filtros</button>
+            <input type="text" id="device-search" class="search-input" placeholder="Buscar dispositivo" oninput="filterTable()">
+            <button class="btn-action" id="btn-history" onclick="alert('Histórico completo armazenado no SQLite')">Histórico</button>
+            <a href="/api/export.csv" class="btn-export">Exportar CSV</a>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Dispositivo</th>
+              <th>Temp (°C)</th>
+              <th>Porta</th>
+            </tr>
+          </thead>
+          <tbody id="telemetry-body">
+            <tr>
+              <td>19:49:29</td>
+              <td>esp32-sensor-01</td>
+              <td class="temp-good">4.4</td>
+              <td class="door-closed">Fechada</td>
+            </tr>
+            <tr>
+              <td>19:49:27</td>
+              <td>esp32-sensor-01</td>
+              <td class="temp-good">4.0</td>
+              <td class="door-closed">Fechada</td>
+            </tr>
+            <tr>
+              <td>19:49:25</td>
+              <td>esp32-sensor-01</td>
+              <td class="temp-good">4.7</td>
+              <td class="door-open">Aberta</td>
+            </tr>
+            <tr>
+              <td>16:03:51</td>
+              <td>esp32-sensor-01</td>
+              <td class="temp-good">4.8</td>
+              <td class="door-closed">Fechada</td>
+            </tr>
+            <tr>
+              <td>16:03:49</td>
+              <td>esp32-sensor-01</td>
+              <td class="temp-good">4.5</td>
+              <td class="door-closed">Fechada</td>
+            </tr>
+          </tbody>
+        </table>
+      </main>
+    </div>
+
+    <!-- =======================================================================
+         SUB-TELA 2: TRILHA DE AUDITORIA (GERENTE & ADMIN)
+         ======================================================================= -->
+    <div id="section-audit" style="display: none;">
+      <div class="audit-worm-alert">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <div>
+          <strong>Trilha de Auditoria Imutável (WORM - Write Once, Read Many):</strong>
+          Estes registros são protegidos por triggers no banco de dados SQLite. O Administrador não pode alterar ou apagar nenhum evento desta trilha.
+        </div>
+      </div>
+
+      <div class="main-table-card">
+        <div class="table-header-row">
+          <div class="table-title">Registros de Auditoria e Conformidade Hospitalar</div>
+          <div class="actions-group">
+            <input type="text" id="audit-search" class="search-input" placeholder="Filtrar eventos..." oninput="filterAuditTable()" style="width: 200px;">
+            <button class="btn-action" onclick="loadAuditLogs()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Atualizar
+            </button>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Horário</th>
+              <th>Usuário</th>
+              <th>Perfil</th>
+              <th>Ação</th>
+              <th>Detalhes da Operação</th>
+              <th>IP Origem</th>
+            </tr>
+          </thead>
+          <tbody id="audit-table-body">
+            <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Carregando registros...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- =======================================================================
+         SUB-TELA 3: GESTÃO DE USUÁRIOS (EXCLUSIVO ADMIN)
+         ======================================================================= -->
+    <div id="section-users" style="display: none;">
+      <!-- Formulário de Criação de Usuário -->
+      <div class="user-create-card">
+        <h3 style="font-size: 0.95rem; font-weight: 700; color: #ffffff; margin-bottom: 0.85rem; text-transform: uppercase;">Cadastrar Novo Usuário</h3>
+        <div class="create-grid">
+          <div>
+            <label class="form-label">Usuário (login)</label>
+            <input type="text" id="new-user-name" class="form-input" style="padding-left: 0.85rem;" placeholder="ex: enfermeiro_ana">
+          </div>
+          <div>
+            <label class="form-label">Nome Completo</label>
+            <input type="text" id="new-user-fullname" class="form-input" style="padding-left: 0.85rem;" placeholder="ex: Ana Souza">
+          </div>
+          <div>
+            <label class="form-label">Senha Inicial</label>
+            <input type="password" id="new-user-pass" class="form-input" style="padding-left: 0.85rem;" placeholder="••••••••">
+          </div>
+          <div>
+            <label class="form-label">Grau de Permissão</label>
+            <select id="new-user-role" class="form-input" style="padding-left: 0.85rem;">
+              <option value="enfermeiro">Enfermeiro (Básico)</option>
+              <option value="tecnico">Técnico (Manutenção)</option>
+              <option value="gerente">Gerente (Acesso Total)</option>
+            </select>
+          </div>
+          <div>
+            <button class="btn-save-user" onclick="createUser()">Salvar Usuário</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabela de Usuários -->
+      <div class="main-table-card">
+        <div class="table-header-row">
+          <div class="table-title">Controle de Usuários Cadastrados</div>
+          <div class="actions-group">
+            <button class="btn-action" onclick="loadUsers()">Atualizar Lista</button>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Login</th>
+              <th>Nome Completo</th>
+              <th>Grau de Permissão</th>
+              <th>Status</th>
+              <th>Ações Administrativas</th>
+            </tr>
+          </thead>
+          <tbody id="users-table-body">
+            <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Carregando usuários...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   <script src="/static/app.js"></script>
