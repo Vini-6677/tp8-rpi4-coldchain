@@ -8,6 +8,7 @@
 *.img
 *.ext4
 *.tar.gz
+!br2-external/board/common/overlay/opt/docker/coldchain-tp8.tar.gz
 *.tar.xz
 *.tar.bz2
 *.iso
@@ -32,3 +33,4 @@ vendor/
 .DS_Store
 Thumbs.db
 /coldchain-app/coldchain-verify
+dist/
