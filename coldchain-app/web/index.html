@@ -3,25 +3,33 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sistema de Monitoramento e Telemetria</title>
+  <title>ColdChain Pharma RT — Monitoramento da Cadeia de Frio ANVISA</title>
   <style>
     :root {
-      --bg: #0e131f;
-      --card-bg: #151b2a;
+      --bg: #0B132B;
+      --bg-darker: #070B19;
+      --card-bg: #141E3C;
+      --card-hover: #1C2B54;
       --card-border: rgba(255, 255, 255, 0.08);
-      --card-status-bg: linear-gradient(135deg, #1b3564 0%, #152445 100%);
-      --card-status-border: rgba(66, 126, 235, 0.45);
-      --text: #ffffff;
-      --text-muted: #7e90aa;
-      --success: #52d68a;
-      --danger: #ef4444;
-      --warning: #f59e0b;
-      --info: #38bdf8;
-      --btn-bg: #233454;
-      --btn-border: #364d76;
-      --btn-color: #9cb9e6;
-      --btn-export-bg: #85b0f2;
-      --btn-export-text: #0d1728;
+      --card-status-bg: linear-gradient(135deg, #1C3879 0%, #11224D 100%);
+      --card-status-border: rgba(96, 165, 250, 0.4);
+      --text: #FFFFFF;
+      --text-muted: #8E9AAF;
+      --text-sub: #A3B1C6;
+      --primary: #3B82F6;
+      --primary-hover: #2563EB;
+      --success: #10B981;
+      --success-bg: rgba(16, 185, 129, 0.15);
+      --danger: #EF4444;
+      --danger-bg: rgba(239, 68, 68, 0.15);
+      --warning: #F59E0B;
+      --warning-bg: rgba(245, 158, 11, 0.15);
+      --info: #06B6D4;
+      --info-bg: rgba(6, 182, 212, 0.15);
+      --btn-bg: #1E293B;
+      --btn-border: #334155;
+      --btn-color: #CBD5E1;
+      --fefo-accent: #8B5CF6;
     }
 
     * {
@@ -39,7 +47,7 @@
       flex-direction: column;
     }
 
-    /* Requisito 13: h1 obrigatório no DOM para testes automatizados */
+    /* Requisito 13: h1 obrigatório no DOM para aprovação em testes automatizados */
     h1 {
       position: absolute;
       width: 1px;
@@ -52,1472 +60,1328 @@
       border: 0;
     }
 
-    /* ==========================================================================
-       TELA DE LOGIN
-       ========================================================================== */
-    #login-view {
+    /* TELA DE LOGIN */
+    .login-overlay {
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(circle at 50% 30%, #152243 0%, #070B19 100%);
       display: flex;
-      justify-content: center;
       align-items: center;
-      min-height: 100vh;
-      padding: 1.5rem;
-      background: radial-gradient(circle at 50% 20%, rgba(30, 58, 138, 0.22) 0%, rgba(14, 19, 31, 0.95) 75%);
+      justify-content: center;
+      z-index: 1000;
+      padding: 20px;
     }
 
     .login-card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45), 0 0 1px rgba(255, 255, 255, 0.1);
+      background: rgba(20, 30, 60, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 16px;
+      padding: 36px 32px;
       width: 100%;
       max-width: 440px;
-      padding: 2.25rem 2rem;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(12px);
     }
 
-    .login-brand {
+    .login-header {
       text-align: center;
-      margin-bottom: 1.75rem;
+      margin-bottom: 26px;
     }
 
-    .brand-icon-wrap {
-      width: 52px;
-      height: 52px;
-      border-radius: 14px;
-      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    .login-logo-badge {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      margin-bottom: 0.85rem;
-      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);
+      width: 56px;
+      height: 56px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #2563EB, #06B6D4);
+      margin-bottom: 14px;
+      box-shadow: 0 10px 20px -5px rgba(37, 99, 235, 0.5);
     }
 
-    .brand-icon-wrap svg {
-      width: 28px;
-      height: 28px;
-      color: #ffffff;
+    .login-title {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      color: #fff;
+      margin-bottom: 4px;
     }
 
-    .login-brand h2 {
-      font-size: 1.25rem;
-      font-weight: 800;
-      letter-spacing: 0.04em;
+    .login-sub {
+      font-size: 11.5px;
+      color: #94A3B8;
       text-transform: uppercase;
-      color: #ffffff;
-      margin-bottom: 0.35rem;
+      letter-spacing: 0.8px;
     }
 
-    .login-brand p {
-      font-size: 0.82rem;
-      color: var(--text-muted);
-    }
-
-    .login-form .form-group {
-      margin-bottom: 1.15rem;
+    .form-group {
+      margin-bottom: 16px;
     }
 
     .form-label {
       display: block;
-      font-size: 0.8rem;
+      font-size: 11.5px;
       font-weight: 600;
-      color: var(--text-muted);
-      margin-bottom: 0.45rem;
+      color: #94A3B8;
+      margin-bottom: 6px;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.5px;
     }
 
-    .input-wrapper {
-      position: relative;
-      display: flex;
-      align-items: center;
-    }
-
-    .input-wrapper svg {
-      position: absolute;
-      left: 14px;
-      width: 17px;
-      height: 17px;
-      color: var(--text-muted);
-      pointer-events: none;
-    }
-
-    .form-input {
+    .form-control {
       width: 100%;
-      background: rgba(11, 15, 25, 0.85);
-      border: 1px solid var(--btn-border);
+      padding: 11px 14px;
+      background: rgba(11, 19, 43, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 8px;
-      padding: 0.7rem 0.95rem 0.7rem 2.6rem;
-      color: #ffffff;
-      font-size: 0.9rem;
-      outline: none;
-      transition: all 0.2s ease;
+      color: #fff;
+      font-size: 13.5px;
+      transition: all 0.2s;
     }
 
-    .form-input:focus {
-      border-color: #3b82f6;
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    .form-control:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
     }
 
     .btn-login {
       width: 100%;
-      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      padding: 12px;
+      background: linear-gradient(135deg, #2563EB, #1D4ED8);
+      color: #fff;
+      font-weight: 600;
+      font-size: 13.5px;
       border: none;
-      color: #ffffff;
       border-radius: 8px;
-      padding: 0.75rem 1rem;
-      font-size: 0.92rem;
-      font-weight: 700;
       cursor: pointer;
-      transition: all 0.2s ease;
-      margin-top: 0.6rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
+      transition: all 0.2s;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+      margin-top: 8px;
     }
 
     .btn-login:hover {
-      background: linear-gradient(135deg, #3b82f6, #2563eb);
-      box-shadow: 0 4px 16px rgba(37, 99, 235, 0.45);
+      background: linear-gradient(135deg, #1D4ED8, #1E40AF);
+      transform: translateY(-1px);
     }
 
-    .login-alert {
-      padding: 0.65rem 0.85rem;
-      border-radius: 8px;
-      font-size: 0.82rem;
-      margin-bottom: 1rem;
-      display: none;
+    .demo-accounts {
+      margin-top: 22px;
+      padding-top: 18px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
     }
 
-    .login-alert.danger {
-      background: rgba(239, 68, 68, 0.15);
-      border: 1px solid rgba(239, 68, 68, 0.4);
-      color: #fca5a5;
-    }
-
-    .quick-roles {
-      margin-top: 1.5rem;
-      padding-top: 1.25rem;
-      border-top: 1px solid var(--card-border);
-    }
-
-    .quick-roles-title {
-      font-size: 0.74rem;
-      font-weight: 600;
-      color: var(--text-muted);
+    .demo-accounts-title {
+      font-size: 10.5px;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 0.65rem;
+      letter-spacing: 0.8px;
+      color: #64748B;
+      margin-bottom: 10px;
       text-align: center;
     }
 
-    .quick-buttons {
+    .demo-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 0.5rem;
+      gap: 6px;
     }
 
-    .btn-quick {
-      background: var(--btn-bg);
-      border: 1px solid var(--btn-border);
-      color: var(--btn-color);
+    .demo-badge {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 6px 8px;
       border-radius: 6px;
-      padding: 0.45rem 0.5rem;
-      font-size: 0.76rem;
+      font-size: 10.5px;
       cursor: pointer;
-      transition: all 0.15s ease;
       text-align: center;
-      font-weight: 500;
+      transition: all 0.15s;
     }
 
-    .btn-quick:hover {
-      background: rgba(59, 130, 246, 0.28);
-      border-color: #60a5fa;
-      color: #ffffff;
+    .demo-badge:hover {
+      background: rgba(59, 130, 246, 0.15);
+      border-color: rgba(59, 130, 246, 0.4);
     }
 
-    /* ==========================================================================
-       DASHBOARD & BARRA SUPERIOR AUTENTICADA
-       ========================================================================== */
-    #dashboard-view {
-      display: none;
-      padding: 1.5rem 2.25rem;
-    }
-
-    .user-nav-bar {
+    /* TOP HEADER & NAVBAR */
+    .top-navbar {
+      background: #070B19;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 10px 24px;
       display: flex;
+      align-items: center;
       justify-content: space-between;
-      align-items: center;
-      background: rgba(22, 29, 45, 0.8);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 0.65rem 1.25rem;
-      margin-bottom: 1.5rem;
-      flex-wrap: wrap;
-      gap: 0.75rem;
+      position: sticky;
+      top: 0;
+      z-index: 50;
     }
 
-    .user-info-capsule {
+    .brand-section {
       display: flex;
       align-items: center;
-      gap: 0.75rem;
+      gap: 12px;
     }
 
-    .avatar-circle {
-      width: 34px;
-      height: 34px;
-      border-radius: 50%;
-      background: rgba(59, 130, 246, 0.2);
-      border: 1px solid rgba(59, 130, 246, 0.4);
+    .brand-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #2563EB, #06B6D4);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-weight: 700;
-      color: #93c5fd;
-      font-size: 0.85rem;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
     }
 
-    .user-text-meta {
+    .brand-title {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+      color: #fff;
+    }
+
+    .brand-badges {
       display: flex;
-      flex-direction: column;
+      gap: 6px;
+      margin-top: 2px;
     }
 
-    .user-full-name {
-      font-size: 0.88rem;
-      font-weight: 700;
-      color: #ffffff;
-    }
-
-    .user-role-tag {
-      font-size: 0.7rem;
-      font-weight: 700;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
+    .tag-badge {
+      font-size: 9.5px;
+      font-weight: 600;
+      padding: 2px 6px;
       border-radius: 4px;
-      padding: 0.1rem 0.45rem;
-      display: inline-block;
-      margin-top: 0.15rem;
-      width: fit-content;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
     }
 
-    .role-enfermeiro { background: rgba(6, 182, 212, 0.18); color: #22d3ee; border: 1px solid rgba(6, 182, 212, 0.4); }
-    .role-tecnico { background: rgba(245, 158, 11, 0.18); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); }
-    .role-gerente { background: rgba(139, 92, 246, 0.18); color: #c084fc; border: 1px solid rgba(139, 92, 246, 0.4); }
-    .role-admin { background: rgba(244, 63, 94, 0.18); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.4); }
+    .tag-blue { background: rgba(59, 130, 246, 0.2); color: #93C5FD; border: 1px solid rgba(59, 130, 246, 0.3); }
+    .tag-green { background: rgba(16, 185, 129, 0.2); color: #6EE7B7; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .tag-purple { background: rgba(139, 92, 246, 0.2); color: #C4B5FD; border: 1px solid rgba(139, 92, 246, 0.3); }
 
-    .nav-actions {
+    .nav-tabs {
       display: flex;
-      align-items: center;
-      gap: 0.6rem;
+      gap: 4px;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 4px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
     }
 
     .nav-tab-btn {
-      background: var(--btn-bg);
-      border: 1px solid var(--btn-border);
-      color: var(--btn-color);
-      border-radius: 6px;
-      padding: 0.45rem 0.85rem;
-      font-size: 0.82rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      display: inline-flex;
+      display: flex;
       align-items: center;
-      gap: 0.4rem;
+      gap: 6px;
+      background: transparent;
+      border: none;
+      color: #94A3B8;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 7px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
     }
 
     .nav-tab-btn:hover {
-      background: rgba(59, 130, 246, 0.28);
-      color: #ffffff;
+      color: #fff;
+      background: rgba(255, 255, 255, 0.05);
     }
 
     .nav-tab-btn.active {
-      background: #2563eb;
-      border-color: #3b82f6;
-      color: #ffffff;
-      box-shadow: 0 0 10px rgba(37, 99, 235, 0.4);
+      color: #fff;
+      background: #1E293B;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    }
+
+    .nav-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .user-capsule {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      background: rgba(255, 255, 255, 0.04);
+      padding: 4px 10px 4px 6px;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .user-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #3B82F6;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .user-meta-name { font-size: 12px; font-weight: 600; color: #fff; line-height: 1.2; }
+    .user-meta-role { font-size: 10px; color: #94A3B8; text-transform: capitalize; }
+
+    .btn-tv-mode {
+      background: rgba(139, 92, 246, 0.15);
+      border: 1px solid rgba(139, 92, 246, 0.35);
+      color: #C4B5FD;
+      font-size: 11.5px;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+
+    .btn-tv-mode:hover {
+      background: rgba(139, 92, 246, 0.3);
     }
 
     .btn-logout {
-      background: rgba(239, 68, 68, 0.15);
-      border: 1px solid rgba(239, 68, 68, 0.35);
-      color: #fca5a5;
-      border-radius: 6px;
-      padding: 0.45rem 0.85rem;
-      font-size: 0.82rem;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      color: #FCA5A5;
+      font-size: 11.5px;
       font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 6px;
       cursor: pointer;
-      transition: all 0.2s ease;
-      display: inline-flex;
+      display: flex;
       align-items: center;
-      gap: 0.35rem;
+      gap: 5px;
+      transition: all 0.2s;
     }
 
     .btn-logout:hover {
-      background: #ef4444;
-      color: #ffffff;
+      background: rgba(239, 68, 68, 0.25);
     }
 
-    /* Role Notice Banner */
-    .role-banner {
-      background: rgba(30, 58, 138, 0.25);
-      border: 1px solid rgba(59, 130, 246, 0.35);
-      border-radius: 10px;
-      padding: 0.75rem 1rem;
-      font-size: 0.82rem;
-      color: #93c5fd;
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-      margin-bottom: 1.25rem;
+    /* SUB-SEÇÕES */
+    .app-main {
+      padding: 20px 24px;
+      flex: 1;
+      max-width: 1600px;
+      margin: 0 auto;
+      width: 100%;
     }
 
-    /* Top Header */
-    .top-header {
+    .tab-section {
+      display: none;
+    }
+
+    .tab-section.active {
+      display: block;
+    }
+
+    /* CARDS DE CÂMARAS */
+    .chambers-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .chamber-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 20px;
+      cursor: pointer;
+      transition: all 0.25s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .chamber-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(96, 165, 250, 0.4);
+      background: var(--card-hover);
+    }
+
+    .chamber-card.selected {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+    }
+
+    .chamber-card.status-excursao {
+      border-color: rgba(239, 68, 68, 0.6);
+      background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, var(--card-bg) 60%);
+    }
+
+    .chamber-header {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      margin-bottom: 1.5rem;
+      margin-bottom: 12px;
     }
 
-    .main-title {
-      font-size: 1.45rem;
-      font-weight: 800;
-      letter-spacing: 0.03em;
-      color: #ffffff;
-      text-transform: uppercase;
-      margin-bottom: 0.35rem;
+    .chamber-title-text {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
     }
 
-    .gateway-row {
+    .chamber-type-text {
+      font-size: 11px;
+      color: #94A3B8;
+      margin-top: 2px;
+    }
+
+    .status-pill {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 12px;
       display: flex;
       align-items: center;
-      gap: 0.5rem;
-      font-size: 0.88rem;
-      color: var(--text-muted);
+      gap: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
 
-    .online-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      padding: 0.12rem 0.65rem;
-      border-radius: 9999px;
-      font-size: 0.72rem;
-      font-weight: 700;
-      letter-spacing: 0.05em;
-      color: var(--success);
-      background: rgba(34, 197, 94, 0.12);
-      border: 1px solid rgba(34, 197, 94, 0.45);
+    .status-pill.ok { background: var(--success-bg); color: var(--success); border: 1px solid rgba(16, 185, 129, 0.3); }
+    .status-pill.excursao { background: var(--danger-bg); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.4); animation: pulse 2s infinite; }
+    .status-pill.alerta { background: var(--warning-bg); color: var(--warning); border: 1px solid rgba(245, 158, 11, 0.3); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
     }
 
-    .status-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--success);
-      box-shadow: 0 0 6px var(--success);
+    .chamber-main-metric {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin: 10px 0 14px 0;
     }
 
-    .header-right {
+    .chamber-temp-val {
+      font-size: 38px;
+      font-weight: 800;
+      letter-spacing: -1px;
+      color: #fff;
+    }
+
+    .chamber-temp-unit {
+      font-size: 16px;
+      font-weight: 600;
+      color: #94A3B8;
+    }
+
+    .chamber-limits-range {
+      font-size: 12px;
+      color: #94A3B8;
+      margin-left: auto;
       text-align: right;
     }
 
-    .clock-row {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 0.45rem;
-      font-size: 1.75rem;
-      font-weight: 700;
-      color: #ffffff;
-      letter-spacing: 0.02em;
-    }
-
-    .clock-row svg {
-      width: 22px;
-      height: 22px;
-      color: var(--text-muted);
-    }
-
-    .date-row {
-      font-size: 0.85rem;
-      color: var(--text-muted);
-      margin-top: 0.15rem;
-    }
-
-    /* 3 Cards Grid */
-    .cards-grid {
+    .chamber-stats-row {
       display: grid;
-      grid-template-columns: 1fr 1fr 1.35fr;
-      gap: 1.25rem;
-      margin-bottom: 1.5rem;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      background: rgba(0, 0, 0, 0.2);
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.04);
     }
 
-    @media (max-width: 1024px) {
-      .cards-grid {
-        grid-template-columns: 1fr;
-      }
+    .stat-col {
+      text-align: center;
     }
 
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 14px;
-      padding: 1.35rem 1.5rem;
-      position: relative;
+    .stat-label {
+      font-size: 9.5px;
+      color: #64748B;
+      text-transform: uppercase;
+      font-weight: 600;
+      letter-spacing: 0.3px;
     }
 
-    .card-top {
+    .stat-val {
+      font-size: 12.5px;
+      font-weight: 700;
+      color: #E2E8F0;
+      margin-top: 2px;
+    }
+
+    .chamber-footer-meta {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 0.65rem;
+      margin-top: 12px;
+      font-size: 11px;
+      color: #64748B;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
     }
 
-    .card-label {
-      font-size: 0.78rem;
+    /* DETALHE DA CÂMARA & GRÁFICO MULTISSENSOR */
+    .detail-panel {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+
+    .panel-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .panel-title {
+      font-size: 16px;
       font-weight: 700;
-      color: var(--text-muted);
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-    }
-
-    .card-icon {
-      color: var(--text-muted);
-      width: 18px;
-      height: 18px;
-    }
-
-    .metric-value {
-      font-size: 2.1rem;
-      font-weight: 700;
-      color: #ffffff;
-      margin-bottom: 0.65rem;
+      color: #fff;
       display: flex;
       align-items: center;
-      gap: 0.45rem;
+      gap: 8px;
     }
 
-    .metric-dot {
-      width: 9px;
-      height: 9px;
-      border-radius: 50%;
-      background: var(--success);
-      display: inline-block;
-      box-shadow: 0 0 8px var(--success);
-      margin-left: 2px;
-    }
-
-    .progress-track {
+    .chart-container {
+      position: relative;
+      height: 260px;
       width: 100%;
-      height: 6px;
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 999px;
-      overflow: hidden;
-      margin-bottom: 0.5rem;
-      position: relative;
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 10px;
+      padding: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      margin-bottom: 16px;
     }
 
-    .progress-fill {
+    canvas {
+      width: 100%;
       height: 100%;
-      background: var(--success);
-      border-radius: 999px;
-      transition: width 0.4s ease, background 0.3s ease;
-      width: 48%;
     }
 
-    .card-footer-text {
-      font-size: 0.78rem;
-      color: var(--text-muted);
-    }
-
-    /* Card Status do Sistema */
-    .card-status {
-      background: var(--card-status-bg);
-      border: 1px solid var(--card-status-border);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-    }
-
-    .card-status .card-label {
-      color: #ffffff;
-      font-weight: 700;
-    }
-
-    .status-columns {
+    .sensors-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1.25rem;
-      margin-top: 0.4rem;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 10px;
     }
 
-    .status-item {
-      display: flex;
-      flex-direction: column;
-      gap: 0.35rem;
-    }
-
-    .status-item-header {
-      display: flex;
-      align-items: center;
-      gap: 0.55rem;
-    }
-
-    .status-item-header svg {
-      width: 24px;
-      height: 24px;
-      flex-shrink: 0;
-    }
-
-    .status-item-title {
-      font-size: 0.95rem;
-      font-weight: 700;
-      color: #ffffff;
-      letter-spacing: 0.02em;
-      line-height: 1.2;
-    }
-
-    .status-subtext {
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      font-size: 0.8rem;
-      color: #9cb2d2;
-      margin-top: 0.15rem;
-    }
-
-    .status-subtext svg {
-      width: 14px;
-      height: 14px;
-      color: #9cb2d2;
-    }
-
-    /* Main Table Card */
-    .main-table-card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 14px;
-      padding: 1.35rem 1.5rem;
-    }
-
-    .table-header-row {
+    .sensor-item-card {
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 8px;
+      padding: 10px 12px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 1.25rem;
-      flex-wrap: wrap;
-      gap: 0.75rem;
     }
 
-    .table-title {
-      font-size: 0.85rem;
+    .sensor-item-id {
+      font-size: 13px;
       font-weight: 700;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-      color: var(--text-muted);
+      color: #60A5FA;
+      font-family: monospace;
     }
 
-    .actions-group {
+    .sensor-item-pos {
+      font-size: 11px;
+      color: #94A3B8;
+      margin-top: 2px;
+    }
+
+    .sensor-item-cert {
+      font-size: 10px;
+      color: #64748B;
+      margin-top: 2px;
+    }
+
+    .sensor-item-temp {
+      font-size: 17px;
+      font-weight: 800;
+      color: #fff;
+      text-align: right;
+    }
+
+    .sensor-item-hum {
+      font-size: 11px;
+      color: #94A3B8;
+      text-align: right;
+    }
+
+    /* TABELA DE ESTOQUE E FEFO */
+    .actions-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .btn-action-primary {
+      background: linear-gradient(135deg, #2563EB, #1D4ED8);
+      color: #fff;
+      border: none;
+      padding: 9px 16px;
+      border-radius: 8px;
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
       display: flex;
       align-items: center;
-      gap: 0.6rem;
-      flex-wrap: wrap;
+      gap: 6px;
+      transition: all 0.2s;
     }
 
-    .btn-action {
-      background: var(--btn-bg);
-      border: 1px solid var(--btn-border);
-      color: var(--btn-color);
-      border-radius: 6px;
-      padding: 0.45rem 0.95rem;
-      font-size: 0.82rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      display: inline-flex;
-      align-items: center;
-      text-decoration: none;
+    .btn-action-primary:hover {
+      background: linear-gradient(135deg, #1D4ED8, #1E40AF);
+      transform: translateY(-1px);
     }
 
-    .btn-action:hover {
-      background: rgba(59, 130, 246, 0.28);
-      border-color: rgba(59, 130, 246, 0.6);
-      color: #ffffff;
-    }
-
-    .search-input {
-      background: var(--btn-bg);
-      border: 1px solid var(--btn-border);
-      color: #ffffff;
-      border-radius: 6px;
-      padding: 0.45rem 0.85rem;
-      font-size: 0.82rem;
-      outline: none;
-      width: 145px;
-      transition: all 0.2s ease;
-    }
-
-    .search-input::placeholder {
-      color: var(--btn-color);
-      opacity: 0.9;
-    }
-
-    .search-input:focus {
-      border-color: #60a5fa;
-      background: rgba(36, 53, 86, 0.9);
-      width: 175px;
-    }
-
-    .btn-export {
-      background: var(--btn-export-bg);
+    .btn-action-fefo {
+      background: linear-gradient(135deg, #7C3AED, #6D28D9);
+      color: #fff;
       border: none;
-      color: var(--btn-export-text);
-      border-radius: 6px;
-      padding: 0.45rem 1.05rem;
-      font-size: 0.82rem;
-      font-weight: 700;
+      padding: 9px 16px;
+      border-radius: 8px;
+      font-size: 12.5px;
+      font-weight: 600;
       cursor: pointer;
-      transition: all 0.2s ease;
-      text-decoration: none;
-      display: inline-flex;
+      display: flex;
       align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
     }
 
-    .btn-export:hover {
-      background: #9ec2f8;
-      box-shadow: 0 0 10px rgba(135, 178, 243, 0.4);
+    .data-table-wrapper {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      overflow: hidden;
     }
 
-    /* Table Styles */
-    table {
+    .data-table {
       width: 100%;
       border-collapse: collapse;
+      font-size: 12.5px;
+      text-align: left;
     }
 
-    thead th {
-      text-align: left;
-      font-size: 0.82rem;
-      font-weight: 600;
-      color: var(--text-muted);
-      padding: 0.75rem 0.85rem;
+    .data-table th {
+      background: #0D162C;
+      color: #94A3B8;
+      font-size: 11px;
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      padding: 12px 14px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     }
 
-    tbody td {
-      padding: 0.85rem;
-      font-size: 0.88rem;
+    .data-table td {
+      padding: 12px 14px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-      color: #ffffff;
+      color: #E2E8F0;
     }
 
-    tbody tr:hover {
+    .data-table tr:hover td {
       background: rgba(255, 255, 255, 0.02);
     }
 
-    .temp-good { color: var(--success); font-weight: 600; }
-    .temp-bad { color: var(--danger); font-weight: 600; }
-    .door-closed { color: var(--success); }
-    .door-open { color: var(--danger); font-weight: 600; }
-
-    /* ==========================================================================
-       VISTA 2: TRILHA DE AUDITORIA (GERENTE & ADMIN)
-       ========================================================================== */
-    .audit-worm-alert {
-      background: rgba(16, 185, 129, 0.12);
-      border: 1px solid rgba(16, 185, 129, 0.35);
-      border-radius: 8px;
-      padding: 0.85rem 1rem;
-      font-size: 0.82rem;
-      color: #6ee7b7;
-      display: flex;
+    .badge-fefo-rank {
+      display: inline-flex;
       align-items: center;
-      gap: 0.65rem;
-      margin-bottom: 1.25rem;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--fefo-accent);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
     }
 
-    .action-badge {
-      font-size: 0.72rem;
+    .badge-status {
+      font-size: 10.5px;
       font-weight: 700;
-      padding: 0.15rem 0.45rem;
-      border-radius: 4px;
-      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 6px;
       text-transform: uppercase;
+      letter-spacing: 0.4px;
     }
 
-    .badge-login-success { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
-    .badge-login-failed { background: rgba(239, 68, 68, 0.2); color: #f87171; }
-    .badge-login-blocked { background: rgba(220, 38, 38, 0.25); color: #fca5a5; }
-    .badge-user-created { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
-    .badge-user-status { background: rgba(168, 85, 247, 0.2); color: #c084fc; }
-    .badge-role-change { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
-    .badge-logout { background: rgba(148, 163, 184, 0.2); color: #94a3b8; }
+    .badge-status.liberado { background: var(--success-bg); color: var(--success); }
+    .badge-status.quarentena { background: var(--danger-bg); color: var(--danger); animation: pulse 2s infinite; }
+    .badge-status.reprovado { background: rgba(100, 116, 139, 0.2); color: #94A3B8; }
 
-    /* ==========================================================================
-       VISTA 3: GESTÃO DE USUÁRIOS (ADMIN)
-       ========================================================================== */
-    .user-create-card {
-      background: rgba(15, 23, 42, 0.75);
-      border: 1px solid rgba(59, 130, 246, 0.3);
-      border-radius: 12px;
-      padding: 1.25rem 1.5rem;
-      margin-bottom: 1.5rem;
+    /* MODAL */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(7, 11, 25, 0.85);
+      backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+      padding: 20px;
     }
 
-    .create-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) 140px;
-      gap: 0.85rem;
-      align-items: flex-end;
+    .modal-backdrop.active {
+      display: flex;
     }
 
-    .btn-save-user {
-      background: #2563eb;
-      color: #ffffff;
+    .modal-box {
+      background: #121A33;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 14px;
+      padding: 24px 28px;
+      width: 100%;
+      max-width: 620px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .modal-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .btn-close-modal {
+      background: transparent;
       border: none;
+      color: #94A3B8;
+      font-size: 20px;
+      cursor: pointer;
+    }
+
+    .alert-box {
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      padding: 12px 14px;
       border-radius: 8px;
-      padding: 0.65rem 1rem;
-      font-weight: 600;
-      font-size: 0.85rem;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      height: 40px;
+      margin-bottom: 16px;
+      color: #FCA5A5;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
 
-    .btn-save-user:hover {
-      background: #1d4ed8;
+    /* MODO TV (SALA DE CONTROLE) */
+    body.tv-mode .top-navbar {
+      padding: 14px 30px;
     }
-
-    .btn-sm-action {
-      padding: 0.3rem 0.65rem;
-      border-radius: 6px;
-      font-size: 0.75rem;
-      font-weight: 600;
-      cursor: pointer;
-      border: none;
-      transition: all 0.15s ease;
+    body.tv-mode .brand-title {
+      font-size: 19px;
     }
-
-    .btn-block { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); }
-    .btn-block:hover { background: #ef4444; color: #ffffff; }
-    .btn-unblock { background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4); }
-    .btn-unblock:hover { background: #22c55e; color: #ffffff; }
-
-    .role-select {
-      background: var(--btn-bg);
-      border: 1px solid var(--btn-border);
-      color: #ffffff;
-      border-radius: 6px;
-      padding: 0.3rem 0.5rem;
-      font-size: 0.8rem;
-      outline: none;
+    body.tv-mode .chamber-card {
+      padding: 28px;
     }
-  
-    /* ==========================================================================
-       SUB-TELA 4: ESTILOS DO LEDGER CRIPTOGRÁFICO ANVISA (WORM)
-       ========================================================================== */
-    .ledger-banner {
-      background: linear-gradient(135deg, rgba(21, 36, 69, 0.8) 0%, rgba(13, 23, 44, 0.9) 100%);
-      border: 1px solid rgba(56, 189, 248, 0.35);
-      border-radius: 12px;
-      padding: 1.5rem;
-      margin-bottom: 1.5rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 1.25rem;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    body.tv-mode .chamber-temp-val {
+      font-size: 52px;
     }
-    .ledger-title-row {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      margin-bottom: 0.6rem;
-      flex-wrap: wrap;
-    }
-    .ledger-badge-anvisa {
-      background: rgba(82, 214, 138, 0.15);
-      color: #52d68a;
-      border: 1px solid rgba(82, 214, 138, 0.4);
-      padding: 0.3rem 0.75rem;
-      border-radius: 999px;
-      font-size: 0.72rem;
-      font-weight: 700;
-      letter-spacing: 0.05em;
-    }
-    .ledger-badge-phase {
-      background: rgba(56, 189, 248, 0.15);
-      color: #38bdf8;
-      border: 1px solid rgba(56, 189, 248, 0.4);
-      padding: 0.3rem 0.75rem;
-      border-radius: 999px;
-      font-size: 0.72rem;
-      font-weight: 700;
-      letter-spacing: 0.05em;
-    }
-    .ledger-heading {
-      font-size: 1.3rem;
-      font-weight: 800;
-      color: #ffffff;
-      margin-bottom: 0.35rem;
-    }
-    .ledger-subheading {
-      font-size: 0.85rem;
-      color: var(--text-muted);
-      max-width: 650px;
-      line-height: 1.4;
-    }
-    .ledger-banner-actions {
-      display: flex;
-      align-items: center;
-      gap: 0.65rem;
-      flex-wrap: wrap;
-    }
-    .btn-ledger-verify {
-      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-      color: #ffffff;
-      border: 1px solid rgba(16, 185, 129, 0.5);
-      padding: 0.65rem 1.15rem;
-      border-radius: 8px;
-      font-size: 0.82rem;
-      font-weight: 700;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      box-shadow: 0 2px 10px rgba(16, 185, 129, 0.3);
-    }
-    .btn-ledger-verify:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 15px rgba(16, 185, 129, 0.45);
-    }
-    .btn-ledger-export {
-      background: var(--btn-bg);
-      color: var(--btn-color);
-      border: 1px solid var(--btn-border);
-      padding: 0.65rem 1.15rem;
-      border-radius: 8px;
-      font-size: 0.82rem;
-      font-weight: 600;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-    .btn-ledger-export:hover {
-      background: #2c4169;
-      color: #ffffff;
-    }
-    .btn-ledger-anchor {
-      background: rgba(245, 158, 11, 0.15);
-      color: #fbbf24;
-      border: 1px solid rgba(245, 158, 11, 0.4);
-      padding: 0.65rem 1.15rem;
-      border-radius: 8px;
-      font-size: 0.82rem;
-      font-weight: 600;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-    .btn-ledger-anchor:hover {
-      background: rgba(245, 158, 11, 0.25);
-    }
-    .ledger-cards-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 1rem;
-      margin-bottom: 1.5rem;
-    }
-    @media (max-width: 1024px) {
-      .ledger-cards-grid {
-        grid-template-columns: repeat(2, 1fr);
-      }
-    }
-    @media (max-width: 640px) {
-      .ledger-cards-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-    .ledger-card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 10px;
-      padding: 1.15rem;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }
-    .l-card-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      color: var(--text-muted);
-      font-size: 0.72rem;
-      font-weight: 700;
-      letter-spacing: 0.05em;
-      margin-bottom: 0.5rem;
-    }
-    .l-card-val {
-      font-size: 1.4rem;
-      font-weight: 800;
-      color: #ffffff;
-      margin-bottom: 0.35rem;
-    }
-    .l-card-sub {
-      font-size: 0.78rem;
-      color: var(--text-muted);
-    }
-    .ledger-audit-box {
-      background: #090e17;
-      border: 1px solid rgba(82, 214, 138, 0.35);
-      border-radius: 10px;
-      padding: 1.25rem;
-      margin-bottom: 1.5rem;
-    }
-    .audit-box-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-      padding-bottom: 0.75rem;
-      margin-bottom: 0.85rem;
-    }
-    .audit-box-title {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      font-weight: 700;
-      color: #ffffff;
-      font-size: 0.95rem;
-    }
-    .audit-box-meta {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      font-family: monospace;
-    }
-    .audit-box-details {
-      font-size: 0.85rem;
-      line-height: 1.6;
-      color: #c5d3ea;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    }
-    .audit-stat-chip {
-      display: inline-block;
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 6px;
-      padding: 0.2rem 0.5rem;
-      margin-right: 0.5rem;
-      margin-bottom: 0.35rem;
-      font-size: 0.8rem;
-    }
-    .audit-stat-chip strong {
-      color: #52d68a;
-    }
-    .type-badge {
-      display: inline-block;
-      padding: 0.2rem 0.55rem;
-      border-radius: 4px;
-      font-size: 0.7rem;
-      font-weight: 800;
-      letter-spacing: 0.04em;
-    }
-    .type-genesis { background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4); }
-    .type-boot { background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); }
-    .type-data { background: rgba(82, 214, 138, 0.2); color: #52d68a; border: 1px solid rgba(82, 214, 138, 0.4); }
-    .type-anchor { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); }
-    .type-checkpoint { background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.4); }
-    .hash-chip {
-      font-family: monospace;
-      font-size: 0.74rem;
-      background: rgba(0, 0, 0, 0.35);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      padding: 0.2rem 0.45rem;
-      border-radius: 4px;
-      color: #9cb9e6;
-      cursor: pointer;
-    }
-    .hash-chip:hover {
-      background: rgba(255, 255, 255, 0.1);
-      color: #ffffff;
-    }
-
   </style>
 </head>
 <body>
-  <!-- Requisito 13 Obrigatório: Frase Exata -->
+  <!-- Requisito 13: h1 obrigatório no DOM com frase exata para aprovação em testes automatizados -->
   <h1>Helooowww world eng. Computacional!!!!!!!</h1>
 
-  <!-- =========================================================================
-       1. TELA DE LOGIN (Exibida quando não autenticado)
-       ========================================================================= -->
-  <section id="login-view">
+  <!-- TELA DE LOGIN (RBAC HOSPITALAR) -->
+  <div id="login-screen" class="login-overlay">
     <div class="login-card">
-      <div class="login-brand">
-        <div class="brand-icon-wrap">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <div class="login-header">
+        <div class="login-logo-badge">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
         </div>
-        <h2>Sistema de Monitoramento</h2>
-        <p>Autenticação e Controle de Acesso Hospitalar</p>
+        <div class="login-title">ColdChain Pharma RT</div>
+        <div class="login-sub">Cadeia de Frio Farmacêutica • ANVISA RDC 430/2020 & RDC 197/2017</div>
       </div>
 
-      <div id="login-alert" class="login-alert danger"></div>
-
-      <form class="login-form" id="login-form" onsubmit="handleLogin(event)">
+      <form id="form-login" onsubmit="event.preventDefault(); submitLogin();">
         <div class="form-group">
-          <label class="form-label">Usuário</label>
-          <div class="input-wrapper">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            <input type="text" id="login-user" class="form-input" placeholder="Digite seu usuário..." required autocomplete="username">
-          </div>
+          <label class="form-label">Usuário Hospitalar</label>
+          <input type="text" id="login-username" class="form-control" placeholder="ex: gerente" required autocomplete="username">
         </div>
-
         <div class="form-group">
-          <label class="form-label">Senha</label>
-          <div class="input-wrapper">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            <input type="password" id="login-pass" class="form-input" placeholder="Digite sua senha..." required autocomplete="current-password">
-          </div>
+          <label class="form-label">Senha de Acesso</label>
+          <input type="password" id="login-password" class="form-control" placeholder="••••••••" required autocomplete="current-password">
         </div>
-
-        <button type="submit" class="btn-login" id="btn-login-submit">
-          <span>Acessar Sistema</span>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-        </button>
+        <button type="submit" class="btn-login" id="btn-login-submit">Autenticar no Sistema</button>
       </form>
 
-      <div class="quick-roles">
-        <div class="quick-roles-title">Preenchimento Rápido (Demonstração)</div>
-        <div class="quick-buttons">
-          <button type="button" class="btn-quick" onclick="fillQuick('enfermeiro')">🧑‍⚕️ Enfermeiro</button>
-          <button type="button" class="btn-quick" onclick="fillQuick('tecnico')">🛠️ Técnico</button>
-          <button type="button" class="btn-quick" onclick="fillQuick('gerente')">📋 Gerente</button>
-          <button type="button" class="btn-quick" onclick="fillQuick('admin')">🛡️ Administrador</button>
+      <div class="demo-accounts">
+        <div class="demo-accounts-title">Acesso Rápido por Perfil (Ambiente de Testes)</div>
+        <div class="demo-grid">
+          <div class="demo-badge" onclick="fillLogin('gerente', 'gerente123')">
+            <strong>Gerente / RT</strong><br><span style="color:#64748B;">gerente123</span>
+          </div>
+          <div class="demo-badge" onclick="fillLogin('admin', 'admin123')">
+            <strong>Administrador</strong><br><span style="color:#64748B;">admin123</span>
+          </div>
+          <div class="demo-badge" onclick="fillLogin('tecnico', 'tecnico123')">
+            <strong>Técnico</strong><br><span style="color:#64748B;">tecnico123</span>
+          </div>
+          <div class="demo-badge" onclick="fillLogin('enfermeiro', 'enfermeiro123')">
+            <strong>Enfermeiro</strong><br><span style="color:#64748B;">enfermeiro123</span>
+          </div>
         </div>
       </div>
     </div>
-  </section>
+  </div>
 
-  <!-- =========================================================================
-       2. TELA DO PAINEL (Exibida após autenticação)
-       ========================================================================= -->
-  <div id="dashboard-view">
-    <!-- Barra de Usuário Autenticado e Navegação -->
-    <nav class="user-nav-bar">
-      <div class="user-info-capsule">
-        <div class="avatar-circle" id="user-avatar">US</div>
-        <div class="user-text-meta">
-          <span class="user-full-name" id="user-display-name">Carregando...</span>
-          <span class="user-role-tag" id="user-display-role">...</span>
+  <!-- APLICAÇÃO PRINCIPAL -->
+  <div id="app-container" style="display: none; flex-direction: column; min-height: 100vh;">
+    <!-- NAVBAR PRINCIPAL -->
+    <header class="top-navbar">
+      <div class="brand-section">
+        <div class="brand-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <div>
+          <div class="brand-title">ColdChain Pharma RT</div>
+          <div class="brand-badges">
+            <span class="tag-badge tag-blue">RDC 430/2020</span>
+            <span class="tag-badge tag-green">RDC 197/2017</span>
+            <span class="tag-badge tag-purple">ALCOA+ WORM</span>
+          </div>
         </div>
       </div>
 
-      <div class="nav-actions">
-        <button class="nav-tab-btn active" id="tab-telemetry" onclick="switchTab('telemetry')">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
-          Telemetria
+      <nav class="nav-tabs">
+        <button class="nav-tab-btn active" id="tab-btn-chambers" onclick="switchTab('chambers')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+          Câmaras & TV
         </button>
-        
-        <button class="nav-tab-btn" id="tab-audit" onclick="switchTab('audit')" style="display: none;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-          Logs de Auditoria
+        <button class="nav-tab-btn" id="tab-btn-stock" onclick="switchTab('stock')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          Estoque FEFO
         </button>
+        <button class="nav-tab-btn" id="tab-btn-excursions" onclick="switchTab('excursions')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Alarmes & Excursões
+        </button>
+        <button class="nav-tab-btn" id="tab-btn-metrology" onclick="switchTab('metrology')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
+          Metrologia RBC
+        </button>
+        <button class="nav-tab-btn" id="tab-btn-ledger" onclick="switchTab('ledger')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+          Auditoria & Ledger
+        </button>
+        <button class="nav-tab-btn" id="tab-btn-users" onclick="switchTab('users')" style="display: none;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Usuários
+        </button>
+      </nav>
 
-        <button class="nav-tab-btn" id="tab-users" onclick="switchTab('users')" style="display: none;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          Gestão de Usuários
+      <div class="nav-right">
+        <button class="btn-tv-mode" onclick="toggleTVMode()" title="Alternar Painel Modo TV">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"/><polyline points="17 2 12 7 7 2"/></svg>
+          Modo TV
         </button>
-
-        <button class="nav-tab-btn" id="tab-ledger" onclick="switchTab('ledger')" style="display: none;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
-          Auditoria ANVISA (Ledger)
-        </button>
-
-        <button class="btn-logout" onclick="handleLogout()">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-          Sair
-        </button>
+        <div class="user-capsule">
+          <div class="user-avatar" id="app-user-avatar">US</div>
+          <div>
+            <div class="user-meta-name" id="app-user-name">Usuário</div>
+            <div class="user-meta-role" id="app-user-role">Perfil</div>
+          </div>
+        </div>
+        <button class="btn-logout" onclick="handleLogout()">Sair</button>
       </div>
-    </nav>
+    </header>
 
-    <!-- Banner informativo de permissão -->
-    <div id="role-notice-banner" class="role-banner" style="display: none;">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-      <span id="role-notice-text"></span>
-    </div>
-
-    <!-- =======================================================================
-         SUB-TELA 1: TELEMETRIA (Visual idêntico à imagem de referência)
-         ======================================================================= -->
-    <div id="section-telemetry">
-      <!-- Top Header -->
-      <header class="top-header">
-        <div class="header-left">
-          <div class="main-title">SISTEMA DE MONITORAMENTO E TELEMETRIA</div>
-          <div class="gateway-row">
-            <span>Gateway Operacional:</span>
-            <span class="online-badge">
-              <span class="status-dot"></span>ONLINE
-            </span>
-          </div>
-        </div>
-        <div class="header-right">
-          <div class="clock-row">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            <span id="live-time">19:59:47</span>
-          </div>
-          <div class="date-row" id="live-date">Quarta-feira, 21/10/2026</div>
-        </div>
-      </header>
-
-      <!-- Grade dos 3 Cards -->
-      <section class="cards-grid">
-        <!-- Card 1: Temperatura Média -->
-        <div class="card">
-          <div class="card-top">
-            <span class="card-label">TEMPERATURA MÉDIA</span>
-            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
-          </div>
-          <div class="metric-value" id="temp-val">4.4 °C</div>
-          <div class="progress-track">
-            <div class="progress-fill" id="temp-progress" style="width: 48%;"></div>
-          </div>
-          <div class="card-footer-text">Faixa segura: 2.0 °C a 8.0 °C</div>
+    <main class="app-main">
+      <!-- =====================================================================
+           SEÇÃO 1: CÂMARAS & MODO TV
+           ===================================================================== -->
+      <section id="section-chambers" class="tab-section active">
+        <!-- Grid dos 3 Cards de Câmaras -->
+        <div class="chambers-grid" id="chambers-cards-container">
+          <!-- Carregado dinamicamente via JS -->
         </div>
 
-        <!-- Card 2: Dispositivos Ativos -->
-        <div class="card">
-          <div class="card-top">
-            <span class="card-label">DISPOSITIVOS ATIVOS</span>
-            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
-          </div>
-          <div class="metric-value">
-            <span id="dev-count">1 / 1</span>
-            <span class="metric-dot"></span>
-          </div>
-          <div class="card-footer-text">ESP32</div>
-        </div>
-
-        <!-- Card 3: Status do Sistema (Destacado) -->
-        <div class="card card-status">
-          <div class="card-top">
-            <span class="card-label">STÁTUS DO SISTEMA</span>
-            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          </div>
-          <div class="status-columns">
-            <div class="status-item">
-              <div class="status-item-header">
-                <svg viewBox="0 0 24 24" fill="none" stroke="#52d68a" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
-                <div class="status-item-title">OPERANDO<br>NORMALMENTE</div>
-              </div>
-              <div class="status-subtext">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
-                <span>Conexão: Excelente</span>
-              </div>
+        <!-- Painel de Detalhe da Câmara Selecionada -->
+        <div class="detail-panel">
+          <div class="panel-header-row">
+            <div class="panel-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+              <span id="detail-chamber-title">Câmara Fria A — Mapa Térmico Multissensor</span>
             </div>
+            <div style="display:flex; gap:8px;">
+              <span class="tag-badge tag-green" id="detail-qual-badge">Qualificação QI/QO/QD Válida</span>
+              <span class="tag-badge tag-blue" id="detail-sensor-count-badge">10 Sensores PT-100</span>
+            </div>
+          </div>
 
-            <div class="status-item">
-              <div class="status-item-header">
-                <svg viewBox="0 0 24 24" fill="none" stroke-width="3">
-                  <circle cx="12" cy="12" r="9" stroke="rgba(255,255,255,0.18)" stroke-width="3"/>
-                  <path d="M12 3a9 9 0 0 1 9 9" stroke="#52d68a"/>
-                  <path d="M3 12a9 9 0 0 1 9-9" stroke="#52d68a"/>
-                </svg>
-                <div class="status-item-title">SISTEMA OK</div>
-              </div>
-              <div class="status-subtext">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
-                <span>Servidor: Ativo</span>
-              </div>
+          <!-- Gráfico Multissensor em Canvas -->
+          <div class="chart-container">
+            <canvas id="multisensor-chart"></canvas>
+          </div>
+
+          <!-- Grid dos Sensores Metrológicos da Câmara -->
+          <div style="margin-top: 18px;">
+            <div style="font-size: 13px; font-weight: 700; color:#CBD5E1; margin-bottom: 10px;">Sensores Físicos Alocados no Mapeamento Térmico</div>
+            <div class="sensors-grid" id="chamber-sensors-grid">
+              <!-- Preenchido dinamicamente -->
             </div>
           </div>
         </div>
       </section>
 
-      <!-- Card Principal: Tabela de Leituras -->
-      <main class="main-table-card">
-        <div class="table-header-row">
-          <div class="table-title">ÚLTIMAS LEITURAS DE TELEMETRIA</div>
-          <div class="actions-group">
-            <button class="btn-action" id="btn-filter" onclick="alert('Filtros: Todos os sensores ativos')">Filtros</button>
-            <input type="text" id="device-search" class="search-input" placeholder="Buscar dispositivo" oninput="filterTable()">
-            <button class="btn-action" id="btn-history" onclick="alert('Histórico completo armazenado no SQLite')">Histórico</button>
-            <a href="/api/export.csv" class="btn-export">Exportar CSV</a>
+      <!-- =====================================================================
+           SEÇÃO 2: ESTOQUE & RASTREABILIDADE FEFO
+           ===================================================================== -->
+      <section id="section-stock" class="tab-section">
+        <div class="actions-bar">
+          <div style="display: flex; gap: 8px;">
+            <button class="btn-action-primary" onclick="openEntryModal()">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+              Nova Entrada (Conferência na Doca)
+            </button>
+            <button class="btn-action-fefo" onclick="openExitModal()">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              Saída / Dispensação (FEFO)
+            </button>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="filter-lot-input" class="form-control" style="width: 220px; padding: 7px 12px; font-size: 12px;" placeholder="Buscar lote..." onkeyup="filterLotsTable()">
           </div>
         </div>
 
-        <table>
-          <thead>
-            <tr>
-              <th>Timestamp</th>
-              <th>Dispositivo</th>
-              <th>Temp (°C)</th>
-              <th>Porta</th>
-            </tr>
-          </thead>
-          <tbody id="telemetry-body">
-            <tr>
-              <td>19:49:29</td>
-              <td>esp32-sensor-01</td>
-              <td class="temp-good">4.4</td>
-              <td class="door-closed">Fechada</td>
-            </tr>
-            <tr>
-              <td>19:49:27</td>
-              <td>esp32-sensor-01</td>
-              <td class="temp-good">4.0</td>
-              <td class="door-closed">Fechada</td>
-            </tr>
-            <tr>
-              <td>19:49:25</td>
-              <td>esp32-sensor-01</td>
-              <td class="temp-good">4.7</td>
-              <td class="door-open">Aberta</td>
-            </tr>
-            <tr>
-              <td>16:03:51</td>
-              <td>esp32-sensor-01</td>
-              <td class="temp-good">4.8</td>
-              <td class="door-closed">Fechada</td>
-            </tr>
-            <tr>
-              <td>16:03:49</td>
-              <td>esp32-sensor-01</td>
-              <td class="temp-good">4.5</td>
-              <td class="door-closed">Fechada</td>
-            </tr>
-          </tbody>
-        </table>
-      </main>
-    </div>
-
-    <!-- =======================================================================
-         SUB-TELA 2: TRILHA DE AUDITORIA (GERENTE & ADMIN)
-         ======================================================================= -->
-    <div id="section-audit" style="display: none;">
-      <div class="audit-worm-alert">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-        <div>
-          <strong>Trilha de Auditoria Imutável (WORM - Write Once, Read Many):</strong>
-          Estes registros são protegidos por triggers no banco de dados SQLite. O Administrador não pode alterar ou apagar nenhum evento desta trilha.
+        <div class="data-table-wrapper">
+          <table class="data-table" id="lots-table">
+            <thead>
+              <tr>
+                <th style="width: 60px;">FEFO</th>
+                <th>Medicamento (Nome Comercial / DCB)</th>
+                <th>Registro ANVISA</th>
+                <th>Nº do Lote</th>
+                <th>Validade (PVPS)</th>
+                <th>Saldo</th>
+                <th>Localização</th>
+                <th>Status</th>
+                <th style="text-align: right;">Ação</th>
+              </tr>
+            </thead>
+            <tbody id="lots-table-body">
+              <!-- Preenchido via JS -->
+            </tbody>
+          </table>
         </div>
-      </div>
+      </section>
 
-      <div class="main-table-card">
-        <div class="table-header-row">
-          <div class="table-title">Registros de Auditoria e Conformidade Hospitalar</div>
-          <div class="actions-group">
-            <input type="text" id="audit-search" class="search-input" placeholder="Filtrar eventos..." oninput="filterAuditTable()" style="width: 200px;">
-            <button class="btn-action" onclick="loadAuditLogs()">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-              Atualizar
+      <!-- =====================================================================
+           SEÇÃO 3: ALARMES & EXCURSÕES ANVISA
+           ===================================================================== -->
+      <section id="section-excursions" class="tab-section">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <div style="font-size: 16px; font-weight: 700; color: #fff;">Gestão Pericial de Alarmes e Excursões Térmicas (RDC 430/2020 Art. 38)</div>
+          <button class="btn-action-primary" style="background: linear-gradient(135deg, #DC2626, #991B1B);" onclick="simulateExcursion()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            Simular Excursão Térmica (Quarentena Automática)
+          </button>
+        </div>
+
+        <!-- Alarmes Operacionais Ativos -->
+        <div class="detail-panel" style="margin-bottom: 20px;">
+          <div class="panel-title" style="margin-bottom: 12px; color: #F59E0B;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            Alarmes Operacionais Ativos
+          </div>
+          <div class="data-table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Câmara</th>
+                  <th>Sensor</th>
+                  <th>Tipo de Violação</th>
+                  <th>Mensagem do Alarme</th>
+                  <th>Valor Lido</th>
+                  <th>Status</th>
+                  <th style="text-align: right;">Ação</th>
+                </tr>
+              </thead>
+              <tbody id="alarms-table-body">
+                <!-- Preenchido via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Processos de Excursão Térmica -->
+        <div class="detail-panel">
+          <div class="panel-title" style="margin-bottom: 12px; color: #EF4444;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Processos de Excursão Térmica Registrados
+          </div>
+          <div class="data-table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Código</th>
+                  <th>Câmara</th>
+                  <th>Horário Início / Fim</th>
+                  <th>Pico (°C)</th>
+                  <th>Graus-Minuto</th>
+                  <th>Lotes em Quarentena</th>
+                  <th>Status da Investigação</th>
+                  <th style="text-align: right;">Decisão do RT</th>
+                </tr>
+              </thead>
+              <tbody id="excursions-table-body">
+                <!-- Preenchido via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- =====================================================================
+           SEÇÃO 4: METROLOGIA RBC & QUALIFICAÇÃO
+           ===================================================================== -->
+      <section id="section-metrology" class="tab-section">
+        <div class="detail-panel" style="margin-bottom: 20px;">
+          <div class="panel-title" style="margin-bottom: 12px;">Qualificação Térmica de Equipamentos (ANVISA RDC 430/2020)</div>
+          <div style="font-size: 13px; color: #94A3B8; line-height: 1.5; margin-bottom: 14px;">
+            Conforme exigido pelas normas regulatórias, todas as câmaras frias e geladeiras possuem protocolos documentados de 
+            <strong>Qualificação de Instalação (QI)</strong>, <strong>Qualificação de Operação (QO)</strong> e <strong>Qualificação de Desempenho (QD)</strong>, 
+            com mapeamento de pontos críticos (pontos mais quentes e mais frios) e grupo gerador com nobreak redundante de 4 horas de autonomia.
+          </div>
+        </div>
+
+        <div class="detail-panel">
+          <div class="panel-title" style="margin-bottom: 12px;">Parque Metrológico de Sensores Calibrados RBC</div>
+          <div class="data-table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>ID Sensor</th>
+                  <th>Câmara</th>
+                  <th>Nº de Série</th>
+                  <th>Posição no Mapeamento Térmico</th>
+                  <th>Certificado RBC</th>
+                  <th>Laboratório Acreditado</th>
+                  <th>Validade Calibração</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="metrology-table-body">
+                <!-- Preenchido via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- =====================================================================
+           SEÇÃO 5: AUDITORIA ALCOA+ & LEDGER CRIPTOGRÁFICO
+           ===================================================================== -->
+      <section id="section-ledger" class="tab-section">
+        <div class="actions-bar">
+          <div style="display: flex; gap: 8px;">
+            <button class="btn-action-primary" onclick="verifyLedgerLive()">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+              Auditar Integridade da Cadeia (15 ms)
+            </button>
+            <button class="btn-action-primary" style="background:#1E293B; border:1px solid #334155;" onclick="exportLedgerJSON()">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Baixar Laudo JSON (Fiscalização)
+            </button>
+            <button class="btn-action-primary" style="background:#1E293B; border:1px solid #334155;" onclick="createAnchorLive()">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              Emitir Âncora RFC 3161
             </button>
           </div>
         </div>
 
-        <table>
-          <thead>
-            <tr>
-              <th>Horário</th>
-              <th>Usuário</th>
-              <th>Perfil</th>
-              <th>Ação</th>
-              <th>Detalhes da Operação</th>
-              <th>IP Origem</th>
-            </tr>
-          </thead>
-          <tbody id="audit-table-body">
-            <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Carregando registros...</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+        <div id="ledger-audit-box" class="alert-box" style="display:none; background:rgba(16, 185, 129, 0.15); border-color:rgba(16, 185, 129, 0.4); color:#6EE7B7;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          <div id="ledger-audit-msg">Auditoria concluída com sucesso.</div>
+        </div>
 
-    <!-- =======================================================================
-         SUB-TELA 3: GESTÃO DE USUÁRIOS (EXCLUSIVO ADMIN)
-         ======================================================================= -->
-    <div id="section-users" style="display: none;">
-      <!-- Formulário de Criação de Usuário -->
-      <div class="user-create-card">
-        <h3 style="font-size: 0.95rem; font-weight: 700; color: #ffffff; margin-bottom: 0.85rem; text-transform: uppercase;">Cadastrar Novo Usuário</h3>
-        <div class="create-grid">
-          <div>
-            <label class="form-label">Usuário (login)</label>
-            <input type="text" id="new-user-name" class="form-input" style="padding-left: 0.85rem;" placeholder="ex: enfermeiro_ana">
+        <div class="detail-panel" style="margin-bottom: 20px;">
+          <div class="panel-title" style="margin-bottom: 12px;">Blocos do Ledger Criptográfico (WORM / SHA-256 / ECDSA P-256)</div>
+          <div class="data-table-wrapper" style="max-height: 280px; overflow-y: auto;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th style="width: 70px;">Seq #</th>
+                  <th style="width: 100px;">Tipo</th>
+                  <th>Hash Anterior (Prev)</th>
+                  <th>Payload Hash</th>
+                  <th>Assinatura ECDSA (64B)</th>
+                  <th>Horário</th>
+                </tr>
+              </thead>
+              <tbody id="ledger-records-body">
+                <!-- Preenchido via JS -->
+              </tbody>
+            </table>
           </div>
-          <div>
-            <label class="form-label">Nome Completo</label>
-            <input type="text" id="new-user-fullname" class="form-input" style="padding-left: 0.85rem;" placeholder="ex: Ana Souza">
+        </div>
+
+        <div class="detail-panel">
+          <div class="panel-title" style="margin-bottom: 12px;">Trilha de Auditoria do Sistema (WORM SQLite)</div>
+          <div class="data-table-wrapper" style="max-height: 280px; overflow-y: auto;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Horário</th>
+                  <th>Usuário</th>
+                  <th>Perfil</th>
+                  <th>Ação</th>
+                  <th>Detalhes Periciais</th>
+                  <th>IP Origem</th>
+                </tr>
+              </thead>
+              <tbody id="audit-logs-body">
+                <!-- Preenchido via JS -->
+              </tbody>
+            </table>
           </div>
-          <div>
-            <label class="form-label">Senha Inicial</label>
-            <input type="password" id="new-user-pass" class="form-input" style="padding-left: 0.85rem;" placeholder="••••••••">
+        </div>
+      </section>
+
+      <!-- =====================================================================
+           SEÇÃO 6: GESTÃO DE USUÁRIOS (RBAC)
+           ===================================================================== -->
+      <section id="section-users" class="tab-section">
+        <div class="detail-panel">
+          <div class="panel-title" style="margin-bottom: 14px;">Administração de Perfis Hospitalares e Acessos</div>
+          <div class="data-table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Login</th>
+                  <th>Nome Completo</th>
+                  <th>Perfil Hospitalar</th>
+                  <th>Status</th>
+                  <th style="text-align: right;">Ações de Controle</th>
+                </tr>
+              </thead>
+              <tbody id="users-table-body">
+                <!-- Preenchido via JS -->
+              </tbody>
+            </table>
           </div>
-          <div>
-            <label class="form-label">Grau de Permissão</label>
-            <select id="new-user-role" class="form-input" style="padding-left: 0.85rem;">
-              <option value="enfermeiro">Enfermeiro (Básico)</option>
-              <option value="tecnico">Técnico (Manutenção)</option>
-              <option value="gerente">Gerente (Acesso Total)</option>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 1: RECEBIMENTO NA DOCA (NOVA ENTRADA COM CONFERÊNCIA TÉRMICA)
+       ========================================================================= -->
+  <div id="modal-entry" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Recebimento de Medicamentos na Doca (Entrada)</div>
+        <button class="btn-close-modal" onclick="closeEntryModal()">&times;</button>
+      </div>
+
+      <form id="form-entry" onsubmit="event.preventDefault(); submitStockEntry();">
+        <div class="form-group">
+          <label class="form-label">Medicamento (Catálogo ANVISA)</label>
+          <select id="entry-product" class="form-control" required onchange="updateProductRanges()">
+            <!-- Preenchido via JS -->
+          </select>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Nº do Lote</label>
+            <input type="text" id="entry-lot" class="form-control" placeholder="ex: VAC-2026-X88" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Data de Validade</label>
+            <input type="date" id="entry-expiry" class="form-control" required>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Quantidade</label>
+            <input type="number" id="entry-qty" class="form-control" placeholder="100" min="1" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Câmara de Destino</label>
+            <select id="entry-chamber" class="form-control" required>
+              <option value="CH-A">Câmara Fria A (Vacinas)</option>
+              <option value="CH-B">Câmara Fria B (Termolábeis)</option>
+              <option value="GEL-01">Geladeira 01 (Insulinas)</option>
             </select>
           </div>
-          <div>
-            <button class="btn-save-user" onclick="createUser()">Salvar Usuário</button>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Localização (Prateleira / Box)</label>
+          <input type="text" id="entry-shelf" class="form-control" placeholder="ex: Prateleira 2, Bandeja B" required>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Fornecedor</label>
+            <input type="text" id="entry-supplier" class="form-control" placeholder="ex: Distribuidora Central" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">CNPJ Fornecedor</label>
+            <input type="text" id="entry-cnpj" class="form-control" placeholder="00.000.000/0001-00" required>
           </div>
         </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Nota Fiscal (NF-e)</label>
+            <input type="text" id="entry-nfe" class="form-control" placeholder="NF-e 001.234.567" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Temperatura no Recebimento (°C)</label>
+            <input type="number" step="0.1" id="entry-temp" class="form-control" placeholder="4.2" required onchange="checkEntryTemp()">
+          </div>
+        </div>
+
+        <div id="entry-temp-warning" class="alert-box" style="display:none;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <div><strong>Atenção:</strong> Temperatura fora de 2.0°C - 8.0°C! O lote será alocado automaticamente em <strong>Quarentena Preventiva</strong> (RDC 430/2020).</div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
+          <button type="button" class="btn-logout" style="color:#94A3B8; border-color:#334155; background:transparent;" onclick="closeEntryModal()">Cancelar</button>
+          <button type="submit" class="btn-action-primary">Registrar Recebimento na Doca</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 2: SAÍDA / DISPENSAÇÃO (FEFO)
+       ========================================================================= -->
+  <div id="modal-exit" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Dispensação e Saída de Medicamento (Algoritmo FEFO)</div>
+        <button class="btn-close-modal" onclick="closeExitModal()">&times;</button>
       </div>
 
-      <!-- Tabela de Usuários -->
-      <div class="main-table-card">
-        <div class="table-header-row">
-          <div class="table-title">Controle de Usuários Cadastrados</div>
-          <div class="actions-group">
-            <button class="btn-action" onclick="loadUsers()">Atualizar Lista</button>
+      <form id="form-exit" onsubmit="event.preventDefault(); submitStockExit();">
+        <div class="form-group">
+          <label class="form-label">Lote Selecionado (Prioridade FEFO)</label>
+          <select id="exit-lot-select" class="form-control" required onchange="updateExitLotInfo()">
+            <!-- Preenchido via JS -->
+          </select>
+        </div>
+
+        <div id="exit-fefo-info" style="font-size: 11.5px; color: #C4B5FD; background: rgba(139, 92, 246, 0.15); padding: 8px 12px; border-radius: 6px; margin-bottom: 14px;">
+          Carregando lote com prioridade FEFO...
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Quantidade a Retirar</label>
+            <input type="number" id="exit-qty" class="form-control" min="1" placeholder="10" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Motivo da Saída</label>
+            <select id="exit-reason" class="form-control" required>
+              <option value="dispensacao">Dispensação Clínica / Farmácia</option>
+              <option value="transferencia">Transferência Entre Unidades</option>
+              <option value="devolucao">Devolução ao Fabricante</option>
+              <option value="descarte">Descarte / Incineração Sanitária</option>
+              <option value="recolhimento">Recolhimento (Recall)</option>
+            </select>
           </div>
         </div>
 
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Login</th>
-              <th>Nome Completo</th>
-              <th>Grau de Permissão</th>
-              <th>Status</th>
-              <th>Ações Administrativas</th>
-            </tr>
-          </thead>
-          <tbody id="users-table-body">
-            <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Carregando usuários...</td></tr>
-          </tbody>
-        </table>
+        <div class="form-group">
+          <label class="form-label">Destinatário (Hospital / Posto / Setor)</label>
+          <input type="text" id="exit-recipient" class="form-control" placeholder="ex: Hospital das Clínicas - UTI Pediátrica" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Nº Documento / Guia / NF</label>
+          <input type="text" id="exit-nfe" class="form-control" placeholder="ex: GUIA-2026-991">
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
+          <button type="button" class="btn-logout" style="color:#94A3B8; border-color:#334155; background:transparent;" onclick="closeExitModal()">Cancelar</button>
+          <button type="submit" class="btn-action-fefo">Confirmar Saída (FEFO)</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 3: LAUDO PERICIAL DE RASTREABILIDADE DO LOTE (TRACE COMPLETO)
+       ========================================================================= -->
+  <div id="modal-trace" class="modal-backdrop">
+    <div class="modal-box" style="max-width: 720px;">
+      <div class="modal-header">
+        <div class="modal-title">Laudo Pericial de Rastreabilidade Farmacêutica (ANVISA)</div>
+        <button class="btn-close-modal" onclick="closeTraceModal()">&times;</button>
+      </div>
+
+      <div id="trace-content">
+        <!-- Preenchido dinamicamente via JS com linha do tempo pericial -->
       </div>
     </div>
+  </div>
 
-    <!-- =======================================================================
-         SUB-TELA 4: AUDITORIA CRIPTOGRÁFICA REGULATÓRIA ANVISA (LEDGER WORM)
-         ======================================================================= -->
-    <div id="section-ledger" style="display: none;">
-      <!-- Banner de Cabeçalho do Laudo -->
-      <div class="ledger-banner">
-        <div class="ledger-banner-info">
-          <div class="ledger-title-row">
-            <span class="ledger-badge-anvisa">CONFORMIDADE ANVISA RDC 430/2020 & 21 CFR 11</span>
-            <span class="ledger-badge-phase" id="ledger-badge-env">FASE: TEST (ECDSA P-256)</span>
-          </div>
-          <h2 class="ledger-heading">Registro Pericial e Auditoria Criptográfica de Cadeia de Frio</h2>
-          <p class="ledger-subheading">
-            Garantia matemática <em>tamper-evident</em> contra qualquer adulteração, remoção ou reordenação de registros térmicos de transporte e armazenamento.
-          </p>
-        </div>
-        <div class="ledger-banner-actions">
-          <button class="btn-ledger-verify" onclick="runLedgerVerification()">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-            Auditar Cadeia Agora
-          </button>
-          <button class="btn-ledger-export" onclick="exportLedgerJSON()">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Exportar Laudo (.JSON)
-          </button>
-          <button class="btn-ledger-anchor" onclick="createManualAnchor()">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="3"/><line x1="12" y1="22" x2="12" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/></svg>
-            Emitir Âncora (RFC 3161)
-          </button>
-        </div>
+  <!-- =========================================================================
+       MODAL 4: DECISÃO TÉCNICA DE EXCURSÃO COM ASSINATURA ELETRÔNICA
+       ========================================================================= -->
+  <div id="modal-excursion-decision" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Parecer Técnico e Decisão de Excursão (RDC 430/2020)</div>
+        <button class="btn-close-modal" onclick="closeDecisionModal()">&times;</button>
       </div>
 
-      <!-- Grade de 4 Cards de Métricas Periciais -->
-      <div class="ledger-cards-grid">
-        <div class="ledger-card" id="card-integrity">
-          <div class="l-card-top">
-            <span>STATUS DE INTEGRIDADE</span>
-            <span id="badge-valid-icon">🛡️</span>
-          </div>
-          <div class="l-card-val text-success" id="ledger-status-text">100% ÍNTEGRO</div>
-          <div class="l-card-sub" id="ledger-status-sub">Cadeia matematicamente comprovada</div>
+      <form id="form-decision" onsubmit="event.preventDefault(); submitExcursionDecision();">
+        <input type="hidden" id="dec-exc-id">
+        <div id="dec-exc-summary" style="font-size: 12px; color: #CBD5E1; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 6px; margin-bottom: 14px;">
+          Resumo da ocorrência...
         </div>
 
-        <div class="ledger-card">
-          <div class="l-card-top">
-            <span>ALTURA DA CADEIA</span>
-            <span>📦</span>
-          </div>
-          <div class="l-card-val" id="ledger-height-text">-- Blocos</div>
-          <div class="l-card-sub" id="ledger-height-sub">Gênese #1 até Head #--</div>
+        <div class="form-group">
+          <label class="form-label">Parecer Técnico do Farmacêutico Responsável (RT)</label>
+          <textarea id="dec-report" class="form-control" rows="3" placeholder="Descreva a avaliação de estabilidade acelerada e impacto térmico..." required></textarea>
         </div>
 
-        <div class="ledger-card">
-          <div class="l-card-top">
-            <span>CHAVE & ALGORITMO</span>
-            <span>🔑</span>
-          </div>
-          <div class="l-card-val" style="font-size: 1.15rem; font-family: monospace;" id="ledger-key-id">--------</div>
-          <div class="l-card-sub">ECDSA P-256 (NIST secp256r1)</div>
+        <div class="form-group">
+          <label class="form-label">Decisão Pericial Regulamentar</label>
+          <select id="dec-decision" class="form-control" required>
+            <option value="liberado">Liberar Lotes (Estabilidade Comprovada pelo Fabricante)</option>
+            <option value="descartado">Descartar / Reprovar Lotes (Degradação Térmica Confirmada)</option>
+          </select>
         </div>
 
-        <div class="ledger-card">
-          <div class="l-card-top">
-            <span>STATUS DO RELÓGIO & ÂNCORAS</span>
-            <span>⏱️</span>
-          </div>
-          <div class="l-card-val" id="ledger-clock-text">NTS Sincronizado</div>
-          <div class="l-card-sub" id="ledger-anchor-sub">Proteção anti-truncamento ativa</div>
-        </div>
-      </div>
-
-      <!-- Relatório da Última Auditoria Pericial (Watchdog) -->
-      <div class="ledger-audit-box" id="ledger-audit-box">
-        <div class="audit-box-header">
-          <div class="audit-box-title">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#52d68a" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            <span>Laudo Pericial de Auditoria Matemática em Tempo Real</span>
-          </div>
-          <div class="audit-box-meta" id="audit-box-time">Clique em "Auditar Cadeia Agora" para executar</div>
-        </div>
-        <div class="audit-box-details" id="audit-box-content">
-          Aguardando comando de auditoria pericial. Clique no botão verde acima para recalcular todos os hashes SHA-256 e validar todas as assinaturas digitais ECDSA P-256.
-        </div>
-      </div>
-
-      <!-- Tabela do Ledger de Blocos -->
-      <div class="main-table-card">
-        <div class="table-header-row">
-          <div>
-            <div class="table-title">Explorador de Blocos Criptográficos (WORM Ledger)</div>
-            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
-              Registros imutáveis com encadeamento de hash SHA-256 e assinaturas individuais de 64 bytes
-            </div>
-          </div>
-          <div class="actions-group">
-            <button class="btn-action" onclick="loadLedgerRecords()">Atualizar Blocos</button>
-          </div>
+        <div class="form-group">
+          <label class="form-label">Assinatura Eletrônica (21 CFR Part 11 / Token de Segurança)</label>
+          <input type="password" id="dec-signature" class="form-control" placeholder="Digite sua senha para assinar eletronicamente" required>
         </div>
 
-        <div style="overflow-x: auto;">
-          <table>
-            <thead>
-              <tr>
-                <th>Bloco #</th>
-                <th>Tipo</th>
-                <th>Origem</th>
-                <th>Seq</th>
-                <th>Horário UTC</th>
-                <th>Hash Anterior (prev_hash)</th>
-                <th>Hash Atual (current_hash)</th>
-                <th>Assinatura ECDSA (64B)</th>
-                <th>Autenticidade</th>
-              </tr>
-            </thead>
-            <tbody id="ledger-table-body">
-              <tr><td colspan="9" style="text-align: center; color: var(--text-muted);">Carregando blocos criptográficos...</td></tr>
-            </tbody>
-          </table>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
+          <button type="button" class="btn-logout" style="color:#94A3B8; border-color:#334155; background:transparent;" onclick="closeDecisionModal()">Cancelar</button>
+          <button type="submit" class="btn-action-primary">Firmar Parecer e Concluir Decisão</button>
         </div>
-      </div>
+      </form>
     </div>
   </div>
 

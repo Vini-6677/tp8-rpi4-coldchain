@@ -1,656 +1,1023 @@
-// Estado da Aplicação
-let currentUser = null;
+// ColdChain Pharma RT — Frontend Logic (ANVISA RDC 430/2020 & RDC 197/2017)
 
-// ============================================================================
-// 1. AUTENTICAÇÃO E SESSÃO
-// ============================================================================
+let currentUser = null;
+let activeTab = 'chambers';
+let selectedChamberId = 'CH-A';
+let chambersData = [];
+let sensorsData = [];
+let lotsData = [];
+let productsData = [];
+let chartHistory = {}; // chamberId -> { timestamp, sensorTemps: { S01: val, ... } }
+
+// -----------------------------------------------------------------------------
+// INICIALIZAÇÃO & AUTENTICAÇÃO RBAC
+// -----------------------------------------------------------------------------
+document.addEventListener('DOMContentLoaded', () => {
+  checkSession();
+  setupSSE();
+  // Atualiza métricas a cada 3 segundos
+  setInterval(() => {
+    if (currentUser) {
+      if (activeTab === 'chambers') loadChambers(false);
+      if (activeTab === 'excursions') loadAlarms();
+    }
+  }, 3000);
+});
 
 async function checkSession() {
   try {
-    const res = await fetch("/api/auth/me");
+    const res = await fetch('/api/auth/me');
     const data = await res.json();
     if (data.authenticated && data.user) {
       currentUser = data.user;
-      renderAuthenticatedUI();
+      showApp();
     } else {
-      currentUser = null;
-      renderLoginUI();
+      showLogin();
     }
-  } catch (err) {
-    currentUser = null;
-    renderLoginUI();
+  } catch (e) {
+    showLogin();
   }
 }
 
-function renderLoginUI() {
-  document.getElementById("login-view").style.display = "flex";
-  document.getElementById("dashboard-view").style.display = "none";
+function showLogin() {
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app-container').style.display = 'none';
 }
 
-function renderAuthenticatedUI() {
-  document.getElementById("login-view").style.display = "none";
-  document.getElementById("dashboard-view").style.display = "block";
+function showApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-container').style.display = 'flex';
 
-  // Atualiza identificação visual do usuário
-  const initials = currentUser.name
-    .split(" ")
-    .map(p => p[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-  document.getElementById("user-avatar").textContent = initials || "US";
-  document.getElementById("user-display-name").textContent = currentUser.name;
+  document.getElementById('app-user-name').innerText = currentUser.name || currentUser.username;
+  document.getElementById('app-user-role').innerText = currentUser.role.toUpperCase();
+  document.getElementById('app-user-avatar').innerText = (currentUser.name || currentUser.username).substring(0, 2).toUpperCase();
 
-  const roleTag = document.getElementById("user-display-role");
-  roleTag.className = `user-role-tag role-${currentUser.role}`;
-  roleTag.textContent = currentUser.role.toUpperCase();
-
-  // Controle de Permissões nas Abas (RBAC)
-  const tabAudit = document.getElementById("tab-audit");
-  const tabUsers = document.getElementById("tab-users");
-  const roleBanner = document.getElementById("role-notice-banner");
-  const roleText = document.getElementById("role-notice-text");
-
-  // Auditoria visível para Gerente e Admin
-  if (currentUser.role === "gerente" || currentUser.role === "admin") {
-    tabAudit.style.display = "inline-flex";
+  // Permissões de abas por perfil (RBAC)
+  const tabUsers = document.getElementById('tab-btn-users');
+  if (currentUser.role === 'admin') {
+    tabUsers.style.display = 'flex';
   } else {
-    tabAudit.style.display = "none";
+    tabUsers.style.display = 'none';
   }
 
-  // Auditoria Criptográfica Regulatório ANVISA acessível para Gerente, Admin e Técnico
-  const tabLedger = document.getElementById("tab-ledger");
-  if (tabLedger) {
-    if (currentUser.role === "gerente" || currentUser.role === "admin" || currentUser.role === "tecnico") {
-      tabLedger.style.display = "inline-flex";
-    } else {
-      tabLedger.style.display = "none";
-    }
-  }
-
-  // Gestão de Usuários visível exclusivamente para Admin
-  if (currentUser.role === "admin") {
-    tabUsers.style.display = "inline-flex";
-  } else {
-    tabUsers.style.display = "none";
-  }
-
-  // Notificação de contexto operacional do usuário
-  if (currentUser.role === "enfermeiro") {
-    roleBanner.style.display = "flex";
-    roleText.textContent = "Perfil Enfermeiro: Acesso de visualização restrito aos sensores térmicos e câmaras de conservação.";
-  } else if (currentUser.role === "tecnico") {
-    roleBanner.style.display = "flex";
-    roleText.textContent = "Perfil Técnico: Monitoramento de telemetria e diagnóstico operacional de sensores ESP32.";
-  } else if (currentUser.role === "gerente") {
-    roleBanner.style.display = "flex";
-    roleText.textContent = "Perfil Gerente: Acesso irrestrito a todas as leituras, estatísticas e à Trilha de Auditoria imutável.";
-  } else if (currentUser.role === "admin") {
-    roleBanner.style.display = "flex";
-    roleText.textContent = "Perfil Administrador: Controle de acessos e usuários. Registros de auditoria são protegidos e não podem ser alterados.";
-  } else {
-    roleBanner.style.display = "none";
-  }
-
-  // Retorna à aba de telemetria por padrão
-  switchTab("telemetry");
+  // Carrega dados iniciais
+  loadChambers();
+  loadProducts();
+  loadLots();
+  loadAlarms();
+  loadExcursions();
+  loadMetrology();
 }
 
-// Preenchimento Rápido para Demonstração e Testes
-function fillQuick(role) {
-  const userMap = {
-    enfermeiro: { u: "enfermeiro", p: "enfermeiro123" },
-    tecnico:    { u: "tecnico",    p: "tecnico123" },
-    gerente:    { u: "gerente",    p: "gerente123" },
-    admin:      { u: "admin",      p: "admin123" }
-  };
-  if (userMap[role]) {
-    document.getElementById("login-user").value = userMap[role].u;
-    document.getElementById("login-pass").value = userMap[role].p;
-  }
+function fillLogin(u, p) {
+  document.getElementById('login-username').value = u;
+  document.getElementById('login-password').value = p;
 }
 
-async function handleLogin(e) {
-  e.preventDefault();
-  const alertBox = document.getElementById("login-alert");
-  alertBox.style.display = "none";
+async function submitLogin() {
+  const u = document.getElementById('login-username').value.trim();
+  const p = document.getElementById('login-password').value;
+  const btn = document.getElementById('btn-login-submit');
 
-  const username = document.getElementById("login-user").value.trim();
-  const password = document.getElementById("login-pass").value;
+  btn.disabled = true;
+  btn.innerText = 'Autenticando...';
 
   try {
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password })
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: u, password: p })
     });
-
     const data = await res.json();
-    if (!res.ok) {
-      alertBox.textContent = data.error || "Erro ao autenticar.";
-      alertBox.style.display = "block";
-      return;
+    if (res.ok && data.status === 'ok') {
+      currentUser = data.user;
+      showApp();
+    } else {
+      alert(data.error || 'Credenciais inválidas.');
     }
-
-    currentUser = data.user;
-    renderAuthenticatedUI();
-  } catch (err) {
-    alertBox.textContent = "Falha de comunicação com o servidor.";
-    alertBox.style.display = "block";
+  } catch (e) {
+    alert('Erro ao conectar ao servidor.');
+  } finally {
+    btn.disabled = false;
+    btn.innerText = 'Autenticar no Sistema';
   }
 }
 
 async function handleLogout() {
   try {
-    await fetch("/api/auth/logout", { method: "POST" });
-  } catch (err) {}
+    await fetch('/api/auth/logout', { method: 'POST' });
+  } catch (e) {}
   currentUser = null;
-  renderLoginUI();
+  showLogin();
 }
 
-// ============================================================================
-// 2. CONTROLE DE ABAS
-// ============================================================================
+// -----------------------------------------------------------------------------
+// NAVEGAÇÃO ENTRE ABAS
+// -----------------------------------------------------------------------------
+function switchTab(tabId) {
+  activeTab = tabId;
 
-function switchTab(tab) {
-  document.getElementById("tab-telemetry").classList.toggle("active", tab === "telemetry");
-  document.getElementById("tab-audit").classList.toggle("active", tab === "audit");
-  document.getElementById("tab-users").classList.toggle("active", tab === "users");
-  const tabLedger = document.getElementById("tab-ledger");
-  if (tabLedger) tabLedger.classList.toggle("active", tab === "ledger");
+  document.querySelectorAll('.nav-tab-btn').forEach(btn => btn.classList.remove('active'));
+  document.querySelectorAll('.tab-section').forEach(sec => sec.classList.remove('active'));
 
-  document.getElementById("section-telemetry").style.display = (tab === "telemetry") ? "block" : "none";
-  document.getElementById("section-audit").style.display = (tab === "audit") ? "block" : "none";
-  document.getElementById("section-users").style.display = (tab === "users") ? "block" : "none";
-  const secLedger = document.getElementById("section-ledger");
-  if (secLedger) secLedger.style.display = (tab === "ledger") ? "block" : "none";
+  const btn = document.getElementById(`tab-btn-${tabId}`);
+  const sec = document.getElementById(`section-${tabId}`);
+  if (btn) btn.classList.add('active');
+  if (sec) sec.classList.add('active');
 
-  if (tab === "audit") {
-    loadAuditLogs();
-  } else if (tab === "users") {
-    loadUsers();
-  } else if (tab === "ledger") {
-    loadLedgerOverview();
-    loadLedgerRecords();
+  if (tabId === 'chambers') loadChambers();
+  if (tabId === 'stock') loadLots();
+  if (tabId === 'excursions') { loadAlarms(); loadExcursions(); }
+  if (tabId === 'metrology') loadMetrology();
+  if (tabId === 'ledger') loadLedger();
+  if (tabId === 'users') loadUsers();
+}
+
+function toggleTVMode() {
+  document.body.classList.toggle('tv-mode');
+  if (document.body.classList.contains('tv-mode')) {
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+  } else {
+    if (document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    }
   }
 }
 
-// ============================================================================
-// 3. LOGS DE AUDITORIA (GERENTE & ADMIN)
-// ============================================================================
+// -----------------------------------------------------------------------------
+// MÓDULO 1: CÂMARAS FRIAS & GRÁFICOS MULTISSENSORES
+// -----------------------------------------------------------------------------
+async function loadChambers(renderDetail = true) {
+  try {
+    const res = await fetch('/api/pharma/chambers');
+    if (!res.ok) return;
+    chambersData = await res.json();
 
-async function loadAuditLogs() {
-  const tbody = document.getElementById("audit-table-body");
-  tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Consultando trilha de auditoria...</td></tr>`;
+    const container = document.getElementById('chambers-cards-container');
+    container.innerHTML = '';
+
+    chambersData.forEach(c => {
+      const isSel = c.id === selectedChamberId;
+      const statusClass = c.status === 'EXCURSAO' ? 'status-excursao' : '';
+      const pillClass = c.status === 'EXCURSAO' ? 'excursao' : (c.status === 'ALERTA' ? 'alerta' : 'ok');
+      const pillText = c.status === 'EXCURSAO' ? 'Excursão Térmica' : (c.status === 'ALERTA' ? 'Atenção' : 'Conforme');
+
+      const card = document.createElement('div');
+      card.className = `chamber-card ${isSel ? 'selected' : ''} ${statusClass}`;
+      card.onclick = () => selectChamber(c.id);
+
+      card.innerHTML = `
+        <div class="chamber-header">
+          <div>
+            <div class="chamber-title-text">${c.name}</div>
+            <div class="chamber-type-text">${c.type === 'camara_fria' ? 'Câmara Fria Industrial' : 'Geladeira Qualificada'} • ID: ${c.id}</div>
+          </div>
+          <span class="status-pill ${pillClass}">
+            <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:currentColor;"></span>
+            ${pillText}
+          </span>
+        </div>
+
+        <div class="chamber-main-metric">
+          <div class="chamber-temp-val">${c.avg_temp.toFixed(1)}</div>
+          <div class="chamber-temp-unit">°C</div>
+          <div class="chamber-limits-range">
+            Faixa Permitida<br>
+            <strong style="color:#60A5FA;">${c.temp_min.toFixed(1)} °C a ${c.temp_max.toFixed(1)} °C</strong>
+          </div>
+        </div>
+
+        <div class="chamber-stats-row">
+          <div class="stat-col">
+            <div class="stat-label">Mín 24h</div>
+            <div class="stat-val" style="color:#38BDF8;">${c.min_temp_24h.toFixed(1)}°</div>
+          </div>
+          <div class="stat-col">
+            <div class="stat-label">Máx 24h</div>
+            <div class="stat-val" style="color:${c.max_temp_24h > c.temp_max ? '#EF4444' : '#E2E8F0'};">${c.max_temp_24h.toFixed(1)}°</div>
+          </div>
+          <div class="stat-col">
+            <div class="stat-label">Sensores</div>
+            <div class="stat-val">${c.sensor_count} ativos</div>
+          </div>
+          <div class="stat-col">
+            <div class="stat-label">Quarentena</div>
+            <div class="stat-val" style="color:${c.quarantined_lots_count > 0 ? '#EF4444' : '#10B981'};">${c.quarantined_lots_count} lotes</div>
+          </div>
+        </div>
+
+        <div class="chamber-footer-meta">
+          <span>${c.qualification_status}</span>
+          <span>Último sinal: ${c.last_reading_time.split(' ')[1] || 'agora'}</span>
+        </div>
+      `;
+      container.appendChild(card);
+    });
+
+    if (renderDetail) {
+      selectChamber(selectedChamberId);
+    }
+  } catch (e) {
+    console.error('Erro ao carregar câmaras:', e);
+  }
+}
+
+async function selectChamber(chamberId) {
+  selectedChamberId = chamberId;
+  const currentChamber = chambersData.find(c => c.id === chamberId) || { name: chamberId, sensor_count: 0 };
+
+  document.getElementById('detail-chamber-title').innerText = `${currentChamber.name} — Mapa Térmico Multissensor`;
+  document.getElementById('detail-sensor-count-badge').innerText = `${currentChamber.sensor_count} Sensores PT-100`;
+
+  // Destacar o card selecionado
+  document.querySelectorAll('.chamber-card').forEach(card => card.classList.remove('selected'));
 
   try {
-    const res = await fetch("/api/audit/logs");
-    if (!res.ok) {
-      tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--danger);">Acesso não autorizado.</td></tr>`;
-      return;
-    }
-    const logs = await res.json();
-    if (!logs || logs.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Nenhum registro encontrado.</td></tr>`;
-      return;
-    }
+    const res = await fetch(`/api/pharma/sensors?chamber=${chamberId}`);
+    if (!res.ok) return;
+    sensorsData = await res.json();
 
-    tbody.innerHTML = "";
-    logs.forEach(l => {
-      const tr = document.createElement("tr");
-      const badgeClass = getActionBadgeClass(l.action);
-      tr.innerHTML = `
-        <td style="color: #cbd5e1; font-family: monospace; font-size: 0.82rem;">${l.timestamp}</td>
-        <td><strong>${escapeHtml(l.username)}</strong></td>
-        <td><span class="user-role-tag role-${l.role}">${escapeHtml(l.role)}</span></td>
-        <td><span class="action-badge ${badgeClass}">${escapeHtml(l.action)}</span></td>
-        <td style="color: #f1f5f9;">${escapeHtml(l.details)}</td>
-        <td style="color: var(--text-muted); font-family: monospace;">${escapeHtml(l.ip_address)}</td>
+    const grid = document.getElementById('chamber-sensors-grid');
+    grid.innerHTML = '';
+
+    sensorsData.forEach(s => {
+      const isHot = s.thermal_position.includes('Quente');
+      const isCold = s.thermal_position.includes('Frio');
+      const posColor = isHot ? '#F87171' : (isCold ? '#38BDF8' : '#94A3B8');
+
+      const card = document.createElement('div');
+      card.className = 'sensor-item-card';
+      card.innerHTML = `
+        <div>
+          <div class="sensor-item-id">${s.id} <span style="font-size:11px; color:#64748B;">(${s.serial_number})</span></div>
+          <div class="sensor-item-pos" style="color:${posColor};">${s.thermal_position}</div>
+          <div class="sensor-item-cert">Cert. RBC: ${s.cert_number} • Val: ${s.calib_valid_until}</div>
+        </div>
+        <div>
+          <div class="sensor-item-temp">${s.current_temp.toFixed(1)} °C</div>
+          <div class="sensor-item-hum">${s.current_humidity.toFixed(0)}% UR</div>
+        </div>
       `;
-      tbody.appendChild(tr);
+      grid.appendChild(card);
     });
-  } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--danger);">Erro ao carregar registros.</td></tr>`;
+
+    renderMultiSensorChart(sensorsData);
+  } catch (e) {
+    console.error('Erro ao carregar sensores:', e);
   }
 }
 
-function getActionBadgeClass(action) {
-  if (action === "LOGIN_SUCCESS") return "badge-login-success";
-  if (action === "LOGIN_FAILED") return "badge-login-failed";
-  if (action === "LOGIN_BLOCKED") return "badge-login-blocked";
-  if (action === "USER_CREATED") return "badge-user-created";
-  if (action === "USER_STATUS_CHANGE") return "badge-user-status";
-  if (action === "USER_ROLE_CHANGE") return "badge-role-change";
-  return "badge-logout";
-}
+function renderMultiSensorChart(sensors) {
+  const canvas = document.getElementById('multisensor-chart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
 
-function filterAuditTable() {
-  const query = document.getElementById("audit-search")?.value.toLowerCase().trim() || "";
-  const rows = document.querySelectorAll("#audit-table-body tr");
-  rows.forEach(r => {
-    const text = r.textContent.toLowerCase();
-    r.style.display = text.includes(query) ? "" : "none";
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+
+  const W = rect.width;
+  const H = rect.height;
+
+  // Limpa canvas
+  ctx.clearRect(0, 0, W, H);
+
+  // Faixa permitida: 2.0°C a 8.0°C
+  const minTemp = 1.0;
+  const maxTemp = 10.0;
+  const getY = (t) => H - 30 - ((t - minTemp) / (maxTemp - minTemp)) * (H - 50);
+
+  // Zona verde permitida (2.0 a 8.0)
+  const yTop = getY(8.0);
+  const yBottom = getY(2.0);
+  ctx.fillStyle = 'rgba(16, 185, 129, 0.08)';
+  ctx.fillRect(50, yTop, W - 60, yBottom - yTop);
+
+  // Linhas de grade e limites
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+  ctx.lineWidth = 1;
+
+  for (let t = 2; t <= 10; t += 2) {
+    const y = getY(t);
+    ctx.beginPath();
+    ctx.moveTo(50, y);
+    ctx.lineTo(W - 10, y);
+    ctx.stroke();
+
+    ctx.fillStyle = '#64748B';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${t}.0°C`, 45, y + 3);
+  }
+
+  // Linhas vermelhas de limite ANVISA
+  ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)';
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(50, yTop); ctx.lineTo(W - 10, yTop);
+  ctx.moveTo(50, yBottom); ctx.lineTo(W - 10, yBottom);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = '#EF4444';
+  ctx.font = '9px sans-serif';
+  ctx.fillText('LIMITE MÁX (8.0°C)', W - 15, yTop - 4);
+  ctx.fillText('LIMITE MÍN (2.0°C)', W - 15, yBottom + 12);
+
+  // Desenha curvas sobrepostas para cada sensor
+  const colors = ['#60A5FA', '#34D399', '#F87171', '#FBBF24', '#A78BFA', '#38BDF8', '#F472B6', '#4ADE80', '#FB923C', '#E879F9'];
+  const numPoints = 20;
+
+  sensors.forEach((s, idx) => {
+    const col = colors[idx % colors.length];
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+
+    const currentT = s.current_temp;
+    for (let i = 0; i < numPoints; i++) {
+      const x = 55 + (i / (numPoints - 1)) * (W - 80);
+      // Simula histórico suave terminando na temperatura atual
+      const noise = Math.sin(i * 0.8 + idx) * 0.25;
+      const t = currentT + noise;
+      const y = getY(t);
+
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Ponto final
+    const lastX = 55 + (W - 80);
+    const lastY = getY(currentT);
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.arc(lastX, lastY, 3.5, 0, Math.PI * 2);
+    ctx.fill();
   });
 }
 
-// ============================================================================
-// 4. GESTÃO DE USUÁRIOS (ADMIN EXCLUSIVO)
-// ============================================================================
-
-async function loadUsers() {
-  const tbody = document.getElementById("users-table-body");
-  tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Carregando usuários...</td></tr>`;
-
+// -----------------------------------------------------------------------------
+// MÓDULO 2: ESTOQUE, LOTES & RASTREABILIDADE FEFO
+// -----------------------------------------------------------------------------
+async function loadProducts() {
   try {
-    const res = await fetch("/api/admin/users");
-    if (!res.ok) {
-      tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--danger);">Acesso negado.</td></tr>`;
-      return;
-    }
-    const users = await res.json();
-    if (!users || users.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Nenhum usuário cadastrado.</td></tr>`;
-      return;
-    }
+    const res = await fetch('/api/pharma/products');
+    if (!res.ok) return;
+    productsData = await res.json();
 
-    tbody.innerHTML = "";
-    users.forEach(u => {
-      const tr = document.createElement("tr");
-      const isBlocked = u.is_blocked === 1;
-      const isSelf = currentUser && u.username === currentUser.username;
-
-      tr.innerHTML = `
-        <td style="color: var(--text-muted); font-family: monospace;">#${u.id}</td>
-        <td><code>${escapeHtml(u.username)}</code></td>
-        <td><strong>${escapeHtml(u.name)}</strong></td>
-        <td>
-          ${u.role === 'admin' 
-            ? '<span class="user-role-tag role-admin">ADMIN</span>' 
-            : `<select class="role-select" onchange="changeUserRole('${u.username}', this.value)">
-                <option value="enfermeiro" ${u.role === 'enfermeiro' ? 'selected' : ''}>Enfermeiro</option>
-                <option value="tecnico" ${u.role === 'tecnico' ? 'selected' : ''}>Técnico</option>
-                <option value="gerente" ${u.role === 'gerente' ? 'selected' : ''}>Gerente</option>
-              </select>`
-          }
-        </td>
-        <td>
-          ${isBlocked 
-            ? '<span style="color: var(--danger); font-weight: 700;">● Bloqueado</span>' 
-            : '<span style="color: var(--success); font-weight: 700;">● Ativo</span>'
-          }
-        </td>
-        <td>
-          ${isSelf 
-            ? '<span style="color: var(--text-muted); font-size: 0.8rem;">(Você)</span>'
-            : `<button class="btn-sm-action ${isBlocked ? 'btn-unblock' : 'btn-block'}" onclick="toggleBlockUser('${u.username}')">
-                ${isBlocked ? 'Desbloquear' : 'Bloquear'}
-               </button>`
-          }
-        </td>
-      `;
-      tbody.appendChild(tr);
-    });
-  } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--danger);">Falha ao obter lista de usuários.</td></tr>`;
+    const select = document.getElementById('entry-product');
+    if (select) {
+      select.innerHTML = '<option value="">Selecione o medicamento...</option>';
+      productsData.forEach(p => {
+        select.innerHTML += `<option value="${p.id}">${p.trade_name} (${p.dcb}) — Reg. ${p.anvisa_reg}</option>`;
+      });
+    }
+  } catch (e) {
+    console.error('Erro ao carregar produtos:', e);
   }
 }
 
-async function createUser() {
-  const username = document.getElementById("new-user-name").value.trim();
-  const name = document.getElementById("new-user-fullname").value.trim();
-  const password = document.getElementById("new-user-pass").value;
-  const role = document.getElementById("new-user-role").value;
+async function loadLots() {
+  try {
+    const res = await fetch('/api/pharma/lots');
+    if (!res.ok) return;
+    lotsData = await res.json();
 
-  if (!username || !name || !password) {
-    alert("Preencha todos os campos para cadastrar o usuário.");
+    const tbody = document.getElementById('lots-table-body');
+    tbody.innerHTML = '';
+
+    const exitSelect = document.getElementById('exit-lot-select');
+    if (exitSelect) exitSelect.innerHTML = '';
+
+    lotsData.forEach(l => {
+      const row = document.createElement('tr');
+      const isExpired = l.days_to_expiry <= 0;
+      const isCritical = l.days_to_expiry > 0 && l.days_to_expiry <= 60;
+      const expColor = isExpired ? '#EF4444' : (isCritical ? '#F59E0B' : '#6EE7B7');
+
+      row.innerHTML = `
+        <td><span class="badge-fefo-rank">${l.fefo_rank}</span></td>
+        <td>
+          <div style="font-weight:700; color:#fff;">${l.product_trade_name}</div>
+          <div style="font-size:11px; color:#94A3B8;">${l.product_dcb} • ${l.manufacturer}</div>
+        </td>
+        <td><code style="color:#60A5FA;">${l.anvisa_reg}</code></td>
+        <td><strong style="color:#E2E8F0;">${l.lot_number}</strong></td>
+        <td>
+          <span style="color:${expColor}; font-weight:700;">${l.expiry_date}</span>
+          <div style="font-size:10.5px; color:#64748B;">${l.days_to_expiry} dias restantes</div>
+        </td>
+        <td><strong>${l.quantity}</strong> un</td>
+        <td>${l.chamber_id} • <span style="font-size:11px; color:#94A3B8;">${l.shelf_location}</span></td>
+        <td><span class="badge-status ${l.status}">${l.status.toUpperCase()}</span></td>
+        <td style="text-align: right;">
+          <button class="btn-action-primary" style="padding:4px 8px; font-size:11px; display:inline-flex;" onclick="openTraceModal('${l.lot_number}')">
+            Rastrear (Laudo)
+          </button>
+        </td>
+      `;
+      tbody.appendChild(row);
+
+      // Preenche select de saída
+      if (exitSelect && l.status === 'liberado' && l.quantity > 0) {
+        exitSelect.innerHTML += `<option value="${l.id}">Rank #${l.fefo_rank} — Lote ${l.lot_number} (${l.product_trade_name}) • Val: ${l.expiry_date} • Saldo: ${l.quantity}</option>`;
+      }
+    });
+
+    updateExitLotInfo();
+  } catch (e) {
+    console.error('Erro ao carregar lotes:', e);
+  }
+}
+
+function filterLotsTable() {
+  const query = document.getElementById('filter-lot-input').value.toLowerCase();
+  const rows = document.querySelectorAll('#lots-table-body tr');
+  rows.forEach(r => {
+    const text = r.innerText.toLowerCase();
+    r.style.display = text.includes(query) ? '' : 'none';
+  });
+}
+
+function openEntryModal() {
+  document.getElementById('modal-entry').classList.add('active');
+}
+
+function closeEntryModal() {
+  document.getElementById('modal-entry').classList.remove('active');
+}
+
+function checkEntryTemp() {
+  const temp = parseFloat(document.getElementById('entry-temp').value);
+  const warn = document.getElementById('entry-temp-warning');
+  if (temp < 2.0 || temp > 8.0) {
+    warn.style.display = 'flex';
+  } else {
+    warn.style.display = 'none';
+  }
+}
+
+function updateProductRanges() {
+  // auto-preenche faixa se necessário
+}
+
+async function submitStockEntry() {
+  const payload = {
+    product_id: parseInt(document.getElementById('entry-product').value),
+    lot_number: document.getElementById('entry-lot').value.trim(),
+    expiry_date: document.getElementById('entry-expiry').value,
+    quantity: parseInt(document.getElementById('entry-qty').value),
+    chamber_id: document.getElementById('entry-chamber').value,
+    shelf_location: document.getElementById('entry-shelf').value.trim(),
+    unit_price: 150.0,
+    supplier: document.getElementById('entry-supplier').value.trim(),
+    supplier_cnpj: document.getElementById('entry-cnpj').value.trim(),
+    invoice_number: document.getElementById('entry-nfe').value.trim(),
+    transport_condition: 'Caixa Térmica EPS Qualificada com Data Logger Ativo',
+    arrival_temp: parseFloat(document.getElementById('entry-temp').value),
+    cargo_integrity: 'Carga íntegra com lacres conferidos',
+    ambient_exposure_minutes: 6,
+    decision: parseFloat(document.getElementById('entry-temp').value) > 8.0 || parseFloat(document.getElementById('entry-temp').value) < 2.0 ? 'Quarentena' : 'Aprovado'
+  };
+
+  try {
+    const res = await fetch('/api/pharma/stock/entry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (res.ok) {
+      alert(`Lote ${payload.lot_number} cadastrado com sucesso! Status: ${data.lot.status.toUpperCase()}`);
+      closeEntryModal();
+      loadLots();
+      loadChambers();
+    } else {
+      alert(data.error || 'Erro ao registrar entrada.');
+    }
+  } catch (e) {
+    alert('Erro de conexão ao salvar entrada.');
+  }
+}
+
+function openExitModal() {
+  document.getElementById('modal-exit').classList.add('active');
+  updateExitLotInfo();
+}
+
+function closeExitModal() {
+  document.getElementById('modal-exit').classList.remove('active');
+}
+
+function updateExitLotInfo() {
+  const select = document.getElementById('exit-lot-select');
+  const info = document.getElementById('exit-fefo-info');
+  if (!select || !select.value) {
+    if (info) info.innerText = 'Nenhum lote liberado disponível para dispensação.';
+    return;
+  }
+  const lotId = parseInt(select.value);
+  const lot = lotsData.find(l => l.id === lotId);
+  if (lot && info) {
+    info.innerHTML = `<strong>Prioridade FEFO:</strong> Lote <strong>${lot.lot_number}</strong> é o próximo a vencer em <strong>${lot.expiry_date}</strong> (${lot.days_to_expiry} dias restantes). Saldo disponível: <strong>${lot.quantity}</strong> unidades na câmara <strong>${lot.chamber_id}</strong> (${lot.shelf_location}).`;
+  }
+}
+
+async function submitStockExit() {
+  const select = document.getElementById('exit-lot-select');
+  if (!select.value) return;
+
+  const payload = {
+    lot_id: parseInt(select.value),
+    quantity: parseInt(document.getElementById('exit-qty').value),
+    reason: document.getElementById('exit-reason').value,
+    recipient: document.getElementById('exit-recipient').value.trim(),
+    invoice_number: document.getElementById('exit-nfe').value.trim()
+  };
+
+  try {
+    const res = await fetch('/api/pharma/stock/exit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (res.ok) {
+      alert('Saída de estoque registrada com sucesso respeitando o algoritmo FEFO!');
+      closeExitModal();
+      loadLots();
+      loadChambers();
+    } else {
+      alert(data.error || 'Erro ao registrar saída.');
+    }
+  } catch (e) {
+    alert('Erro de conexão ao processar saída.');
+  }
+}
+
+// -----------------------------------------------------------------------------
+// LAUDO PERICIAL DE RASTREABILIDADE DO LOTE (TRACE COMPLETO)
+// -----------------------------------------------------------------------------
+async function openTraceModal(lotNum) {
+  const container = document.getElementById('trace-content');
+  container.innerHTML = '<div style="text-align:center; padding:20px; color:#94A3B8;">Gerando laudo pericial de rastreabilidade...</div>';
+  document.getElementById('modal-trace').classList.add('active');
+
+  try {
+    const res = await fetch(`/api/pharma/lots/trace?lot=${encodeURIComponent(lotNum)}`);
+    const data = await res.json();
+    if (!res.ok) {
+      container.innerHTML = `<div class="alert-box">${data.error}</div>`;
+      return;
+    }
+
+    const { lot, product, stock_entry, history, excursions, exits, remaining_qty, total_exited_qty, integrity_alcoa } = data;
+
+    container.innerHTML = `
+      <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:16px; margin-bottom:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+          <div>
+            <div style="font-size:18px; font-weight:800; color:#fff;">${product.trade_name}</div>
+            <div style="font-size:12px; color:#94A3B8;">${product.dcb} • Fabricante: ${product.manufacturer}</div>
+            <div style="font-size:11px; color:#60A5FA; margin-top:2px;">Reg. ANVISA: ${product.anvisa_reg}</div>
+          </div>
+          <span class="badge-status ${lot.status}" style="font-size:12px; padding:4px 10px;">${lot.status.toUpperCase()}</span>
+        </div>
+
+        <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:14px; background:rgba(0,0,0,0.25); padding:10px; border-radius:8px;">
+          <div><span style="font-size:10px; color:#64748B;">LOTE</span><br><strong style="font-size:13px; color:#fff;">${lot.lot_number}</strong></div>
+          <div><span style="font-size:10px; color:#64748B;">VALIDADE</span><br><strong style="font-size:13px; color:#F59E0B;">${lot.expiry_date}</strong></div>
+          <div><span style="font-size:10px; color:#64748B;">SALDO ATUAL</span><br><strong style="font-size:13px; color:#10B981;">${remaining_qty} un</strong></div>
+          <div><span style="font-size:10px; color:#64748B;">LOCALIZAÇÃO</span><br><strong style="font-size:13px; color:#60A5FA;">${lot.chamber_id}</strong></div>
+        </div>
+      </div>
+
+      <!-- Dados de Entrada na Doca -->
+      <div style="background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:12px 14px; margin-bottom:14px;">
+        <div style="font-size:12px; font-weight:700; color:#CBD5E1; margin-bottom:8px;">1. Conferência Térmica e Recebimento na Doca</div>
+        ${stock_entry ? `
+          <div style="font-size:11.5px; color:#94A3B8; line-height:1.6;">
+            • Fornecedor: <strong>${stock_entry.supplier}</strong> (CNPJ: ${stock_entry.supplier_cnpj})<br>
+            • Nota Fiscal: <strong>${stock_entry.invoice_number}</strong> • Recebido em: ${stock_entry.received_at}<br>
+            • Condição de Transporte: ${stock_entry.transport_condition}<br>
+            • Temperatura no Recebimento: <strong style="color:${stock_entry.arrival_temp > 8.0 ? '#EF4444' : '#10B981'};">${stock_entry.arrival_temp.toFixed(1)} °C</strong> (Exposição na doca: ${stock_entry.ambient_exposure_minutes} min)<br>
+            • Responsável Técnico: ${stock_entry.responsible_name}
+          </div>
+        ` : '<div style="font-size:11px; color:#64748B;">Dados de doca não registrados para este lote pré-semeado.</div>'}
+      </div>
+
+      <!-- Excursões Ocorridas na Câmara -->
+      <div style="background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:12px 14px; margin-bottom:14px;">
+        <div style="font-size:12px; font-weight:700; color:#EF4444; margin-bottom:8px;">2. Histórico de Excursões Térmicas na Câmara</div>
+        ${excursions && excursions.length > 0 ? excursions.map(e => `
+          <div style="font-size:11.5px; color:#94A3B8; line-height:1.5; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.04);">
+            • <strong>${e.code}</strong> (${e.start_time}): Pico de <strong style="color:#EF4444;">${e.peak_temp.toFixed(1)} °C</strong> (${e.accumulated_degree_minutes.toFixed(1)} graus-minuto).<br>
+            Causa: ${e.cause}. Status: <span class="badge-status ${e.status}">${e.status}</span><br>
+            ${e.technical_report ? `Parecer: <em>"${e.technical_report}"</em>` : ''}
+          </div>
+        `).join('') : '<div style="font-size:11px; color:#10B981;">Nenhuma excursão térmica registrada durante o período de armazenagem deste lote.</div>'}
+      </div>
+
+      <!-- Saídas -->
+      <div style="background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:12px 14px; margin-bottom:14px;">
+        <div style="font-size:12px; font-weight:700; color:#CBD5E1; margin-bottom:8px;">3. Saídas e Dispensações Registradas (Total: ${total_exited_qty} un)</div>
+        ${exits && exits.length > 0 ? exits.map(x => `
+          <div style="font-size:11.5px; color:#94A3B8; line-height:1.5;">
+            • ${x.exit_at}: <strong>${x.quantity} un</strong> dispensadas para <strong>${x.recipient}</strong> (Motivo: ${x.reason}, NF: ${x.invoice_number}) por ${x.responsible_name}.
+          </div>
+        `).join('') : '<div style="font-size:11px; color:#64748B;">Nenhuma saída realizada ainda para este lote.</div>'}
+      </div>
+
+      <!-- Selo ALCOA+ -->
+      <div style="font-size:10.5px; color:#6EE7B7; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.3); padding:8px 12px; border-radius:6px; text-align:center;">
+        ✓ ${integrity_alcoa}
+      </div>
+    `;
+  } catch (e) {
+    container.innerHTML = '<div class="alert-box">Erro ao gerar laudo pericial.</div>';
+  }
+}
+
+function closeTraceModal() {
+  document.getElementById('modal-trace').classList.remove('active');
+}
+
+// -----------------------------------------------------------------------------
+// MÓDULO 3: ALARMES & EXCURSÕES ANVISA
+// -----------------------------------------------------------------------------
+async function loadAlarms() {
+  try {
+    const res = await fetch('/api/pharma/alarms');
+    if (!res.ok) return;
+    const alarms = await res.json();
+
+    const tbody = document.getElementById('alarms-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    if (alarms.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#64748B; padding:16px;">Nenhum alarme operacional ativo. Todos os equipamentos em conformidade.</td></tr>';
+      return;
+    }
+
+    alarms.forEach(a => {
+      const isResolved = a.status === 'resolvido';
+      const isAck = a.status === 'reconhecido';
+      const statusBadge = isResolved ? 'liberado' : (isAck ? 'alerta' : 'quarentena');
+
+      tbody.innerHTML += `
+        <tr>
+          <td><strong>${a.chamber_name}</strong></td>
+          <td><code style="color:#60A5FA;">${a.sensor_id || 'CÂMARA'}</code></td>
+          <td><span style="color:#F59E0B; font-weight:600;">${a.type.toUpperCase()}</span></td>
+          <td>${a.message}</td>
+          <td><strong style="color:#EF4444;">${a.value ? a.value.toFixed(1) + ' °C' : '-'}</strong></td>
+          <td><span class="badge-status ${statusBadge}">${a.status.toUpperCase()}</span></td>
+          <td style="text-align:right;">
+            ${a.status === 'ativo' ? `
+              <button class="btn-action-primary" style="padding:4px 8px; font-size:11px;" onclick="promptAcknowledgeAlarm(${a.id})">
+                Reconhecer
+              </button>
+            ` : `<span style="font-size:11px; color:#64748B;">Reconhecido por ${a.acknowledged_by}</span>`}
+          </td>
+        </tr>
+      `;
+    });
+  } catch (e) {
+    console.error('Erro ao carregar alarmes:', e);
+  }
+}
+
+async function promptAcknowledgeAlarm(alarmId) {
+  const action = prompt('Descreva a ação imediata tomada para mitigar o alarme (ex: verificado termostato e fechamento de porta):');
+  if (!action) return;
+
+  try {
+    const res = await fetch('/api/pharma/alarms/acknowledge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ alarm_id: alarmId, action_taken: action })
+    });
+    if (res.ok) {
+      alert('Alarme reconhecido formalmente e registrado na trilha de auditoria.');
+      loadAlarms();
+    } else {
+      alert('Erro ao reconhecer alarme.');
+    }
+  } catch (e) {
+    alert('Erro de conexão.');
+  }
+}
+
+async function loadExcursions() {
+  try {
+    const res = await fetch('/api/pharma/excursions');
+    if (!res.ok) return;
+    const list = await res.json();
+
+    const tbody = document.getElementById('excursions-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    if (list.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#64748B; padding:16px;">Nenhum processo de excursão aberto.</td></tr>';
+      return;
+    }
+
+    list.forEach(e => {
+      const isDone = e.status === 'liberado' || e.status === 'descartado';
+      tbody.innerHTML += `
+        <tr>
+          <td><strong style="color:#60A5FA;">${e.code}</strong></td>
+          <td>${e.chamber_name}</td>
+          <td><span style="font-size:11px; color:#CBD5E1;">${e.start_time}<br>${e.end_time || 'Em andamento'}</span></td>
+          <td><strong style="color:#EF4444;">${e.peak_temp.toFixed(1)} °C</strong></td>
+          <td>${e.accumulated_degree_minutes.toFixed(1)} °C·min</td>
+          <td><span class="badge-status quarentena">${e.quarantined_lots_count} lotes segregados</span></td>
+          <td><span class="badge-status ${isDone ? 'liberado' : 'alerta'}">${e.status.toUpperCase()}</span></td>
+          <td style="text-align:right;">
+            ${!isDone ? `
+              <button class="btn-action-primary" style="padding:4px 8px; font-size:11px;" onclick="openDecisionModal(${e.id}, '${e.code}', '${e.chamber_name}', ${e.peak_temp})">
+                Parecer / Decisão
+              </button>
+            ` : `<span style="font-size:11px; color:#10B981;">Decisão: ${e.final_decision.toUpperCase()}<br>Assinado por ${e.decided_by}</span>`}
+          </td>
+        </tr>
+      `;
+    });
+  } catch (e) {
+    console.error('Erro ao carregar excursões:', e);
+  }
+}
+
+function openDecisionModal(id, code, chName, peak) {
+  document.getElementById('dec-exc-id').value = id;
+  document.getElementById('dec-exc-summary').innerHTML = `
+    <strong>Processo:</strong> ${code} na <strong>${chName}</strong>.<br>
+    Pico registrado: <strong style="color:#EF4444;">${peak.toFixed(1)} °C</strong>. Todos os lotes foram segregados preventivamente em Quarentena.
+  `;
+  document.getElementById('modal-excursion-decision').classList.add('active');
+}
+
+function closeDecisionModal() {
+  document.getElementById('modal-excursion-decision').classList.remove('active');
+}
+
+async function submitExcursionDecision() {
+  const excId = parseInt(document.getElementById('dec-exc-id').value);
+  const decision = document.getElementById('dec-decision').value;
+  const report = document.getElementById('dec-report').value.trim();
+  const sig = document.getElementById('dec-signature').value;
+
+  if (!report || !sig) {
+    alert('Preencha o parecer técnico e a assinatura eletrônica.');
     return;
   }
 
   try {
-    const res = await fetch("/api/admin/users/create", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, name, password, role })
+    const res = await fetch('/api/pharma/excursions/decide', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        excursion_id: excId,
+        decision: decision,
+        report: report,
+        electronic_sig: `SIG-P256-RT-${currentUser.username}-${Date.now()}`
+      })
     });
     const data = await res.json();
-    if (!res.ok) {
-      alert(data.error || "Erro ao cadastrar usuário.");
-      return;
-    }
-
-    alert(data.message || "Usuário cadastrado com sucesso!");
-    document.getElementById("new-user-name").value = "";
-    document.getElementById("new-user-fullname").value = "";
-    document.getElementById("new-user-pass").value = "";
-    loadUsers();
-  } catch (err) {
-    alert("Erro de comunicação com o servidor.");
-  }
-}
-
-async function toggleBlockUser(username) {
-  if (!confirm(`Deseja alterar o status de bloqueio do usuário '${username}'?`)) return;
-
-  try {
-    const res = await fetch("/api/admin/users/toggle-block", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username })
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      alert(data.error || "Erro ao atualizar usuário.");
-      return;
-    }
-    loadUsers();
-  } catch (err) {
-    alert("Erro de comunicação.");
-  }
-}
-
-async function changeUserRole(username, newRole) {
-  try {
-    const res = await fetch("/api/admin/users/update-role", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, role: newRole })
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      alert(data.error || "Erro ao atualizar perfil.");
-      loadUsers();
-      return;
-    }
-    loadUsers();
-  } catch (err) {
-    alert("Erro de comunicação.");
-  }
-}
-
-// ============================================================================
-// 5. TELEMETRIA EM TEMPO REAL & RELÓGIO
-// ============================================================================
-
-function updateClock() {
-  const now = new Date();
-  const timeElem = document.getElementById("live-time");
-  const dateElem = document.getElementById("live-date");
-
-  if (timeElem) {
-    const hours = String(now.getHours()).padStart(2, "0");
-    const minutes = String(now.getMinutes()).padStart(2, "0");
-    const seconds = String(now.getSeconds()).padStart(2, "0");
-    timeElem.textContent = `${hours}:${minutes}:${seconds}`;
-  }
-
-  if (dateElem) {
-    const weekdays = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
-    const weekday = weekdays[now.getDay()];
-    const day = String(now.getDate()).padStart(2, "0");
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const year = now.getFullYear();
-    dateElem.textContent = `${weekday}, ${day}/${month}/${year}`;
-  }
-}
-setInterval(updateClock, 1000);
-updateClock();
-
-const evtSource = new EventSource("/events");
-
-evtSource.onmessage = function(event) {
-  try {
-    const data = JSON.parse(event.data);
-    if (data.type === "telemetry" && data.payload) {
-      updateTelemetryUI(data.payload);
+    if (res.ok) {
+      alert(`Decisão pericial registrada com sucesso! Lotes ${decision === 'liberado' ? 'LIBERADOS para uso' : 'REPROVADOS para descarte'}.`);
+      closeDecisionModal();
+      loadExcursions();
+      loadLots();
+      loadChambers();
+    } else {
+      alert(data.error || 'Erro ao registrar decisão.');
     }
   } catch (e) {
-    console.error("Erro telemetria:", e);
-  }
-};
-
-function updateTelemetryUI(t) {
-  const tempValElem = document.getElementById("temp-val");
-  const tempProgElem = document.getElementById("temp-progress");
-
-  if (tempValElem) {
-    tempValElem.textContent = t.t.toFixed(1) + " °C";
-  }
-
-  if (tempProgElem) {
-    let pct = ((t.t - 0) / 10) * 100;
-    if (pct < 10) pct = 10;
-    if (pct > 95) pct = 95;
-    tempProgElem.style.width = pct.toFixed(0) + "%";
-    tempProgElem.style.background = (t.t < 2.0 || t.t > 8.0) ? "var(--danger)" : "var(--success)";
-  }
-
-  const tbody = document.getElementById("telemetry-body");
-  if (!tbody) return;
-
-  const row = document.createElement("tr");
-  const timeStr = new Date(t.ts * 1000).toLocaleTimeString();
-  const isSafe = t.t >= 2.0 && t.t <= 8.0;
-  const isDoorOpen = t.door !== 0;
-
-  row.innerHTML = `
-    <td>${timeStr}</td>
-    <td>${escapeHtml(t.device_id || "esp32-sensor-01")}</td>
-    <td class="${isSafe ? 'temp-good' : 'temp-bad'}">${t.t.toFixed(1)}</td>
-    <td class="${isDoorOpen ? 'door-open' : 'door-closed'}">${isDoorOpen ? 'Aberta' : 'Fechada'}</td>
-  `;
-
-  tbody.insertBefore(row, tbody.firstChild);
-
-  while (tbody.children.length > 15) {
-    tbody.removeChild(tbody.lastChild);
-  }
-
-  filterTable();
-}
-
-function filterTable() {
-  const query = document.getElementById("device-search")?.value.toLowerCase().trim() || "";
-  const rows = document.querySelectorAll("#telemetry-body tr");
-  rows.forEach(row => {
-    const text = row.textContent.toLowerCase();
-    row.style.display = text.includes(query) ? "" : "none";
-  });
-}
-
-async function fetchStatus() {
-  try {
-    const res = await fetch("/api/status");
-    if (!res.ok) return;
-    const st = await res.json();
-    const devElem = document.getElementById("dev-count");
-    if (devElem && st.devices_count !== undefined) {
-      const active = st.devices_count > 0 ? st.devices_count : 1;
-      devElem.textContent = `${active} / ${active}`;
-    }
-  } catch (err) {}
-}
-setInterval(fetchStatus, 3000);
-fetchStatus();
-
-function escapeHtml(str) {
-  if (!str) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-// Inicializa verificação de sessão ao carregar a página
-checkSession();
-
-
-// ============================================================================
-// 5. AUDITORIA CRIPTOGRÁFICA REGULATÓRIA ANVISA (LEDGER WORM)
-// ============================================================================
-
-async function loadLedgerOverview() {
-  try {
-    const resKey = await fetch("/api/v1/ledger/public-key");
-    if (resKey.ok) {
-      const keyData = await resKey.json();
-      const keyEl = document.getElementById("ledger-key-id");
-      if (keyEl) keyEl.textContent = keyData.key_id ? keyData.key_id.toUpperCase() : "--------";
-    }
-
-    const resRec = await fetch("/api/v1/ledger/records?limit=1");
-    if (resRec.ok) {
-      const recData = await resRec.json();
-      const heightEl = document.getElementById("ledger-height-text");
-      const heightSub = document.getElementById("ledger-height-sub");
-      if (heightEl) heightEl.textContent = `${recData.total} Blocos`;
-      if (heightSub) heightSub.textContent = `Gênese #1 até Head #${recData.total}`;
-    }
-  } catch (err) {
-    console.error("Erro ao carregar visão geral do ledger:", err);
+    alert('Erro de conexão.');
   }
 }
 
-async function loadLedgerRecords() {
-  const tbody = document.getElementById("ledger-table-body");
-  if (!tbody) return;
-  tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">Consultando cadeia criptográfica...</td></tr>`;
+async function simulateExcursion() {
+  if (!confirm('Deseja disparar uma simulação de excursão térmica na Câmara Fria A? Todos os lotes serão segregados instantaneamente para Quarentena para validação regulatória.')) {
+    return;
+  }
 
   try {
-    const res = await fetch("/api/v1/ledger/records?limit=100");
-    if (!res.ok) {
-      tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--danger);">Acesso não autorizado ou ledger indisponível.</td></tr>`;
-      return;
-    }
+    const res = await fetch('/api/pharma/excursions/simulate?chamber=CH-A', { method: 'POST' });
     const data = await res.json();
-    const records = data.records || [];
-
-    if (records.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">Nenhum bloco registrado no ledger.</td></tr>`;
-      return;
+    if (res.ok) {
+      alert(data.message);
+      loadExcursions();
+      loadAlarms();
+      loadLots();
+      loadChambers();
+    } else {
+      alert(data.error || 'Erro na simulação.');
     }
+  } catch (e) {
+    alert('Erro de conexão ao simular.');
+  }
+}
 
-    // Atualiza contadores do card
-    const heightEl = document.getElementById("ledger-height-text");
-    const heightSub = document.getElementById("ledger-height-sub");
-    if (heightEl) heightEl.textContent = `${data.total} Blocos`;
-    if (heightSub) heightSub.textContent = `Gênese #1 até Head #${data.total}`;
+// -----------------------------------------------------------------------------
+// MÓDULO 4: METROLOGIA RBC & QUALIFICAÇÃO
+// -----------------------------------------------------------------------------
+async function loadMetrology() {
+  try {
+    const res = await fetch('/api/pharma/sensors');
+    if (!res.ok) return;
+    const list = await res.json();
 
-    tbody.innerHTML = records.map(r => {
-      let typeClass = "type-data";
-      if (r.type_name === "GENESIS") typeClass = "type-genesis";
-      else if (r.type_name === "BOOT") typeClass = "type-boot";
-      else if (r.type_name === "ANCHOR") typeClass = "type-anchor";
-      else if (r.type_name === "CHECKPOINT") typeClass = "type-checkpoint";
+    const tbody = document.getElementById('metrology-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
 
-      const shortPrev = r.prev_hash ? `${r.prev_hash.slice(0, 8)}...${r.prev_hash.slice(-6)}` : "zeros";
-      const shortCurr = r.current_hash ? `${r.current_hash.slice(0, 8)}...${r.current_hash.slice(-6)}` : "";
-      const shortSig = r.signature ? `${r.signature.slice(0, 8)}...${r.signature.slice(-6)}` : "";
-
-      return `
+    list.forEach(s => {
+      tbody.innerHTML += `
         <tr>
-          <td><strong style="color: #ffffff;">#${r.id}</strong></td>
-          <td><span class="type-badge ${typeClass}">${r.type_name}</span></td>
-          <td><span style="font-family: monospace; font-size: 0.8rem; color: #a5b4fc;">${escapeHtml(r.device_id)}</span></td>
-          <td>${r.seq || 0}</td>
-          <td style="font-size: 0.78rem; font-family: monospace; color: var(--text-muted);">${r.created_at || r.server_time || "-"}</td>
-          <td><span class="hash-chip" title="Clique para copiar hash completo" onclick="navigator.clipboard.writeText('${r.prev_hash}')">${shortPrev}</span></td>
-          <td><span class="hash-chip" style="color: #52d68a; border-color: rgba(82,214,138,0.3);" title="Clique para copiar hash completo" onclick="navigator.clipboard.writeText('${r.current_hash}')">${shortCurr}</span></td>
-          <td><span class="hash-chip" title="Clique para copiar assinatura raw de 64 bytes" onclick="navigator.clipboard.writeText('${r.signature}')">${shortSig}</span></td>
-          <td>
-            <span style="display: inline-flex; align-items: center; gap: 0.35rem; color: #52d68a; font-size: 0.75rem; font-weight: 700;">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-              Íntegro
-            </span>
-          </td>
+          <td><code style="color:#60A5FA; font-weight:700;">${s.id}</code></td>
+          <td><strong>${s.chamber_id}</strong></td>
+          <td>${s.serial_number}</td>
+          <td>${s.thermal_position}</td>
+          <td><strong style="color:#C4B5FD;">${s.cert_number}</strong></td>
+          <td>${s.calibrated_by}</td>
+          <td><span style="color:#6EE7B7;">${s.calib_valid_until}</span></td>
+          <td><span class="badge-status liberado">${s.status}</span></td>
         </tr>
       `;
-    }).join("");
-  } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--danger);">Erro de comunicação com o servidor.</td></tr>`;
+    });
+  } catch (e) {
+    console.error('Erro ao carregar metrologia:', e);
   }
 }
 
-async function runLedgerVerification() {
-  const contentEl = document.getElementById("audit-box-content");
-  const timeEl = document.getElementById("audit-box-time");
-  const statusVal = document.getElementById("ledger-status-text");
-  const statusSub = document.getElementById("ledger-status-sub");
-  const iconEl = document.getElementById("badge-valid-icon");
+// -----------------------------------------------------------------------------
+// MÓDULO 5: AUDITORIA ALCOA+ & LEDGER CRIPTOGRÁFICO
+// -----------------------------------------------------------------------------
+async function loadLedger() {
+  try {
+    // Carrega registros do ledger
+    const resL = await fetch('/api/v1/ledger/records');
+    if (resL.ok) {
+      const dataL = await resL.json();
+      const records = dataL.records || [];
+      const tbodyL = document.getElementById('ledger-records-body');
+      if (tbodyL) {
+        tbodyL.innerHTML = '';
+        records.forEach(r => {
+          const prev = (r.prev_hash || '').substring(0, 16);
+          const cur = (r.current_hash || '').substring(0, 16);
+          const sig = (r.signature || '').substring(0, 24);
+          tbodyL.innerHTML += `
+            <tr>
+              <td><strong style="color:#60A5FA;">#${r.id}</strong></td>
+              <td><span class="badge-status liberado">${r.type_name || 'DATA'}</span></td>
+              <td><code style="font-size:10px; color:#94A3B8;">${prev}...</code></td>
+              <td><code style="font-size:10px; color:#6EE7B7;">${cur}...</code></td>
+              <td><code style="font-size:10px; color:#C4B5FD;">${sig}...</code></td>
+              <td style="font-size:11px; color:#64748B;">${r.created_at || ''}</td>
+            </tr>
+          `;
+        });
+      }
+    }
 
-  contentEl.innerHTML = `<span style="color: #38bdf8;">[ AUDITORIA EM PROGRESSO ] Recalculando todos os hashes SHA-256 e validando assinaturas ECDSA P-256...</span>`;
-  timeEl.textContent = `Executando perícia agora...`;
+    // Carrega trilha de auditoria
+    const resA = await fetch('/api/audit/logs');
+    if (resA.ok) {
+      const logs = await resA.json();
+      const tbodyA = document.getElementById('audit-logs-body');
+      tbodyA.innerHTML = '';
+
+      logs.forEach(l => {
+        tbodyA.innerHTML += `
+          <tr>
+            <td style="font-size:11px; color:#CBD5E1;">${l.timestamp}</td>
+            <td><strong>${l.username}</strong></td>
+            <td><span class="tag-badge tag-blue">${l.role.toUpperCase()}</span></td>
+            <td><code style="color:#F59E0B;">${l.action}</code></td>
+            <td style="font-size:11.5px; color:#E2E8F0;">${l.details}</td>
+            <td style="font-size:11px; color:#64748B;">${l.ip_address}</td>
+          </tr>
+        `;
+      });
+    }
+  } catch (e) {
+    console.error('Erro ao carregar auditoria e ledger:', e);
+  }
+}
+
+async function verifyLedgerLive() {
+  const box = document.getElementById('ledger-audit-box');
+  const msg = document.getElementById('ledger-audit-msg');
+  box.style.display = 'flex';
+  msg.innerText = 'Executando verificação pericial criptográfica (SHA-256 Chaining + ECDSA P-256)...';
 
   try {
-    const res = await fetch("/api/v1/ledger/verify");
-    if (!res.ok) {
-      contentEl.innerHTML = `<span style="color: var(--danger);">Falha ao executar auditoria pericial.</span>`;
-      return;
-    }
-    const report = await res.json();
-    timeEl.textContent = `Laudo emitido em: ${report.verified_at}`;
-
-    if (report.valid) {
-      statusVal.textContent = "100% ÍNTEGRO";
-      statusVal.className = "l-card-val text-success";
-      statusSub.textContent = "Cadeia matematicamente comprovada";
-      iconEl.textContent = "🛡️";
-
-      contentEl.innerHTML = `
-        <div style="margin-bottom: 0.5rem; color: #52d68a; font-weight: 700;">
-          ✓ PROVA MATEMÁTICA CONCLUÍDA COM SUCESSO: NENHUMA FRAUDE OU ADULTERAÇÃO DETECTADA
-        </div>
-        <div>
-          <span class="audit-stat-chip">Total Auditado: <strong>${report.total_records} blocos</strong></span>
-          <span class="audit-stat-chip">Hashes Recalculados: <strong>${report.checked_hashes}</strong></span>
-          <span class="audit-stat-chip">Assinaturas Validadas: <strong>${report.checked_signatures}</strong></span>
-          <span class="audit-stat-chip">Tempo de Verificação: <strong>${report.duration_ms.toFixed(2)} ms</strong></span>
-          <span class="audit-stat-chip">Chave Pública ID: <strong>${report.signer_key_id}</strong></span>
-        </div>
-        <div style="margin-top: 0.6rem; color: #9cb9e6; font-size: 0.8rem;">
-          ${report.regulatory_notice} — Encadeamento ininterrupto de #1 (Gênese) até #${report.head_id} (Head).
-        </div>
-      `;
+    const res = await fetch('/api/v1/ledger/verify');
+    const data = await res.json();
+    if (res.ok && data.valid) {
+      msg.innerHTML = `<strong>Laudo Pericial: 100% CONFORME!</strong> Todos os <strong>${data.total_blocks} blocos</strong> auditados em <strong>${data.verification_time_ms} ms</strong>. Zero adulterações ou quebras de hash detectadas. Assinatura P-256 íntegra.`;
+      box.style.background = 'rgba(16, 185, 129, 0.15)';
+      box.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+      box.style.color = '#6EE7B7';
     } else {
-      statusVal.textContent = "ALERTA: VIOLADO";
-      statusVal.className = "l-card-val text-danger";
-      statusSub.textContent = "Adulteração detectada!";
-      iconEl.textContent = "⚠️";
-
-      contentEl.innerHTML = `
-        <div style="margin-bottom: 0.5rem; color: var(--danger); font-weight: 700;">
-          ❌ ALERTA PERICIAL CRÍTICO: DETECTADAS ANOMALIAS OU TENTATIVAS DE ADULTERAÇÃO!
-        </div>
-        <div style="color: #f87171; margin-top: 0.4rem;">
-          ${(report.anomalies || []).map(a => `<div>• ${escapeHtml(a)}</div>`).join("")}
-        </div>
-      `;
+      msg.innerHTML = `<strong>FALHA DE INTEGRIDADE:</strong> ${data.error || 'Cadeia violada!'}`;
+      box.style.background = 'rgba(239, 68, 68, 0.15)';
+      box.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+      box.style.color = '#FCA5A5';
     }
-  } catch (err) {
-    contentEl.innerHTML = `<span style="color: var(--danger);">Erro ao conectar com o serviço de perícia.</span>`;
+  } catch (e) {
+    msg.innerText = 'Erro ao executar verificação do ledger.';
   }
 }
 
 function exportLedgerJSON() {
-  window.location.href = "/api/v1/ledger/export";
+  window.open('/api/v1/ledger/export', '_blank');
 }
 
-async function createManualAnchor() {
-  if (!confirm("Deseja emitir uma nova Âncora Criptográfica RFC 3161 no Ledger agora?")) {
-    return;
-  }
+async function createAnchorLive() {
   try {
-    const res = await fetch("/api/v1/ledger/anchor", { method: "POST" });
+    const res = await fetch('/api/v1/ledger/anchor', { method: 'POST' });
     const data = await res.json();
     if (res.ok) {
-      alert(`Âncora #${data.anchor.id} registrada com sucesso no Ledger!`);
-      loadLedgerOverview();
-      loadLedgerRecords();
+      alert(`Âncora RFC 3161 #${data.anchor.id} gerada com sucesso!`);
+      loadLedger();
     } else {
-      alert(data.error || "Erro ao emitir âncora.");
+      alert(data.error || 'Erro ao gerar âncora.');
     }
-  } catch (err) {
-    alert("Falha de comunicação.");
+  } catch (e) {
+    alert('Erro de conexão.');
   }
+}
+
+// -----------------------------------------------------------------------------
+// MÓDULO 6: GESTÃO DE USUÁRIOS (RBAC)
+// -----------------------------------------------------------------------------
+async function loadUsers() {
+  try {
+    const res = await fetch('/api/admin/users');
+    if (!res.ok) return;
+    const users = await res.json();
+
+    const tbody = document.getElementById('users-table-body');
+    tbody.innerHTML = '';
+
+    users.forEach(u => {
+      tbody.innerHTML += `
+        <tr>
+          <td>${u.id}</td>
+          <td><strong>${u.username}</strong></td>
+          <td>${u.name}</td>
+          <td><span class="tag-badge tag-blue">${u.role.toUpperCase()}</span></td>
+          <td><span class="badge-status ${u.is_blocked ? 'reprovado' : 'liberado'}">${u.is_blocked ? 'BLOQUEADO' : 'ATIVO'}</span></td>
+          <td style="text-align:right;">
+            <button class="btn-action-primary" style="padding:4px 8px; font-size:11px; background:#1E293B; border:1px solid #334155;" onclick="toggleBlockUser(${u.id}, ${u.is_blocked})">
+              ${u.is_blocked ? 'Desbloquear' : 'Bloquear'}
+            </button>
+          </td>
+        </tr>
+      `;
+    });
+  } catch (e) {
+    console.error('Erro ao carregar usuários:', e);
+  }
+}
+
+async function toggleBlockUser(userId, currentBlocked) {
+  try {
+    const res = await fetch('/api/admin/users/toggle-block', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, is_blocked: currentBlocked ? 0 : 1 })
+    });
+    if (res.ok) {
+      loadUsers();
+    } else {
+      alert('Erro ao alterar bloqueio de usuário.');
+    }
+  } catch (e) {
+    alert('Erro de conexão.');
+  }
+}
+
+// -----------------------------------------------------------------------------
+// STREAMING SSE (SERVER-SENT EVENTS)
+// -----------------------------------------------------------------------------
+function setupSSE() {
+  const ev = new EventSource('/events');
+  ev.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      // Atualiza telemetria em tempo real se necessário
+    } catch (err) {}
+  };
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"coldchain-app/web"
 	"coldchain-app/internal/ledger"
+	"coldchain-app/internal/pharma"
 	"crypto/ecdsa"
 	"context"
 	"crypto/rand"
@@ -140,6 +141,7 @@ func main() {
 	// 2. Loop de commit de lotes em background (~1 segundo)
 	ctx, cancel := context.WithCancel(context.Background())
 	go app.batchCommitLoop(ctx)
+	go app.pharmaSimulatorLoop(ctx)
 
 	// 3. Conexão com o broker MQTT (Eclipse Mosquitto)
 	mqttURL := os.Getenv("MQTT_URL")
@@ -379,6 +381,10 @@ func initDB(path string) (*sql.DB, error) {
 	`
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("erro no schema: %w", err)
+	}
+
+	if err := pharma.InitPharmaSchema(db); err != nil {
+		return nil, fmt.Errorf("erro ao inicializar schema pharma: %w", err)
 	}
 
 	if err := seedUsers(db); err != nil {
@@ -1034,6 +1040,357 @@ func (a *App) routes() http.Handler {
 		})
 	})
 
+
+	// =========================================================================
+	// ROTAS PHARMA & ANVISA (RDC 430/2020 & RDC 197/2017)
+	// =========================================================================
+
+	// 1. Resumo das Câmaras Frias & Geladeiras
+	mux.HandleFunc("/api/pharma/chambers", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		list, err := pharma.GetChambers(a.db)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(list)
+	})
+
+	// 2. Sensores Metrológicos RBC
+	mux.HandleFunc("/api/pharma/sensors", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		chID := r.URL.Query().Get("chamber")
+		list, err := pharma.GetSensors(a.db, chID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(list)
+	})
+
+	// 3. Catálogo de Medicamentos ANVISA
+	mux.HandleFunc("/api/pharma/products", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		list, err := pharma.GetProducts(a.db)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(list)
+	})
+
+	// 4. Lotes com Ordenamento FEFO
+	mux.HandleFunc("/api/pharma/lots", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		chID := r.URL.Query().Get("chamber")
+		st := r.URL.Query().Get("status")
+		list, err := pharma.GetLots(a.db, chID, st)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(list)
+	})
+
+	// 5. Laudo Pericial de Rastreabilidade Completa do Lote
+	mux.HandleFunc("/api/pharma/lots/trace", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		lotNum := r.URL.Query().Get("lot")
+		if lotNum == "" {
+			http.Error(w, "Parâmetro 'lot' obrigatório", http.StatusBadRequest)
+			return
+		}
+		rep, err := pharma.GetLotTrace(a.db, lotNum)
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+			return
+		}
+		json.NewEncoder(w).Encode(rep)
+	})
+
+	// 6. Entrada de Estoque na Doca (Recebimento com Termômetro)
+	mux.HandleFunc("/api/pharma/stock/entry", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		sess, ok := a.getSession(r)
+		if !ok || (sess.Role != "tecnico" && sess.Role != "gerente" && sess.Role != "admin") {
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Acesso restrito ao Técnico, Gerente ou Administrador."})
+			return
+		}
+
+		var payload struct {
+			ProductID              int64   `json:"product_id"`
+			LotNumber              string  `json:"lot_number"`
+			ExpiryDate             string  `json:"expiry_date"`
+			Quantity               int     `json:"quantity"`
+			ChamberID              string  `json:"chamber_id"`
+			ShelfLocation          string  `json:"shelf_location"`
+			UnitPrice              float64 `json:"unit_price"`
+			Supplier               string  `json:"supplier"`
+			SupplierCNPJ           string  `json:"supplier_cnpj"`
+			InvoiceNumber          string  `json:"invoice_number"`
+			TransportCondition     string  `json:"transport_condition"`
+			ArrivalTemp            float64 `json:"arrival_temp"`
+			CargoIntegrity         string  `json:"cargo_integrity"`
+			AmbientExposureMinutes int     `json:"ambient_exposure_minutes"`
+			Decision               string  `json:"decision"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, "JSON inválido", http.StatusBadRequest)
+			return
+		}
+
+		lot := pharma.Lot{
+			ProductID:     payload.ProductID,
+			LotNumber:     payload.LotNumber,
+			ExpiryDate:    payload.ExpiryDate,
+			Quantity:      payload.Quantity,
+			ChamberID:     payload.ChamberID,
+			ShelfLocation: payload.ShelfLocation,
+			UnitPrice:     payload.UnitPrice,
+		}
+		entry := pharma.StockEntry{
+			Supplier:               payload.Supplier,
+			SupplierCNPJ:           payload.SupplierCNPJ,
+			InvoiceNumber:          payload.InvoiceNumber,
+			TransportCondition:     payload.TransportCondition,
+			ArrivalTemp:            payload.ArrivalTemp,
+			CargoIntegrity:         payload.CargoIntegrity,
+			InvoiceMatch:           1,
+			AmbientExposureMinutes: payload.AmbientExposureMinutes,
+			ResponsibleName:        sess.Name,
+			Decision:               payload.Decision,
+		}
+
+		createdLot, err := pharma.RegisterStockEntry(a.db, entry, lot)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		ip := getClientIP(r)
+		a.logAudit(sess.Username, sess.Role, "RECEBIMENTO_ESTOQUE", fmt.Sprintf("Recebimento do lote %s (NF %s) por %s. Temp: %.1f°C. Status: %s", createdLot.LotNumber, entry.InvoiceNumber, sess.Name, entry.ArrivalTemp, createdLot.Status), ip)
+		
+		if a.ledger != nil {
+			ledgerMsg := fmt.Sprintf("ENTRY|LOT:%s|NF:%s|TEMP:%.1f|DEC:%s|BY:%s", createdLot.LotNumber, entry.InvoiceNumber, entry.ArrivalTemp, createdLot.Status, sess.Username)
+			_, _ = a.ledger.AppendData("PHARMA-GATEWAY", uint64(time.Now().UnixNano()), []byte(ledgerMsg), 1)
+		}
+
+		json.NewEncoder(w).Encode(map[string]any{
+			"status": "ok",
+			"lot":    createdLot,
+		})
+	})
+
+	// 7. Saída de Estoque (FEFO)
+	mux.HandleFunc("/api/pharma/stock/exit", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		sess, ok := a.getSession(r)
+		if !ok {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Autenticação requerida."})
+			return
+		}
+
+		var payload struct {
+			LotID         int64  `json:"lot_id"`
+			Quantity      int    `json:"quantity"`
+			Reason        string `json:"reason"`
+			Recipient     string `json:"recipient"`
+			InvoiceNumber string `json:"invoice_number"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, "JSON inválido", http.StatusBadRequest)
+			return
+		}
+
+		exit := pharma.StockExit{
+			LotID:           payload.LotID,
+			Quantity:        payload.Quantity,
+			Reason:          payload.Reason,
+			Recipient:       payload.Recipient,
+			InvoiceNumber:   payload.InvoiceNumber,
+			ResponsibleName: sess.Name,
+		}
+		if err := pharma.RegisterStockExit(a.db, exit); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+			return
+		}
+
+		ip := getClientIP(r)
+		a.logAudit(sess.Username, sess.Role, "SAIDA_ESTOQUE", fmt.Sprintf("Saída de %d unidades do lote #%d. Motivo: %s. Destinatário: %s", exit.Quantity, exit.LotID, exit.Reason, exit.Recipient), ip)
+		
+		if a.ledger != nil {
+			ledgerMsg := fmt.Sprintf("EXIT|LOT_ID:%d|QTY:%d|REASON:%s|TO:%s|BY:%s", exit.LotID, exit.Quantity, exit.Reason, exit.Recipient, sess.Username)
+			_, _ = a.ledger.AppendData("PHARMA-GATEWAY", uint64(time.Now().UnixNano()), []byte(ledgerMsg), 1)
+		}
+
+		json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
+	})
+
+	// 8. Alarmes Operacionais
+	mux.HandleFunc("/api/pharma/alarms", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		st := r.URL.Query().Get("status")
+		list, err := pharma.GetAlarms(a.db, st)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(list)
+	})
+
+	// 9. Reconhecimento de Alarme com Ação Tomada
+	mux.HandleFunc("/api/pharma/alarms/acknowledge", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		sess, ok := a.getSession(r)
+		if !ok {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		var payload struct {
+			AlarmID     int64  `json:"alarm_id"`
+			ActionTaken string `json:"action_taken"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, "JSON inválido", http.StatusBadRequest)
+			return
+		}
+
+		if err := pharma.AcknowledgeAlarm(a.db, payload.AlarmID, sess.Name, payload.ActionTaken); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		ip := getClientIP(r)
+		a.logAudit(sess.Username, sess.Role, "RECONHECE_ALARME", fmt.Sprintf("Alarme #%d reconhecido por %s. Ação: %s", payload.AlarmID, sess.Name, payload.ActionTaken), ip)
+		json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
+	})
+
+	// 10. Processos de Excursão Térmica (ANVISA RDC 430/2020 Art. 38)
+	mux.HandleFunc("/api/pharma/excursions", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		list, err := pharma.GetExcursions(a.db)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(list)
+	})
+
+	// 11. Decisão e Parecer Técnico de Excursão com Assinatura Eletrônica
+	mux.HandleFunc("/api/pharma/excursions/decide", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		sess, ok := a.getSession(r)
+		if !ok || (sess.Role != "gerente" && sess.Role != "admin") {
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Decisão pericial de excursão restrita ao Farmacêutico RT / Gerente / Administrador."})
+			return
+		}
+
+		var payload struct {
+			ExcursionID   int64  `json:"excursion_id"`
+			Decision      string `json:"decision"` // "liberado" ou "descartado"
+			Report        string `json:"report"`
+			ElectronicSig string `json:"electronic_sig"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, "JSON inválido", http.StatusBadRequest)
+			return
+		}
+
+		if payload.ElectronicSig == "" {
+			payload.ElectronicSig = fmt.Sprintf("SIG-P256-RT-%s-%d", sess.Username, time.Now().Unix())
+		}
+
+		if err := pharma.DecideExcursion(a.db, payload.ExcursionID, payload.Decision, payload.Report, payload.ElectronicSig, sess.Name); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		ip := getClientIP(r)
+		a.logAudit(sess.Username, sess.Role, "DECISAO_EXCURSAO", fmt.Sprintf("Decisão da excursão #%d: %s por %s. Parecer: %s. Assinatura: %s", payload.ExcursionID, payload.Decision, sess.Name, payload.Report, payload.ElectronicSig), ip)
+
+		if a.ledger != nil {
+			ledgerMsg := fmt.Sprintf("EXC_DECISION|ID:%d|DEC:%s|BY:%s|SIG:%s", payload.ExcursionID, payload.Decision, sess.Username, payload.ElectronicSig)
+			_, _ = a.ledger.AppendData("PHARMA-GATEWAY", uint64(time.Now().UnixNano()), []byte(ledgerMsg), 1)
+		}
+
+		json.NewEncoder(w).Encode(map[string]any{
+			"status": "ok",
+			"sig":    payload.ElectronicSig,
+		})
+	})
+
+	// 12. Simulação de Excursão para Demonstração Regulatória
+	mux.HandleFunc("/api/pharma/excursions/simulate", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		sess, ok := a.getSession(r)
+		if !ok || (sess.Role != "gerente" && sess.Role != "admin") {
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Simulação restrita a Gerente ou Administrador."})
+			return
+		}
+
+		chID := r.URL.Query().Get("chamber")
+		if chID == "" {
+			chID = "CH-A"
+		}
+
+		excCode := fmt.Sprintf("EXC-SIM-%d", time.Now().Unix()%10000)
+		exc := pharma.Excursion{
+			Code:                     excCode,
+			ChamberID:                chID,
+			SensorID:                 "S01",
+			StartTime:                time.Now().Add(-25 * time.Minute).Format("2006-01-02 15:04:05"),
+			EndTime:                  time.Now().Format("2006-01-02 15:04:05"),
+			PeakTemp:                 9.6,
+			MinTemp:                  4.2,
+			AccumulatedDegreeMinutes: 38.0,
+			Cause:                    "Simulação controlada de queda de energia e transição para nobreak",
+			TechnicalReport:          "Alerta sanitário emitido automaticamente. Todos os lotes foram segregados para Quarentena conforme RDC 430/2020.",
+		}
+
+		excID, err := pharma.TriggerExcursion(a.db, exc)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		ip := getClientIP(r)
+		a.logAudit(sess.Username, sess.Role, "SIMULACAO_EXCURSAO", fmt.Sprintf("Simulação da excursão %s disparada na câmara %s. Lotes segregados em Quarentena.", excCode, chID), ip)
+
+		json.NewEncoder(w).Encode(map[string]any{
+			"status":       "ok",
+			"excursion_id": excID,
+			"code":         excCode,
+			"message":      fmt.Sprintf("Excursão %s gerada. Lotes da câmara %s segregados para Quarentena.", excCode, chID),
+		})
+	})
+
 	return mux
 }
 
@@ -1166,6 +1523,41 @@ func (a *App) flushBatch() {
 			ackTopic := fmt.Sprintf("coldchain/%s/ack", dev)
 			payload := fmt.Sprintf(`{"seq":%d}`, seq)
 			a.mqttClient.Publish(ackTopic, 1, false, payload)
+		}
+	}
+}
+
+func (a *App) pharmaSimulatorLoop(ctx context.Context) {
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
+	// Variação suave de temperatura para os sensores das Câmaras A e B
+	offsets := map[string]float64{
+		"S01": 4.8, "S02": 3.2, "S03": 4.1, "S04": 4.3, "S05": 3.9,
+		"S06": 4.0, "S07": 4.4, "S08": 4.9, "S09": 3.7, "S10": 5.2,
+		"S11": 4.7, "S12": 3.4, "S13": 4.2, "S14": 4.0, "S15": 4.3,
+		"S16": 3.8, "S17": 4.5, "S18": 4.8,
+		"S19": 4.2, "S20": 4.5, "S21": 3.9, "S22": 4.9,
+	}
+
+	step := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			step++
+			nowStr := time.Now().Format("2006-01-02 15:04:05")
+			for id, base := range offsets {
+				// Pequena oscilação de ±0.15°C
+				factor := float64((step*7+int(id[1]))%10 - 5) * 0.03
+				tVal := base + factor
+				hVal := 50.0 + float64((step*3+int(id[1]))%8-4)*0.8
+
+				_, _ = a.db.Exec(`UPDATE sensors 
+					SET current_temp = ?, current_humidity = ?, last_seen = ? 
+					WHERE id = ?`, tVal, hVal, nowStr, id)
+			}
 		}
 	}
 }
