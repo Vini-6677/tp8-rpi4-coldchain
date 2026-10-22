@@ -2,6 +2,8 @@ package main
 
 import (
 	"coldchain-app/web"
+	"coldchain-app/internal/ledger"
+	"crypto/ecdsa"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -69,8 +71,11 @@ type Session struct {
 }
 
 type App struct {
-	db          *sql.DB
-	mqttClient  mqtt.Client
+	db             *sql.DB
+	ledger         *ledger.Ledger
+	signer         ledger.Signer
+	telemetryCount uint64
+	mqttClient     mqtt.Client
 	mu          sync.Mutex
 	subscribers map[chan Telemetry]struct{}
 	latestSeq   map[string]int64
@@ -107,8 +112,26 @@ func main() {
 	}
 	defer db.Close()
 
+	// 2. Inicializa o Assinador e o Ledger Criptográfico Imutável (Seção 6 & 7)
+	keyPath := os.Getenv("LEDGER_KEY_PATH")
+	if keyPath == "" {
+		keyPath = "/data/coldchain/server_ledger_key.pem"
+	}
+	signer, err := ledger.NewFileSigner(keyPath)
+	if err != nil {
+		slog.Error("Falha ao inicializar assinador criptográfico", "erro", err)
+		os.Exit(1)
+	}
+	led, err := ledger.NewLedger(db, signer, ledger.EnvTest)
+	if err != nil {
+		slog.Error("Falha ao inicializar ledger criptográfico", "erro", err)
+		os.Exit(1)
+	}
+
 	app := &App{
 		db:          db,
+		ledger:      led,
+		signer:      signer,
 		subscribers: make(map[chan Telemetry]struct{}),
 		latestSeq:   make(map[string]int64),
 		devicesSeen: make(map[string]time.Time),
@@ -873,6 +896,144 @@ func (a *App) routes() http.Handler {
 		}
 	})
 
+
+	// =========================================================================
+	// ROTAS DE AUDITORIA CRIPTOGRÁFICA E LEDGER WORM (ANVISA RDC 430/2020)
+	// =========================================================================
+
+	// API Ledger: Consulta de Blocos Paginados
+	mux.HandleFunc("/api/v1/ledger/records", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if a.ledger == nil {
+			json.NewEncoder(w).Encode(map[string]any{"records": []any{}, "total": 0})
+			return
+		}
+		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		if limit <= 0 {
+			limit = 50
+		}
+		records, total, err := a.ledger.GetRecords(offset, limit)
+		if err != nil {
+			http.Error(w, "Erro ao buscar blocos do ledger", http.StatusInternalServerError)
+			return
+		}
+		kid := a.signer.KeyID()
+		json.NewEncoder(w).Encode(map[string]any{
+			"status":    "ok",
+			"total":     total,
+			"records":   records,
+			"key_id":    hex.EncodeToString(kid[:]),
+			"algorithm": "ECDSA-P256-SHA256",
+			"standard":  "ANVISA RDC 430/2020 & 21 CFR Part 11",
+		})
+	})
+
+	// API Ledger: Chave Pública e Metadados do Assinador
+	mux.HandleFunc("/api/v1/ledger/public-key", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if a.signer == nil {
+			http.Error(w, "Assinador não inicializado", http.StatusInternalServerError)
+			return
+		}
+		pemStr, _ := a.signer.PublicKeyPEM()
+		rawHex := hex.EncodeToString(a.signer.PublicKeyRaw())
+		kid := a.signer.KeyID()
+		json.NewEncoder(w).Encode(map[string]any{
+			"status":           "ok",
+			"key_id":           hex.EncodeToString(kid[:]),
+			"public_key_pem":   pemStr,
+			"public_key_raw":   rawHex,
+			"curve":            "P-256 (secp256r1)",
+			"signature_format": "raw r||s (64 bytes)",
+			"phase":            "TEST (Chave em flash; Migração ATECC pronta)",
+		})
+	})
+
+	// API Ledger: Auditoria Matemática em Tempo Real (Watchdog Pericial)
+	mux.HandleFunc("/api/v1/ledger/verify", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if a.db == nil || a.signer == nil {
+			json.NewEncoder(w).Encode(map[string]any{"valid": true, "total_records": 0})
+			return
+		}
+		pubKey, ok := a.signer.Public().(*ecdsa.PublicKey)
+		if !ok {
+			http.Error(w, "Chave pública não é ECDSA", http.StatusInternalServerError)
+			return
+		}
+		report, err := ledger.VerifyChain(a.db, pubKey)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(report)
+	})
+
+	// API Ledger: Exportação de Laudo Pericial Regulatório Completo (.JSON)
+	mux.HandleFunc("/api/v1/ledger/export", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", "attachment;filename=coldchain_laudo_pericial_anvisa.json")
+		if a.ledger == nil || a.signer == nil {
+			http.Error(w, "Ledger não inicializado", http.StatusInternalServerError)
+			return
+		}
+		pubKey, _ := a.signer.Public().(*ecdsa.PublicKey)
+		report, _ := ledger.VerifyChain(a.db, pubKey)
+		records, total, _ := a.ledger.GetRecords(0, 50000)
+		pemStr, _ := a.signer.PublicKeyPEM()
+		kid := a.signer.KeyID()
+
+		exportData := map[string]any{
+			"regulatory_standard": "ANVISA RDC 430/2020, RDC 304/2019 & 21 CFR Part 11",
+			"document_title":      "Laudo Pericial Criptográfico de Cadeia de Frio (Ledger WORM)",
+			"generated_at":        time.Now().UTC().Format(time.RFC3339Nano),
+			"total_records":       total,
+			"verification_report": report,
+			"server_authority": map[string]any{
+				"algorithm":      "ECDSA P-256 + SHA-256",
+				"key_id":         hex.EncodeToString(kid[:]),
+				"public_key_pem": pemStr,
+			},
+			"records": records,
+		}
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(exportData)
+	})
+
+	// API Ledger: Emissão Manual de Âncora Criptográfica
+	mux.HandleFunc("/api/v1/ledger/anchor", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		sess, ok := a.getSession(r)
+		if !ok || (sess.Role != "gerente" && sess.Role != "admin") {
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Acesso restrito ao Gerente ou Administrador."})
+			return
+		}
+		if a.ledger == nil {
+			http.Error(w, "Ledger indisponível", http.StatusInternalServerError)
+			return
+		}
+		receipt := fmt.Sprintf("MANUAL_RFC3161_TSA_RECEIPT_%s_%d", sess.Username, time.Now().Unix())
+		rec, err := a.ledger.CreateAnchor(receipt)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		ip := getClientIP(r)
+		a.logAudit(sess.Username, sess.Role, "LEDGER_ANCHOR", fmt.Sprintf("Âncora criptográfica #%d emitida manualmente", rec.ID), ip)
+		json.NewEncoder(w).Encode(map[string]any{
+			"status":  "ok",
+			"anchor":  rec,
+			"message": fmt.Sprintf("Âncora #%d gravada com sucesso.", rec.ID),
+		})
+	})
+
 	return mux
 }
 
@@ -972,6 +1133,32 @@ func (a *App) flushBatch() {
 
 	if err := tx.Commit(); err != nil {
 		return
+	}
+
+	// Registro Criptográfico Imutável no Ledger (ANVISA RDC 430/2020)
+	if a.ledger != nil {
+		for _, it := range items {
+			telemetryPayload, _ := json.Marshal(map[string]any{
+				"device_id": it.DeviceID,
+				"seq":       it.Seq,
+				"ts":        it.TS,
+				"t":         it.T,
+				"h":         it.H,
+				"door":      it.Door,
+				"sync":      it.Sync,
+				"fw":        it.FW,
+			})
+			_, err := a.ledger.AppendData(it.DeviceID, uint64(it.Seq), telemetryPayload, ledger.ClockTrusted)
+			if err != nil {
+				slog.Error("Erro ao gravar no ledger", "seq", it.Seq, "erro", err)
+			}
+			a.telemetryCount++
+			if a.telemetryCount%50 == 0 {
+				receipt := fmt.Sprintf("AUTONOMOUS_RFC3161_TSA_RECEIPT_%d", time.Now().Unix())
+				_, _ = a.ledger.CreateAnchor(receipt)
+				slog.Info("Âncora periódica registrada no ledger", "altura", a.telemetryCount)
+			}
+		}
 	}
 
 	if a.mqttClient != nil && a.mqttClient.IsConnected() {

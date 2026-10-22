@@ -810,6 +810,242 @@
       font-size: 0.8rem;
       outline: none;
     }
+  
+    /* ==========================================================================
+       SUB-TELA 4: ESTILOS DO LEDGER CRIPTOGRÁFICO ANVISA (WORM)
+       ========================================================================== */
+    .ledger-banner {
+      background: linear-gradient(135deg, rgba(21, 36, 69, 0.8) 0%, rgba(13, 23, 44, 0.9) 100%);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1.25rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+    .ledger-title-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.6rem;
+      flex-wrap: wrap;
+    }
+    .ledger-badge-anvisa {
+      background: rgba(82, 214, 138, 0.15);
+      color: #52d68a;
+      border: 1px solid rgba(82, 214, 138, 0.4);
+      padding: 0.3rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+    .ledger-badge-phase {
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      padding: 0.3rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+    .ledger-heading {
+      font-size: 1.3rem;
+      font-weight: 800;
+      color: #ffffff;
+      margin-bottom: 0.35rem;
+    }
+    .ledger-subheading {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      max-width: 650px;
+      line-height: 1.4;
+    }
+    .ledger-banner-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      flex-wrap: wrap;
+    }
+    .btn-ledger-verify {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: #ffffff;
+      border: 1px solid rgba(16, 185, 129, 0.5);
+      padding: 0.65rem 1.15rem;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 10px rgba(16, 185, 129, 0.3);
+    }
+    .btn-ledger-verify:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 15px rgba(16, 185, 129, 0.45);
+    }
+    .btn-ledger-export {
+      background: var(--btn-bg);
+      color: var(--btn-color);
+      border: 1px solid var(--btn-border);
+      padding: 0.65rem 1.15rem;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .btn-ledger-export:hover {
+      background: #2c4169;
+      color: #ffffff;
+    }
+    .btn-ledger-anchor {
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      padding: 0.65rem 1.15rem;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .btn-ledger-anchor:hover {
+      background: rgba(245, 158, 11, 0.25);
+    }
+    .ledger-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    @media (max-width: 1024px) {
+      .ledger-cards-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    @media (max-width: 640px) {
+      .ledger-cards-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .ledger-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 1.15rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .l-card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--text-muted);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+    .l-card-val {
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: #ffffff;
+      margin-bottom: 0.35rem;
+    }
+    .l-card-sub {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+    .ledger-audit-box {
+      background: #090e17;
+      border: 1px solid rgba(82, 214, 138, 0.35);
+      border-radius: 10px;
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+    .audit-box-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      padding-bottom: 0.75rem;
+      margin-bottom: 0.85rem;
+    }
+    .audit-box-title {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-weight: 700;
+      color: #ffffff;
+      font-size: 0.95rem;
+    }
+    .audit-box-meta {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-family: monospace;
+    }
+    .audit-box-details {
+      font-size: 0.85rem;
+      line-height: 1.6;
+      color: #c5d3ea;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    .audit-stat-chip {
+      display: inline-block;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      padding: 0.2rem 0.5rem;
+      margin-right: 0.5rem;
+      margin-bottom: 0.35rem;
+      font-size: 0.8rem;
+    }
+    .audit-stat-chip strong {
+      color: #52d68a;
+    }
+    .type-badge {
+      display: inline-block;
+      padding: 0.2rem 0.55rem;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+    .type-genesis { background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4); }
+    .type-boot { background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); }
+    .type-data { background: rgba(82, 214, 138, 0.2); color: #52d68a; border: 1px solid rgba(82, 214, 138, 0.4); }
+    .type-anchor { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); }
+    .type-checkpoint { background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.4); }
+    .hash-chip {
+      font-family: monospace;
+      font-size: 0.74rem;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 0.2rem 0.45rem;
+      border-radius: 4px;
+      color: #9cb9e6;
+      cursor: pointer;
+    }
+    .hash-chip:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #ffffff;
+    }
+
   </style>
 </head>
 <body>
@@ -894,6 +1130,11 @@
         <button class="nav-tab-btn" id="tab-users" onclick="switchTab('users')" style="display: none;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           Gestão de Usuários
+        </button>
+
+        <button class="nav-tab-btn" id="tab-ledger" onclick="switchTab('ledger')" style="display: none;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+          Auditoria ANVISA (Ledger)
         </button>
 
         <button class="btn-logout" onclick="handleLogout()">
@@ -1154,6 +1395,128 @@
             <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Carregando usuários...</td></tr>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- =======================================================================
+         SUB-TELA 4: AUDITORIA CRIPTOGRÁFICA REGULATÓRIA ANVISA (LEDGER WORM)
+         ======================================================================= -->
+    <div id="section-ledger" style="display: none;">
+      <!-- Banner de Cabeçalho do Laudo -->
+      <div class="ledger-banner">
+        <div class="ledger-banner-info">
+          <div class="ledger-title-row">
+            <span class="ledger-badge-anvisa">CONFORMIDADE ANVISA RDC 430/2020 & 21 CFR 11</span>
+            <span class="ledger-badge-phase" id="ledger-badge-env">FASE: TEST (ECDSA P-256)</span>
+          </div>
+          <h2 class="ledger-heading">Registro Pericial e Auditoria Criptográfica de Cadeia de Frio</h2>
+          <p class="ledger-subheading">
+            Garantia matemática <em>tamper-evident</em> contra qualquer adulteração, remoção ou reordenação de registros térmicos de transporte e armazenamento.
+          </p>
+        </div>
+        <div class="ledger-banner-actions">
+          <button class="btn-ledger-verify" onclick="runLedgerVerification()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            Auditar Cadeia Agora
+          </button>
+          <button class="btn-ledger-export" onclick="exportLedgerJSON()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Exportar Laudo (.JSON)
+          </button>
+          <button class="btn-ledger-anchor" onclick="createManualAnchor()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="3"/><line x1="12" y1="22" x2="12" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/></svg>
+            Emitir Âncora (RFC 3161)
+          </button>
+        </div>
+      </div>
+
+      <!-- Grade de 4 Cards de Métricas Periciais -->
+      <div class="ledger-cards-grid">
+        <div class="ledger-card" id="card-integrity">
+          <div class="l-card-top">
+            <span>STATUS DE INTEGRIDADE</span>
+            <span id="badge-valid-icon">🛡️</span>
+          </div>
+          <div class="l-card-val text-success" id="ledger-status-text">100% ÍNTEGRO</div>
+          <div class="l-card-sub" id="ledger-status-sub">Cadeia matematicamente comprovada</div>
+        </div>
+
+        <div class="ledger-card">
+          <div class="l-card-top">
+            <span>ALTURA DA CADEIA</span>
+            <span>📦</span>
+          </div>
+          <div class="l-card-val" id="ledger-height-text">-- Blocos</div>
+          <div class="l-card-sub" id="ledger-height-sub">Gênese #1 até Head #--</div>
+        </div>
+
+        <div class="ledger-card">
+          <div class="l-card-top">
+            <span>CHAVE & ALGORITMO</span>
+            <span>🔑</span>
+          </div>
+          <div class="l-card-val" style="font-size: 1.15rem; font-family: monospace;" id="ledger-key-id">--------</div>
+          <div class="l-card-sub">ECDSA P-256 (NIST secp256r1)</div>
+        </div>
+
+        <div class="ledger-card">
+          <div class="l-card-top">
+            <span>STATUS DO RELÓGIO & ÂNCORAS</span>
+            <span>⏱️</span>
+          </div>
+          <div class="l-card-val" id="ledger-clock-text">NTS Sincronizado</div>
+          <div class="l-card-sub" id="ledger-anchor-sub">Proteção anti-truncamento ativa</div>
+        </div>
+      </div>
+
+      <!-- Relatório da Última Auditoria Pericial (Watchdog) -->
+      <div class="ledger-audit-box" id="ledger-audit-box">
+        <div class="audit-box-header">
+          <div class="audit-box-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#52d68a" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span>Laudo Pericial de Auditoria Matemática em Tempo Real</span>
+          </div>
+          <div class="audit-box-meta" id="audit-box-time">Clique em "Auditar Cadeia Agora" para executar</div>
+        </div>
+        <div class="audit-box-details" id="audit-box-content">
+          Aguardando comando de auditoria pericial. Clique no botão verde acima para recalcular todos os hashes SHA-256 e validar todas as assinaturas digitais ECDSA P-256.
+        </div>
+      </div>
+
+      <!-- Tabela do Ledger de Blocos -->
+      <div class="main-table-card">
+        <div class="table-header-row">
+          <div>
+            <div class="table-title">Explorador de Blocos Criptográficos (WORM Ledger)</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
+              Registros imutáveis com encadeamento de hash SHA-256 e assinaturas individuais de 64 bytes
+            </div>
+          </div>
+          <div class="actions-group">
+            <button class="btn-action" onclick="loadLedgerRecords()">Atualizar Blocos</button>
+          </div>
+        </div>
+
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Bloco #</th>
+                <th>Tipo</th>
+                <th>Origem</th>
+                <th>Seq</th>
+                <th>Horário UTC</th>
+                <th>Hash Anterior (prev_hash)</th>
+                <th>Hash Atual (current_hash)</th>
+                <th>Assinatura ECDSA (64B)</th>
+                <th>Autenticidade</th>
+              </tr>
+            </thead>
+            <tbody id="ledger-table-body">
+              <tr><td colspan="9" style="text-align: center; color: var(--text-muted);">Carregando blocos criptográficos...</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>

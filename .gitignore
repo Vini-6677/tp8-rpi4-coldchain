@@ -31,3 +31,4 @@ vendor/
 /tmp/
 .DS_Store
 Thumbs.db
+/coldchain-app/coldchain-verify

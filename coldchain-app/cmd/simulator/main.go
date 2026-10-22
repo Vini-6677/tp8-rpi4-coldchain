@@ -28,7 +28,8 @@ func main() {
 	broker := flag.String("broker", "tcp://127.0.0.1:1883", "Endereço do broker MQTT")
 	username := flag.String("user", "esp32-sensor-01", "Usuário MQTT")
 	password := flag.String("pass", "SensorSecret2026!", "Senha MQTT")
-	interval := flag.Duration("interval", 2*time.Second, "Intervalo entre telemetrias")
+	interval := flag.Duration("interval", 1*time.Second, "Intervalo entre telemetrias")
+	maxCount := flag.Int("count", 0, "Número de mensagens a enviar (0 para contínuo)")
 	flag.Parse()
 
 	fmt.Printf("[+] Simulador ESP32 iniciado para '%s' em %s\n", *deviceID, *broker)
@@ -66,6 +67,13 @@ func main() {
 
 	var seq int64 = 1
 	for {
+		if *maxCount > 0 && seq > int64(*maxCount) {
+			fmt.Printf("[+] Total de %d telemetrias enviadas com sucesso. Aguardando commits...\n", *maxCount)
+			time.Sleep(1500 * time.Millisecond)
+			client.Disconnect(250)
+			return
+		}
+
 		select {
 		case <-sigChan:
 			fmt.Println("\n[!] Encerrando simulador ESP32...")

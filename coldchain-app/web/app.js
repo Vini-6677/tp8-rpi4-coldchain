@@ -58,6 +58,16 @@ function renderAuthenticatedUI() {
     tabAudit.style.display = "none";
   }
 
+  // Auditoria Criptográfica Regulatório ANVISA acessível para Gerente, Admin e Técnico
+  const tabLedger = document.getElementById("tab-ledger");
+  if (tabLedger) {
+    if (currentUser.role === "gerente" || currentUser.role === "admin" || currentUser.role === "tecnico") {
+      tabLedger.style.display = "inline-flex";
+    } else {
+      tabLedger.style.display = "none";
+    }
+  }
+
   // Gestão de Usuários visível exclusivamente para Admin
   if (currentUser.role === "admin") {
     tabUsers.style.display = "inline-flex";
@@ -146,15 +156,22 @@ function switchTab(tab) {
   document.getElementById("tab-telemetry").classList.toggle("active", tab === "telemetry");
   document.getElementById("tab-audit").classList.toggle("active", tab === "audit");
   document.getElementById("tab-users").classList.toggle("active", tab === "users");
+  const tabLedger = document.getElementById("tab-ledger");
+  if (tabLedger) tabLedger.classList.toggle("active", tab === "ledger");
 
   document.getElementById("section-telemetry").style.display = (tab === "telemetry") ? "block" : "none";
   document.getElementById("section-audit").style.display = (tab === "audit") ? "block" : "none";
   document.getElementById("section-users").style.display = (tab === "users") ? "block" : "none";
+  const secLedger = document.getElementById("section-ledger");
+  if (secLedger) secLedger.style.display = (tab === "ledger") ? "block" : "none";
 
   if (tab === "audit") {
     loadAuditLogs();
   } else if (tab === "users") {
     loadUsers();
+  } else if (tab === "ledger") {
+    loadLedgerOverview();
+    loadLedgerRecords();
   }
 }
 
@@ -467,3 +484,173 @@ function escapeHtml(str) {
 
 // Inicializa verificação de sessão ao carregar a página
 checkSession();
+
+
+// ============================================================================
+// 5. AUDITORIA CRIPTOGRÁFICA REGULATÓRIA ANVISA (LEDGER WORM)
+// ============================================================================
+
+async function loadLedgerOverview() {
+  try {
+    const resKey = await fetch("/api/v1/ledger/public-key");
+    if (resKey.ok) {
+      const keyData = await resKey.json();
+      const keyEl = document.getElementById("ledger-key-id");
+      if (keyEl) keyEl.textContent = keyData.key_id ? keyData.key_id.toUpperCase() : "--------";
+    }
+
+    const resRec = await fetch("/api/v1/ledger/records?limit=1");
+    if (resRec.ok) {
+      const recData = await resRec.json();
+      const heightEl = document.getElementById("ledger-height-text");
+      const heightSub = document.getElementById("ledger-height-sub");
+      if (heightEl) heightEl.textContent = `${recData.total} Blocos`;
+      if (heightSub) heightSub.textContent = `Gênese #1 até Head #${recData.total}`;
+    }
+  } catch (err) {
+    console.error("Erro ao carregar visão geral do ledger:", err);
+  }
+}
+
+async function loadLedgerRecords() {
+  const tbody = document.getElementById("ledger-table-body");
+  if (!tbody) return;
+  tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">Consultando cadeia criptográfica...</td></tr>`;
+
+  try {
+    const res = await fetch("/api/v1/ledger/records?limit=100");
+    if (!res.ok) {
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--danger);">Acesso não autorizado ou ledger indisponível.</td></tr>`;
+      return;
+    }
+    const data = await res.json();
+    const records = data.records || [];
+
+    if (records.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">Nenhum bloco registrado no ledger.</td></tr>`;
+      return;
+    }
+
+    // Atualiza contadores do card
+    const heightEl = document.getElementById("ledger-height-text");
+    const heightSub = document.getElementById("ledger-height-sub");
+    if (heightEl) heightEl.textContent = `${data.total} Blocos`;
+    if (heightSub) heightSub.textContent = `Gênese #1 até Head #${data.total}`;
+
+    tbody.innerHTML = records.map(r => {
+      let typeClass = "type-data";
+      if (r.type_name === "GENESIS") typeClass = "type-genesis";
+      else if (r.type_name === "BOOT") typeClass = "type-boot";
+      else if (r.type_name === "ANCHOR") typeClass = "type-anchor";
+      else if (r.type_name === "CHECKPOINT") typeClass = "type-checkpoint";
+
+      const shortPrev = r.prev_hash ? `${r.prev_hash.slice(0, 8)}...${r.prev_hash.slice(-6)}` : "zeros";
+      const shortCurr = r.current_hash ? `${r.current_hash.slice(0, 8)}...${r.current_hash.slice(-6)}` : "";
+      const shortSig = r.signature ? `${r.signature.slice(0, 8)}...${r.signature.slice(-6)}` : "";
+
+      return `
+        <tr>
+          <td><strong style="color: #ffffff;">#${r.id}</strong></td>
+          <td><span class="type-badge ${typeClass}">${r.type_name}</span></td>
+          <td><span style="font-family: monospace; font-size: 0.8rem; color: #a5b4fc;">${escapeHtml(r.device_id)}</span></td>
+          <td>${r.seq || 0}</td>
+          <td style="font-size: 0.78rem; font-family: monospace; color: var(--text-muted);">${r.created_at || r.server_time || "-"}</td>
+          <td><span class="hash-chip" title="Clique para copiar hash completo" onclick="navigator.clipboard.writeText('${r.prev_hash}')">${shortPrev}</span></td>
+          <td><span class="hash-chip" style="color: #52d68a; border-color: rgba(82,214,138,0.3);" title="Clique para copiar hash completo" onclick="navigator.clipboard.writeText('${r.current_hash}')">${shortCurr}</span></td>
+          <td><span class="hash-chip" title="Clique para copiar assinatura raw de 64 bytes" onclick="navigator.clipboard.writeText('${r.signature}')">${shortSig}</span></td>
+          <td>
+            <span style="display: inline-flex; align-items: center; gap: 0.35rem; color: #52d68a; font-size: 0.75rem; font-weight: 700;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              Íntegro
+            </span>
+          </td>
+        </tr>
+      `;
+    }).join("");
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--danger);">Erro de comunicação com o servidor.</td></tr>`;
+  }
+}
+
+async function runLedgerVerification() {
+  const contentEl = document.getElementById("audit-box-content");
+  const timeEl = document.getElementById("audit-box-time");
+  const statusVal = document.getElementById("ledger-status-text");
+  const statusSub = document.getElementById("ledger-status-sub");
+  const iconEl = document.getElementById("badge-valid-icon");
+
+  contentEl.innerHTML = `<span style="color: #38bdf8;">[ AUDITORIA EM PROGRESSO ] Recalculando todos os hashes SHA-256 e validando assinaturas ECDSA P-256...</span>`;
+  timeEl.textContent = `Executando perícia agora...`;
+
+  try {
+    const res = await fetch("/api/v1/ledger/verify");
+    if (!res.ok) {
+      contentEl.innerHTML = `<span style="color: var(--danger);">Falha ao executar auditoria pericial.</span>`;
+      return;
+    }
+    const report = await res.json();
+    timeEl.textContent = `Laudo emitido em: ${report.verified_at}`;
+
+    if (report.valid) {
+      statusVal.textContent = "100% ÍNTEGRO";
+      statusVal.className = "l-card-val text-success";
+      statusSub.textContent = "Cadeia matematicamente comprovada";
+      iconEl.textContent = "🛡️";
+
+      contentEl.innerHTML = `
+        <div style="margin-bottom: 0.5rem; color: #52d68a; font-weight: 700;">
+          ✓ PROVA MATEMÁTICA CONCLUÍDA COM SUCESSO: NENHUMA FRAUDE OU ADULTERAÇÃO DETECTADA
+        </div>
+        <div>
+          <span class="audit-stat-chip">Total Auditado: <strong>${report.total_records} blocos</strong></span>
+          <span class="audit-stat-chip">Hashes Recalculados: <strong>${report.checked_hashes}</strong></span>
+          <span class="audit-stat-chip">Assinaturas Validadas: <strong>${report.checked_signatures}</strong></span>
+          <span class="audit-stat-chip">Tempo de Verificação: <strong>${report.duration_ms.toFixed(2)} ms</strong></span>
+          <span class="audit-stat-chip">Chave Pública ID: <strong>${report.signer_key_id}</strong></span>
+        </div>
+        <div style="margin-top: 0.6rem; color: #9cb9e6; font-size: 0.8rem;">
+          ${report.regulatory_notice} — Encadeamento ininterrupto de #1 (Gênese) até #${report.head_id} (Head).
+        </div>
+      `;
+    } else {
+      statusVal.textContent = "ALERTA: VIOLADO";
+      statusVal.className = "l-card-val text-danger";
+      statusSub.textContent = "Adulteração detectada!";
+      iconEl.textContent = "⚠️";
+
+      contentEl.innerHTML = `
+        <div style="margin-bottom: 0.5rem; color: var(--danger); font-weight: 700;">
+          ❌ ALERTA PERICIAL CRÍTICO: DETECTADAS ANOMALIAS OU TENTATIVAS DE ADULTERAÇÃO!
+        </div>
+        <div style="color: #f87171; margin-top: 0.4rem;">
+          ${(report.anomalies || []).map(a => `<div>• ${escapeHtml(a)}</div>`).join("")}
+        </div>
+      `;
+    }
+  } catch (err) {
+    contentEl.innerHTML = `<span style="color: var(--danger);">Erro ao conectar com o serviço de perícia.</span>`;
+  }
+}
+
+function exportLedgerJSON() {
+  window.location.href = "/api/v1/ledger/export";
+}
+
+async function createManualAnchor() {
+  if (!confirm("Deseja emitir uma nova Âncora Criptográfica RFC 3161 no Ledger agora?")) {
+    return;
+  }
+  try {
+    const res = await fetch("/api/v1/ledger/anchor", { method: "POST" });
+    const data = await res.json();
+    if (res.ok) {
+      alert(`Âncora #${data.anchor.id} registrada com sucesso no Ledger!`);
+      loadLedgerOverview();
+      loadLedgerRecords();
+    } else {
+      alert(data.error || "Erro ao emitir âncora.");
+    }
+  } catch (err) {
+    alert("Falha de comunicação.");
+  }
+}
