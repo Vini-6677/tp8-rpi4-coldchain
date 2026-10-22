@@ -1045,9 +1045,58 @@ func (a *App) routes() http.Handler {
 	// ROTAS PHARMA & ANVISA (RDC 430/2020 & RDC 197/2017)
 	// =========================================================================
 
-	// 1. Resumo das Câmaras Frias & Geladeiras
+	// 1. Câmaras Frias & Equipamentos de Armazenagem (GET / POST / PUT)
 	mux.HandleFunc("/api/pharma/chambers", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method == http.MethodPost {
+			sess, ok := a.getSession(r)
+			if !ok || (sess.Role != "gerente" && sess.Role != "admin") {
+				w.WriteHeader(http.StatusForbidden)
+				json.NewEncoder(w).Encode(map[string]any{"error": "Cadastro de câmaras restrito a Farmacêutico RT / Gerente / Administrador."})
+				return
+			}
+			var payload pharma.Chamber
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				http.Error(w, "JSON inválido", http.StatusBadRequest)
+				return
+			}
+			created, err := pharma.RegisterChamber(a.db, payload)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+				return
+			}
+			ip := getClientIP(r)
+			a.logAudit(sess.Username, sess.Role, "CADASTRO_CAMARA", fmt.Sprintf("Equipamento '%s' (ID %s, Tipo: %s, Faixa: %.1f a %.1f °C) cadastrado por %s", created.Name, created.ID, created.Type, created.TempMin, created.TempMax, sess.Name), ip)
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(created)
+			return
+		}
+
+		if r.Method == http.MethodPut {
+			sess, ok := a.getSession(r)
+			if !ok || (sess.Role != "gerente" && sess.Role != "admin") {
+				w.WriteHeader(http.StatusForbidden)
+				json.NewEncoder(w).Encode(map[string]any{"error": "Edição de câmaras restrita a Farmacêutico RT / Gerente / Administrador."})
+				return
+			}
+			var payload pharma.Chamber
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				http.Error(w, "JSON inválido", http.StatusBadRequest)
+				return
+			}
+			if err := pharma.UpdateChamber(a.db, payload); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+				return
+			}
+			ip := getClientIP(r)
+			a.logAudit(sess.Username, sess.Role, "EDICAO_CAMARA", fmt.Sprintf("Parâmetros da câmara '%s' alterados por %s (Temp: %.1f a %.1f °C, Delay: %d min)", payload.ID, sess.Name, payload.TempMin, payload.TempMax, payload.AlarmDelayMin), ip)
+			json.NewEncoder(w).Encode(map[string]any{"status": "ok", "message": "Câmara atualizada com sucesso."})
+			return
+		}
+
 		list, err := pharma.GetChambers(a.db)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1068,9 +1117,35 @@ func (a *App) routes() http.Handler {
 		json.NewEncoder(w).Encode(list)
 	})
 
-	// 3. Catálogo de Medicamentos ANVISA
+	// 3. Catálogo de Medicamentos ANVISA (GET / POST)
 	mux.HandleFunc("/api/pharma/products", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method == http.MethodPost {
+			sess, ok := a.getSession(r)
+			if !ok || (sess.Role != "gerente" && sess.Role != "admin") {
+				w.WriteHeader(http.StatusForbidden)
+				json.NewEncoder(w).Encode(map[string]any{"error": "Cadastro de medicamentos restrito a Farmacêutico RT / Gerente / Administrador."})
+				return
+			}
+			var payload pharma.Product
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				http.Error(w, "JSON inválido", http.StatusBadRequest)
+				return
+			}
+			created, err := pharma.RegisterProduct(a.db, payload)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+				return
+			}
+			ip := getClientIP(r)
+			a.logAudit(sess.Username, sess.Role, "CADASTRO_PRODUTO", fmt.Sprintf("Medicamento '%s' (DCB: %s, Reg. ANVISA: %s) cadastrado por %s", created.TradeName, created.DCB, created.AnvisaReg, sess.Name), ip)
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(created)
+			return
+		}
+
 		list, err := pharma.GetProducts(a.db)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)

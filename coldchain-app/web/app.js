@@ -1138,3 +1138,158 @@ async function loadQualityDossier() {
 function exportQualityJSON() {
   window.open('/api/pharma/quality/dossier', '_blank');
 }
+
+
+// ==============================================================================
+// FASE 2: GESTÃO REAL DE MEDICAMENTOS E CÂMARAS (ANVISA RDC 430/2020)
+// ==============================================================================
+
+function openNewProductModal() {
+  const m = document.getElementById('modal-new-product');
+  if (m) m.classList.add('active');
+}
+
+function closeNewProductModal() {
+  const m = document.getElementById('modal-new-product');
+  if (m) m.classList.remove('active');
+  const f = document.getElementById('form-new-product');
+  if (f) f.reset();
+}
+
+async function submitNewProduct() {
+  const tradeName = document.getElementById('prod-name').value.trim();
+  const dcb = document.getElementById('prod-dcb').value.trim();
+  const anvisaReg = document.getElementById('prod-anvisa').value.trim();
+  const presentation = document.getElementById('prod-presentation').value.trim();
+  const manufacturer = document.getElementById('prod-manufacturer').value.trim();
+  const tempMin = parseFloat(document.getElementById('prod-temp-min').value);
+  const tempMax = parseFloat(document.getElementById('prod-temp-max').value);
+  const humMax = parseFloat(document.getElementById('prod-hum-max').value);
+  const photosensitive = parseInt(document.getElementById('prod-photosensitive').value, 10);
+
+  if (tempMin > tempMax) {
+    alert('A temperatura mínima não pode ser superior à máxima.');
+    return;
+  }
+
+  const payload = {
+    trade_name: tradeName,
+    dcb: dcb,
+    anvisa_reg: anvisaReg,
+    presentation: presentation,
+    manufacturer: manufacturer,
+    temp_min: tempMin,
+    temp_max: tempMax,
+    humidity_min: 30.0,
+    humidity_max: humMax,
+    photosensitive: photosensitive
+  };
+
+  try {
+    const res = await fetch('/api/pharma/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert('Erro ao cadastrar medicamento: ' + (data.error || 'Erro desconhecido'));
+      return;
+    }
+
+    alert('Medicamento ' + tradeName + ' cadastrado com sucesso no Catálogo ANVISA!');
+    closeNewProductModal();
+    loadProducts(); // recarrega catálogo e selects
+  } catch (e) {
+    console.error('Erro na requisição:', e);
+    alert('Erro de conexão ao salvar medicamento.');
+  }
+}
+
+function openNewChamberModal() {
+  const m = document.getElementById('modal-new-chamber');
+  if (m) {
+    m.classList.add('active');
+    const valid = document.getElementById('ch-qual-valid');
+    if (valid && !valid.value) {
+      const d = new Date();
+      d.setFullYear(d.getFullYear() + 2);
+      valid.value = d.toISOString().split('T')[0];
+    }
+  }
+}
+
+function closeNewChamberModal() {
+  const m = document.getElementById('modal-new-chamber');
+  if (m) m.classList.remove('active');
+  const f = document.getElementById('form-new-chamber');
+  if (f) f.reset();
+}
+
+function updateChamberPresets() {
+  const type = document.getElementById('ch-type').value;
+  const tMin = document.getElementById('ch-temp-min');
+  const tMax = document.getElementById('ch-temp-max');
+  if (type === 'refrigerado') {
+    tMin.value = '2.0';
+    tMax.value = '8.0';
+  } else if (type === 'ambiente_controlado') {
+    tMin.value = '15.0';
+    tMax.value = '30.0';
+  } else if (type === 'congelado') {
+    tMin.value = '-25.0';
+    tMax.value = '-15.0';
+  } else if (type === 'ultra_frio') {
+    tMin.value = '-80.0';
+    tMax.value = '-60.0';
+  }
+}
+
+async function submitNewChamber() {
+  const id = document.getElementById('ch-id').value.trim().toUpperCase();
+  const name = document.getElementById('ch-name').value.trim();
+  const type = document.getElementById('ch-type').value;
+  const delay = parseInt(document.getElementById('ch-delay').value, 10);
+  const tempMin = parseFloat(document.getElementById('ch-temp-min').value);
+  const tempMax = parseFloat(document.getElementById('ch-temp-max').value);
+  const qualStatus = document.getElementById('ch-qual-status').value.trim();
+  const qualValid = document.getElementById('ch-qual-valid').value;
+
+  if (tempMin > tempMax) {
+    alert('A temperatura mínima não pode ser superior à máxima.');
+    return;
+  }
+
+  const payload = {
+    id: id,
+    name: name,
+    type: type,
+    temp_min: tempMin,
+    temp_max: tempMax,
+    humidity_min: 30.0,
+    humidity_max: 75.0,
+    alarm_delay_min: delay,
+    qualification_status: qualStatus,
+    qualification_valid_until: qualValid
+  };
+
+  try {
+    const res = await fetch('/api/pharma/chambers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert('Erro ao cadastrar equipamento: ' + (data.error || 'Erro desconhecido'));
+      return;
+    }
+
+    alert('Câmara ' + name + ' (' + id + ') cadastrada com sucesso!');
+    closeNewChamberModal();
+    loadChambers(true);
+  } catch (e) {
+    console.error('Erro na requisição:', e);
+    alert('Erro de conexão ao cadastrar câmara.');
+  }
+}

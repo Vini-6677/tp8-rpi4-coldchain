@@ -965,3 +965,106 @@ func GetQualityDossier(db *sql.DB) (QualityDossier, error) {
 	}
 	return dossier, nil
 }
+
+
+// RegisterProduct valida e cadastra um novo medicamento no catálogo ANVISA.
+func RegisterProduct(db *sql.DB, p Product) (*Product, error) {
+	if p.TradeName == "" {
+		return nil, fmt.Errorf("nome comercial do medicamento é obrigatório")
+	}
+	if p.DCB == "" {
+		return nil, fmt.Errorf("DCB / princípio ativo é obrigatório")
+	}
+	if p.Manufacturer == "" {
+		return nil, fmt.Errorf("fabricante é obrigatório")
+	}
+	if p.AnvisaReg == "" {
+		return nil, fmt.Errorf("número de registro ANVISA é obrigatório")
+	}
+	if p.TempMin > p.TempMax {
+		return nil, fmt.Errorf("temperatura mínima (%.1f°C) não pode ser superior à máxima (%.1f°C)", p.TempMin, p.TempMax)
+	}
+	if p.HumidityMin > p.HumidityMax {
+		return nil, fmt.Errorf("umidade mínima (%.1f%%) não pode ser superior à máxima (%.1f%%)", p.HumidityMin, p.HumidityMax)
+	}
+
+	res, err := db.Exec(`
+		INSERT INTO products (trade_name, dcb, presentation, manufacturer, anvisa_reg, temp_min, temp_max, humidity_min, humidity_max, photosensitive)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.TradeName, p.DCB, p.Presentation, p.Manufacturer, p.AnvisaReg, p.TempMin, p.TempMax, p.HumidityMin, p.HumidityMax, p.Photosensitive,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao inserir medicamento: %w", err)
+	}
+
+	id, _ := res.LastInsertId()
+	p.ID = id
+	p.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
+	return &p, nil
+}
+
+// RegisterChamber valida e cadastra uma nova câmara ou equipamento de refrigeração no sistema.
+func RegisterChamber(db *sql.DB, c Chamber) (*Chamber, error) {
+	if c.ID == "" {
+		return nil, fmt.Errorf("identificador único da câmara (ID) é obrigatório")
+	}
+	if c.Name == "" {
+		return nil, fmt.Errorf("nome descritivo da câmara é obrigatório")
+	}
+	if c.TempMin > c.TempMax {
+		return nil, fmt.Errorf("temperatura mínima (%.1f°C) não pode ser superior à máxima (%.1f°C)", c.TempMin, c.TempMax)
+	}
+	if c.AlarmDelayMin <= 0 {
+		c.AlarmDelayMin = 5
+	}
+	if c.Status == "" {
+		c.Status = "OK"
+	}
+	if c.QualStatus == "" {
+		c.QualStatus = "Qualificado (DQ/IQ/OQ/PQ)"
+	}
+	if c.QualValidUntil == "" {
+		c.QualValidUntil = time.Now().AddDate(2, 0, 0).Format("2006-01-02")
+	}
+	if c.Type == "" {
+		c.Type = "refrigerado"
+	}
+
+	_, err := db.Exec(`
+		INSERT INTO chambers (id, name, type, temp_min, temp_max, humidity_min, humidity_max, alarm_delay_min, status, qualification_status, qualification_valid_until)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.ID, c.Name, c.Type, c.TempMin, c.TempMax, c.HumidityMin, c.HumidityMax, c.AlarmDelayMin, c.Status, c.QualStatus, c.QualValidUntil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao cadastrar câmara: %w", err)
+	}
+
+	c.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
+	return &c, nil
+}
+
+// UpdateChamber atualiza as configurações térmicas e de tolerância de uma câmara existente.
+func UpdateChamber(db *sql.DB, c Chamber) error {
+	if c.ID == "" {
+		return fmt.Errorf("ID da câmara é obrigatório")
+	}
+	if c.TempMin > c.TempMax {
+		return fmt.Errorf("temperatura mínima não pode ser superior à máxima")
+	}
+
+	res, err := db.Exec(`
+		UPDATE chambers
+		SET name = ?, type = ?, temp_min = ?, temp_max = ?, humidity_min = ?, humidity_max = ?, alarm_delay_min = ?, qualification_status = ?, qualification_valid_until = ?
+		WHERE id = ?`,
+		c.Name, c.Type, c.TempMin, c.TempMax, c.HumidityMin, c.HumidityMax, c.AlarmDelayMin, c.QualStatus, c.QualValidUntil, c.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("erro ao atualizar câmara: %w", err)
+	}
+
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("câmara com ID '%s' não encontrada", c.ID)
+	}
+	return nil
+}

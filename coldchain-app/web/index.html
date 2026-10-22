@@ -910,6 +910,27 @@
       border-bottom: none;
     }
 
+  
+    .btn-action-secondary {
+      background: rgba(255, 255, 255, 0.08);
+      color: #94A3B8;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.2s;
+    }
+    .btn-action-secondary:hover {
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border-color: rgba(56, 189, 248, 0.4);
+    }
+
   </style>
 </head>
 <body>
@@ -1075,6 +1096,10 @@
             <button class="btn-action-fefo" onclick="openExitModal()">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
               Saída / Dispensação (FEFO)
+            </button>
+            <button class="btn-action-secondary" id="btn-new-product" onclick="openNewProductModal()">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/></svg>
+              + Novo Medicamento (Catálogo)
             </button>
           </div>
           <div style="display: flex; gap: 8px;">
@@ -1630,5 +1655,145 @@
   </div>
 
   <script src="/static/app.js"></script>
+
+  <!-- =========================================================================
+       MODAL 5: CADASTRO DE MEDICAMENTO (CATÁLOGO ANVISA)
+       ========================================================================= -->
+  <div id="modal-new-product" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Cadastrar Medicamento (Catálogo ANVISA)</div>
+        <button class="btn-close-modal" onclick="closeNewProductModal()">&times;</button>
+      </div>
+
+      <form id="form-new-product" onsubmit="event.preventDefault(); submitNewProduct();">
+        <div class="form-group">
+          <label class="form-label">Nome Comercial do Medicamento</label>
+          <input type="text" id="prod-name" class="form-control" placeholder="ex: Trastuzumabe 440mg Injetável" required>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">DCB / Princípio Ativo</label>
+            <input type="text" id="prod-dcb" class="form-control" placeholder="ex: Trastuzumabe" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Nº Registro ANVISA (13 dígitos)</label>
+            <input type="text" id="prod-anvisa" class="form-control" placeholder="ex: 1.0100.0543.001-2" required>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Apresentação Farmacêutica</label>
+            <input type="text" id="prod-presentation" class="form-control" placeholder="ex: Frasco-ampola pó liofilizado" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Fabricante / Detentor</label>
+            <input type="text" id="prod-manufacturer" class="form-control" placeholder="ex: Roche Brasil Farmacêutica" required>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Temp. Mínima Permitida (°C)</label>
+            <input type="number" step="0.1" id="prod-temp-min" class="form-control" value="2.0" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Temp. Máxima Permitida (°C)</label>
+            <input type="number" step="0.1" id="prod-temp-max" class="form-control" value="8.0" required>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Umidade Relativa Máx (%)</label>
+            <input type="number" id="prod-hum-max" class="form-control" value="70" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Sensibilidade à Luz (Fotossensível)</label>
+            <select id="prod-photosensitive" class="form-control">
+              <option value="1">Sim (Exige embalagem fotoprotetora)</option>
+              <option value="0" selected>Não (Estável à luz ambiente)</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 1rem;">
+          <button type="button" class="btn-cancel" onclick="closeNewProductModal()">Cancelar</button>
+          <button type="submit" class="btn-primary">Salvar no Catálogo ANVISA</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 6: CADASTRO DE CÂMARA / EQUIPAMENTO DE REFRIGERAÇÃO
+       ========================================================================= -->
+  <div id="modal-new-chamber" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Cadastrar Equipamento / Câmara Fria</div>
+        <button class="btn-close-modal" onclick="closeNewChamberModal()">&times;</button>
+      </div>
+
+      <form id="form-new-chamber" onsubmit="event.preventDefault(); submitNewChamber();">
+        <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Código ID Único</label>
+            <input type="text" id="ch-id" class="form-control" placeholder="ex: CH-C, FREEZER-02" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Nome Descritivo da Câmara</label>
+            <input type="text" id="ch-name" class="form-control" placeholder="ex: Câmara Fria C - Reserva Oncológicos" required>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Classificação Regulatória RDC 430</label>
+            <select id="ch-type" class="form-control" onchange="updateChamberPresets()">
+              <option value="refrigerado" selected>Refrigerados: 2,0 °C a 8,0 °C</option>
+              <option value="ambiente_controlado">Ambiente Controlado: 15,0 °C a 30,0 °C</option>
+              <option value="congelado">Congelados: -25,0 °C a -15,0 °C</option>
+              <option value="ultra_frio">Ultra-Frio: -80,0 °C a -60,0 °C</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tolerância / Atraso de Alarme (minutos)</label>
+            <input type="number" id="ch-delay" class="form-control" value="5" min="1" max="60" required>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Temp. Mínima Permitida (°C)</label>
+            <input type="number" step="0.1" id="ch-temp-min" class="form-control" value="2.0" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Temp. Máxima Permitida (°C)</label>
+            <input type="number" step="0.1" id="ch-temp-max" class="form-control" value="8.0" required>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Status da Qualificação Térmica</label>
+            <input type="text" id="ch-qual-status" class="form-control" value="Qualificado (DQ/IQ/OQ/PQ)" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Validade da Qualificação</label>
+            <input type="date" id="ch-qual-valid" class="form-control" required>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 1rem;">
+          <button type="button" class="btn-cancel" onclick="closeNewChamberModal()">Cancelar</button>
+          <button type="submit" class="btn-primary">Cadastrar Equipamento</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
 </body>
 </html>

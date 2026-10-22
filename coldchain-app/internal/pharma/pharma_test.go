@@ -234,3 +234,111 @@ func TestPharmaAutomaticExcursionQuarantine(t *testing.T) {
 		}
 	}
 }
+
+
+func TestPharmaProductRegistration(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Validação de erro: nome vazio
+	_, err := RegisterProduct(db, Product{})
+	if err == nil {
+		t.Errorf("esperava erro ao cadastrar produto com campos vazios")
+	}
+
+	// Cadastro válido
+	p := Product{
+		TradeName:      "Trastuzumabe 440mg",
+		DCB:            "Trastuzumabe",
+		Presentation:   "Frasco-ampola com pó liofilizado",
+		Manufacturer:   "Roche Brasil",
+		AnvisaReg:      "1.0100.0543.001-2",
+		TempMin:        2.0,
+		TempMax:        8.0,
+		HumidityMin:    30.0,
+		HumidityMax:    70.0,
+		Photosensitive: 1,
+	}
+	created, err := RegisterProduct(db, p)
+	if err != nil {
+		t.Fatalf("erro ao cadastrar medicamento: %v", err)
+	}
+	if created.ID == 0 {
+		t.Errorf("ID do produto criado deve ser maior que 0")
+	}
+
+	// Consulta o catálogo e confirma que o novo medicamento está presente
+	prods, err := GetProducts(db)
+	if err != nil {
+		t.Fatalf("erro ao buscar produtos: %v", err)
+	}
+	found := false
+	for _, pr := range prods {
+		if pr.AnvisaReg == "1.0100.0543.001-2" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("medicamento recém cadastrado não encontrado no catálogo")
+	}
+}
+
+func TestPharmaChamberRegistrationAndEdit(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Validação de erro: ID vazio
+	_, err := RegisterChamber(db, Chamber{})
+	if err == nil {
+		t.Errorf("esperava erro ao cadastrar câmara sem ID")
+	}
+
+	// Cadastro de nova câmara
+	newChamber := Chamber{
+		ID:             "CH-C",
+		Name:           "Câmara Fria C - Reserva Oncológicos",
+		Type:           "refrigerado",
+		TempMin:        2.0,
+		TempMax:        8.0,
+		HumidityMin:    45.0,
+		HumidityMax:    75.0,
+		AlarmDelayMin:  3,
+		QualStatus:     "Qualificado (DQ/IQ/OQ/PQ)",
+		QualValidUntil: "2028-01-01",
+	}
+	created, err := RegisterChamber(db, newChamber)
+	if err != nil {
+		t.Fatalf("erro ao cadastrar câmara: %v", err)
+	}
+	if created.ID != "CH-C" {
+		t.Errorf("esperava ID CH-C, obteve %s", created.ID)
+	}
+
+	// Edição da câmara criada
+	created.TempMax = 7.5
+	created.AlarmDelayMin = 2
+	err = UpdateChamber(db, *created)
+	if err != nil {
+		t.Fatalf("erro ao atualizar câmara: %v", err)
+	}
+
+	// Consulta e confirma a alteração
+	chambers, err := GetChambers(db)
+	if err != nil {
+		t.Fatalf("erro ao buscar câmaras: %v", err)
+	}
+	var found *Chamber
+	for _, c := range chambers {
+		if c.ID == "CH-C" {
+			found = &c
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("câmara CH-C não encontrada na lista")
+	}
+	if found.TempMax != 7.5 || found.AlarmDelayMin != 2 {
+		t.Errorf("alterações não persistidas: TempMax=%.1f, Delay=%d", found.TempMax, found.AlarmDelayMin)
+	}
+}
