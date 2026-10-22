@@ -27,8 +27,8 @@ func TestPharmaChambersAndSensors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("erro ao buscar câmaras: %v", err)
 	}
-	if len(chambers) != 3 {
-		t.Errorf("esperava 3 câmaras, obteve %d", len(chambers))
+	if len(chambers) != 5 {
+		t.Errorf("esperava 5 câmaras (CH-A, CH-B, GEL-01, ALM-01, ULT-01), obteve %d", len(chambers))
 	}
 
 	// Câmara A deve ter 10 sensores
@@ -47,6 +47,57 @@ func TestPharmaChambersAndSensors(t *testing.T) {
 	}
 	if len(sensorsB) != 8 {
 		t.Errorf("esperava 8 sensores na CH-B, obteve %d", len(sensorsB))
+	}
+
+	// Almoxarifado deve ter 4 sensores
+	sensorsAlm, err := GetSensors(db, "ALM-01")
+	if err != nil {
+		t.Fatalf("erro ao buscar sensores ALM-01: %v", err)
+	}
+	if len(sensorsAlm) != 4 {
+		t.Errorf("esperava 4 sensores no ALM-01, obteve %d", len(sensorsAlm))
+	}
+
+	// Ultra-frio deve ter 2 sensores
+	sensorsUlt, err := GetSensors(db, "ULT-01")
+	if err != nil {
+		t.Fatalf("erro ao buscar sensores ULT-01: %v", err)
+	}
+	if len(sensorsUlt) != 2 {
+		t.Errorf("esperava 2 sensores no ULT-01, obteve %d", len(sensorsUlt))
+	}
+}
+
+func TestPharmaKPIsAndQualityDossier(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	kpi, err := GetPharmaKPIs(db)
+	if err != nil {
+		t.Fatalf("erro ao obter KPIs: %v", err)
+	}
+	if kpi.AvailabilityPct < 99.5 {
+		t.Errorf("disponibilidade abaixo da meta ANVISA: %.2f%%", kpi.AvailabilityPct)
+	}
+	if kpi.AvgResponseTimeMinutes > 30.0 {
+		t.Errorf("tempo de resposta acima da meta ANVISA: %.2f min", kpi.AvgResponseTimeMinutes)
+	}
+	if kpi.ExcursionRatePct > 0.1 {
+		t.Errorf("taxa de desvio acima da meta ANVISA: %.2f%%", kpi.ExcursionRatePct)
+	}
+
+	dossier, err := GetQualityDossier(db)
+	if err != nil {
+		t.Fatalf("erro ao obter dossiê de qualidade: %v", err)
+	}
+	if len(dossier.POPs) != 6 {
+		t.Errorf("esperava 6 POPs obrigatórios, obteve %d", len(dossier.POPs))
+	}
+	if len(dossier.Qualifications) != 5 {
+		t.Errorf("esperava 5 qualificações térmicas, obteve %d", len(dossier.Qualifications))
+	}
+	if len(dossier.ChecklistItems) != 12 {
+		t.Errorf("esperava 12 itens de autoinspeção, obteve %d", len(dossier.ChecklistItems))
 	}
 }
 

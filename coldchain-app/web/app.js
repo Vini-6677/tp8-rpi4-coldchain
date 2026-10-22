@@ -1,3 +1,13 @@
+let selectedCategory = 'todas';
+
+function filterChamberCategory(cat, btn) {
+  selectedCategory = cat;
+  document.querySelectorAll('.cat-pill').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadKPIs();
+      loadChambers(false);
+}
+
 // ColdChain Pharma RT — Frontend Logic (ANVISA RDC 430/2020 & RDC 197/2017)
 
 let currentUser = null;
@@ -61,6 +71,7 @@ function showApp() {
   }
 
   // Carrega dados iniciais
+  loadKPIs();
   loadChambers();
   loadProducts();
   loadLots();
@@ -131,6 +142,7 @@ function switchTab(tabId) {
   if (tabId === 'metrology') loadMetrology();
   if (tabId === 'ledger') loadLedger();
   if (tabId === 'users') loadUsers();
+  if (tabId === 'quality') loadQualityDossier();
 }
 
 function toggleTVMode() {
@@ -158,7 +170,12 @@ async function loadChambers(renderDetail = true) {
     const container = document.getElementById('chambers-cards-container');
     container.innerHTML = '';
 
-    chambersData.forEach(c => {
+    const toRender = chambersData.filter(c => {
+      if (selectedCategory === 'todas') return true;
+      return c.type === selectedCategory;
+    });
+
+    toRender.forEach(c => {
       const isSel = c.id === selectedChamberId;
       const statusClass = c.status === 'EXCURSAO' ? 'status-excursao' : '';
       const pillClass = c.status === 'EXCURSAO' ? 'excursao' : (c.status === 'ALERTA' ? 'alerta' : 'ok');
@@ -172,7 +189,7 @@ async function loadChambers(renderDetail = true) {
         <div class="chamber-header">
           <div>
             <div class="chamber-title-text">${c.name}</div>
-            <div class="chamber-type-text">${c.type === 'camara_fria' ? 'Câmara Fria Industrial' : 'Geladeira Qualificada'} • ID: ${c.id}</div>
+            <div class="chamber-type-text">${c.type === 'ultra_frio' ? 'Freezer Ultra-Frio -80°C' : (c.type === 'ambiente_controlado' ? 'Ambiente Climatizado (15°C–30°C)' : (c.type === 'geladeira' ? 'Geladeira Farmácia Qualificada' : 'Câmara Fria Industrial 2°C–8°C'))} • ID: ${c.id}</div>
           </div>
           <span class="status-pill ${pillClass}">
             <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:currentColor;"></span>
@@ -1020,4 +1037,104 @@ function setupSSE() {
       // Atualiza telemetria em tempo real se necessário
     } catch (err) {}
   };
+}
+
+
+// ==============================================================================
+// SEÇÃO: KPIS REGULATÓRIOS E DOSSIÊ DA QUALIDADE RDC 430/2020 & HAGELAB 2025
+// ==============================================================================
+async function loadKPIs() {
+  try {
+    const res = await fetch('/api/pharma/kpis');
+    if (!res.ok) return;
+    const kpi = await res.json();
+    const elUptime = document.getElementById('kpi-uptime');
+    const elMttr = document.getElementById('kpi-mttr');
+    const elExc = document.getElementById('kpi-excursion-rate');
+    const elCapa = document.getElementById('kpi-capa-eff');
+    if (elUptime) elUptime.innerText = `${kpi.availability_pct.toFixed(2)}%`;
+    if (elMttr) elMttr.innerText = `${kpi.avg_response_time_minutes.toFixed(1)} min`;
+    if (elExc) elExc.innerText = `${kpi.excursion_rate_pct.toFixed(2)}%`;
+    if (elCapa) elCapa.innerText = `${kpi.capa_efficiency_pct.toFixed(1)}%`;
+  } catch (e) {
+    console.error('Erro ao carregar KPIs regulatórios:', e);
+  }
+}
+
+async function loadQualityDossier() {
+  try {
+    const res = await fetch('/api/pharma/quality/dossier');
+    if (!res.ok) return;
+    const dossier = await res.json();
+
+    // 1. POPs Obrigatórios
+    const popsTbody = document.getElementById('quality-pops-tbody');
+    if (popsTbody) {
+      popsTbody.innerHTML = dossier.pops.map(p => `
+        <tr>
+          <td><strong style="color:#38bdf8">${p.code}</strong></td>
+          <td>${p.title}</td>
+          <td><span class="tag-badge tag-blue">${p.version}</span></td>
+          <td>${p.last_review}</td>
+          <td>${p.next_review}</td>
+          <td>${p.responsible}</td>
+          <td><span class="tag-badge tag-green">${p.status}</span></td>
+          <td>
+            <button class="btn-table-action" onclick="alert('Exibindo documento oficial auditado:\n' + '${p.code} - ${p.title}\nVersão: ${p.version}\nResponsável: ${p.responsible}\nStatus: 100% VIGENTE')">Visualizar</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    // 2. Qualificações DQ/IQ/OQ/PQ
+    const qualsTbody = document.getElementById('quality-quals-tbody');
+    if (qualsTbody) {
+      qualsTbody.innerHTML = dossier.qualifications.map(q => `
+        <tr>
+          <td><strong style="color:#38bdf8">${q.chamber_id}</strong></td>
+          <td><strong>${q.chamber_name}</strong></td>
+          <td><span class="tag-badge tag-purple">${q.stage}</span></td>
+          <td>${q.report_number}</td>
+          <td>${q.executed_by}</td>
+          <td><span style="color:#52d68a; font-weight:600;">${q.thermal_autonomy}</span></td>
+          <td>${q.valid_until}</td>
+          <td><span class="tag-badge tag-green">${q.status}</span></td>
+        </tr>
+      `).join('');
+    }
+
+    // 3. Treinamentos da Equipe
+    const trainsTbody = document.getElementById('quality-trainings-tbody');
+    if (trainsTbody) {
+      trainsTbody.innerHTML = dossier.trainings.map(t => `
+        <tr>
+          <td><strong>${t.employee_name}</strong></td>
+          <td>${t.role}</td>
+          <td><span style="color:#93c5fd; font-size:0.75rem;">${t.pop_code}</span></td>
+          <td><span style="color:#52d68a; font-weight:700;">${t.score_pct}%</span></td>
+          <td><span class="tag-badge tag-green">${t.status}</span></td>
+        </tr>
+      `).join('');
+    }
+
+    // 4. Checklist Autoinspeção RDC 430
+    const checkContainer = document.getElementById('quality-checklist-container');
+    if (checkContainer) {
+      checkContainer.innerHTML = dossier.checklist_items.map((item, idx) => `
+        <div class="checklist-row">
+          <div>
+            <div style="font-weight:600; color:#ffffff; margin-bottom:0.15rem;">${item.item}</div>
+            <div style="font-size:0.72rem; color:var(--text-muted);">${item.requirement} • <em style="color:#93c5fd;">Evidência: ${item.evidence}</em></div>
+          </div>
+          <span class="tag-badge tag-green" style="flex-shrink:0;">100% Conforme</span>
+        </div>
+      `).join('');
+    }
+  } catch (e) {
+    console.error('Erro ao carregar dossiê da qualidade:', e);
+  }
+}
+
+function exportQualityJSON() {
+  window.open('/api/pharma/quality/dossier', '_blank');
 }

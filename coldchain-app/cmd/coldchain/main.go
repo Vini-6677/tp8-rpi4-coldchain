@@ -1352,6 +1352,8 @@ func (a *App) routes() http.Handler {
 		if !ok || (sess.Role != "gerente" && sess.Role != "admin") {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]any{"error": "Simulação restrita a Gerente ou Administrador."})
+
+
 			return
 		}
 
@@ -1389,6 +1391,27 @@ func (a *App) routes() http.Handler {
 			"code":         excCode,
 			"message":      fmt.Sprintf("Excursão %s gerada. Lotes da câmara %s segregados para Quarentena.", excCode, chID),
 		})
+	})
+	// 13. Indicadores de Performance (KPIs) ANVISA RDC 430/2020
+	mux.HandleFunc("/api/pharma/kpis", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		kpi, err := pharma.GetPharmaKPIs(a.db)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(kpi)
+	})
+
+	// 14. Dossiê da Garantia da Qualidade, POPs e Qualificação DQ/IQ/OQ/PQ
+	mux.HandleFunc("/api/pharma/quality/dossier", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		dossier, err := pharma.GetQualityDossier(a.db)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(dossier)
 	})
 
 	return mux
@@ -1538,6 +1561,8 @@ func (a *App) pharmaSimulatorLoop(ctx context.Context) {
 		"S11": 4.7, "S12": 3.4, "S13": 4.2, "S14": 4.0, "S15": 4.3,
 		"S16": 3.8, "S17": 4.5, "S18": 4.8,
 		"S19": 4.2, "S20": 4.5, "S21": 3.9, "S22": 4.9,
+		"S23": 21.8, "S24": 22.4, "S25": 21.2, "S26": 23.0,
+		"S27": -72.4, "S28": -69.1,
 	}
 
 	step := 0

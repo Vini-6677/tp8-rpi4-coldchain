@@ -175,3 +175,76 @@ type LotTraceReport struct {
 	RemainingQty   int          `json:"remaining_qty"`
 	IntegrityALCOA string       `json:"integrity_alcoa"`
 }
+
+
+// PharmaKPIs reúne os indicadores de desempenho regulatórios auditados pela ANVISA (RDC 430/2020 / HageLab 2025).
+type PharmaKPIs struct {
+	AvailabilityPct        float64 `json:"availability_pct"`          // Meta: >= 99.5%
+	AvgResponseTimeMinutes float64 `json:"avg_response_time_minutes"`  // Meta: <= 30 min
+	ExcursionRatePct       float64 `json:"excursion_rate_pct"`         // Meta: <= 0.1%
+	CapaEfficiencyPct      float64 `json:"capa_efficiency_pct"`        // Meta: >= 95.0%
+	TotalMonitoredHours    float64 `json:"total_monitored_hours"`
+	UptimeHours            float64 `json:"uptime_hours"`
+	TotalAlarms            int     `json:"total_alarms"`
+	AcknowledgedAlarms     int     `json:"acknowledged_alarms"`
+	ActiveAlarms           int     `json:"active_alarms"`
+	TotalSensors           int     `json:"total_sensors"`
+	CalibratedSensors      int     `json:"calibrated_sensors"`
+	ExpiringSensors        int     `json:"expiring_sensors"`
+	RetentionYears         int     `json:"retention_years"`            // 5 anos (RDC 430 Art. 60)
+	LastAuditDate          string  `json:"last_audit_date"`
+	ComplianceStatus       string  `json:"compliance_status"`         // "100% Conforme"
+}
+
+// POPItem representa um Procedimento Operacional Padrão da Garantia da Qualidade.
+type POPItem struct {
+	Code        string `json:"code"`
+	Title       string `json:"title"`
+	Version     string `json:"version"`
+	LastReview  string `json:"last_review"`
+	NextReview  string `json:"next_review"`
+	Responsible string `json:"responsible"`
+	Status      string `json:"status"` // "Vigente", "Em Revisão"
+}
+
+// QualificationItem representa uma fase de qualificação de câmara (DQ/IQ/OQ/PQ) e autonomia térmica.
+type QualificationItem struct {
+	ChamberID       string `json:"chamber_id"`
+	ChamberName     string `json:"chamber_name"`
+	Stage           string `json:"stage"` // "DQ", "IQ", "OQ", "PQ"
+	ReportNumber    string `json:"report_number"`
+	ExecutedBy      string `json:"executed_by"`
+	ExecutionDate   string `json:"execution_date"`
+	ValidUntil      string `json:"valid_until"`
+	ThermalAutonomy string `json:"thermal_autonomy"` // Ex: "6h 30min sem energia (limite 8°C)"
+	Status          string `json:"status"`           // "Aprovado", "Pendente"
+}
+
+// TrainingRecord representa o treinamento de um colaborador nas normas e POPs.
+type TrainingRecord struct {
+	EmployeeName string `json:"employee_name"`
+	Role         string `json:"role"`
+	POPCode      string `json:"pop_code"`
+	TrainedAt    string `json:"trained_at"`
+	ScorePct     int    `json:"score_pct"`
+	Status       string `json:"status"` // "Apto", "Pendente Reciclagem"
+}
+
+// ChecklistItem representa um item de conformidade da autoinspeção sanitária RDC 430.
+type ChecklistItem struct {
+	Item        string `json:"item"`
+	Requirement string `json:"requirement"`
+	Evidence    string `json:"evidence"`
+	Compliant   bool   `json:"compliant"`
+}
+
+// QualityDossier engloba todo o dossiê da garantia da qualidade pronto para inspeção sanitária.
+type QualityDossier struct {
+	POPs           []POPItem           `json:"pops"`
+	Qualifications []QualificationItem `json:"qualifications"`
+	Trainings      []TrainingRecord    `json:"trainings"`
+	ChecklistItems []ChecklistItem     `json:"checklist_items"`
+	GeneratedAt    string              `json:"generated_at"`
+	TechnicalLead  string              `json:"technical_lead"`
+	CRF            string              `json:"crf"`
+}
