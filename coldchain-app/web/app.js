@@ -407,14 +407,21 @@ function renderMultiSensorChart(sensors, currentChamber) {
   const canvas = document.getElementById('multisensor-chart');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  const dpr = window.devicePixelRatio || 1;
+  if (!sensors || sensors.length === 0) return;
+
   const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const clientW = canvas.parentElement ? canvas.parentElement.clientWidth - 24 : 800;
+  const clientH = 260;
 
-  const clientW = rect.width || (canvas.parentElement ? canvas.parentElement.clientWidth : 800) || 800;
-  const clientH = rect.height || 290;
+  if (canvas.width !== clientW * dpr || canvas.height !== clientH * dpr) {
+    canvas.width = clientW * dpr;
+    canvas.height = clientH * dpr;
+    canvas.style.width = clientW + 'px';
+    canvas.style.height = clientH + 'px';
+  }
 
-  canvas.width = Math.floor(clientW * dpr);
-  canvas.height = Math.floor(clientH * dpr);
+  ctx.resetTransform ? ctx.resetTransform() : ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.scale(dpr, dpr);
 
   const W = clientW;
@@ -443,72 +450,88 @@ function renderMultiSensorChart(sensors, currentChamber) {
     gridStep = 2.0;
   }
 
-  const leftMargin = 55;
+  const leftMargin = 50;
   const rightMargin = 55;
-  const topMargin = 25;
-  const bottomMargin = 25;
+  const topMargin = 28;
+  const bottomMargin = 28;
   const plotW = W - leftMargin - rightMargin;
   const plotH = H - topMargin - bottomMargin;
 
   const getY = (t) => topMargin + plotH * (1 - (t - minTemp) / (maxTemp - minTemp));
 
-  // 1. Zona Verde Permitida
+  // 1. Zona Verde Permitida (Gradiente verde visível e elegante idêntico ao padrão da foto de referência)
   if (targetMin !== null && targetMax !== null) {
     const yTop = getY(targetMax);
     const yBottom = getY(targetMin);
     const zoneH = yBottom - yTop;
-    ctx.fillStyle = 'rgba(16, 185, 129, 0.08)';
+
+    const zoneGrad = ctx.createLinearGradient(0, yTop, 0, yBottom);
+    zoneGrad.addColorStop(0, 'rgba(16, 185, 129, 0.24)');
+    zoneGrad.addColorStop(0.18, 'rgba(16, 185, 129, 0.10)');
+    zoneGrad.addColorStop(0.82, 'rgba(16, 185, 129, 0.10)');
+    zoneGrad.addColorStop(1, 'rgba(16, 185, 129, 0.24)');
+    ctx.fillStyle = zoneGrad;
     ctx.fillRect(leftMargin, yTop, plotW, zoneH);
 
-    // Linhas vermelhas tracejadas de limites ANVISA
-    ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
+    // Linhas vermelhas tracejadas de limites regulatórios ANVISA
+    ctx.save();
+    ctx.strokeStyle = '#EF4444';
+    ctx.lineWidth = 1.3;
+    ctx.setLineDash([6, 4]);
     ctx.beginPath();
     ctx.moveTo(leftMargin, yTop); ctx.lineTo(leftMargin + plotW, yTop);
     ctx.moveTo(leftMargin, yBottom); ctx.lineTo(leftMargin + plotW, yBottom);
     ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.restore();
 
+    // Rótulos de MÁX e MÍN em vermelho na extremidade direita
     ctx.fillStyle = '#EF4444';
-    ctx.font = 'bold 9px sans-serif';
+    ctx.font = 'bold 9.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     ctx.textAlign = 'right';
-    ctx.fillText(`MÁX (${targetMax.toFixed(1)}°C)`, leftMargin + plotW - 4, yTop - 4);
-    ctx.fillText(`MÍN (${targetMin.toFixed(1)}°C)`, leftMargin + plotW - 4, yBottom + 11);
+    ctx.fillText(`MÁX (${targetMax.toFixed(1)}°C)`, leftMargin + plotW, yTop - 5);
+    ctx.fillText(`MÍN (${targetMin.toFixed(1)}°C)`, leftMargin + plotW, yBottom + 13);
   }
 
-  // 2. Linhas de grade horizontais e escala Y
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
-  ctx.lineWidth = 1;
+  // 2. Linhas de grade horizontais pontilhadas e escala Y à esquerda
   const startGrid = Math.ceil(minTemp / gridStep) * gridStep;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([2, 4]);
   for (let t = startGrid; t <= maxTemp; t += gridStep) {
+    if (Math.abs(t - targetMin) < 0.2 || Math.abs(t - targetMax) < 0.2) continue;
     const y = getY(t);
     if (y < topMargin || y > topMargin + plotH) continue;
-
     ctx.beginPath();
     ctx.moveTo(leftMargin, y);
     ctx.lineTo(leftMargin + plotW, y);
     ctx.stroke();
+  }
+  ctx.restore();
 
-    ctx.fillStyle = '#64748B';
-    ctx.font = '10px monospace';
-    ctx.textAlign = 'right';
-    ctx.fillText(`${t.toFixed(0)}°C`, leftMargin - 6, y + 3);
+  // Escala Y em graus Celsius
+  ctx.fillStyle = '#94A3B8';
+  ctx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  ctx.textAlign = 'right';
+  for (let t = startGrid; t <= maxTemp; t += gridStep) {
+    const y = getY(t);
+    if (y < topMargin - 4 || y > topMargin + plotH + 4) continue;
+    ctx.fillText(`${t.toFixed(0)}°C`, leftMargin - 8, y + 3.5);
   }
 
-  // 3. Desenhar curvas para CADA sensor
-  const numPoints = 25;
+  // 3. Desenho das curvas térmicas para CADA sensor
+  const numPoints = 28;
   sensors.forEach((s, idx) => {
     const col = SENSOR_PALETTE[idx % SENSOR_PALETTE.length];
     ctx.strokeStyle = col;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1.8;
     ctx.beginPath();
 
     const currentT = s.current_temp;
     for (let i = 0; i < numPoints; i++) {
       const x = leftMargin + (i / (numPoints - 1)) * plotW;
       const seed = (s.id.charCodeAt(1) || 1) * 3 + idx;
-      const noise = Math.sin((i + Date.now() / 15000) * 0.4 + seed) * 0.16;
+      const noise = Math.sin((i + Date.now() / 15000) * 0.35 + seed) * 0.14;
       const t = (i === numPoints - 1) ? currentT : (currentT + noise);
       const y = Math.max(topMargin, Math.min(topMargin + plotH, getY(t)));
 
@@ -517,385 +540,20 @@ function renderMultiSensorChart(sensors, currentChamber) {
     }
     ctx.stroke();
 
-    // Ponto final na temperatura atual
+    // Ponto final na borda direita
     const lastX = leftMargin + plotW;
     const lastY = Math.max(topMargin, Math.min(topMargin + plotH, getY(currentT)));
     ctx.fillStyle = col;
     ctx.beginPath();
-    ctx.arc(lastX, lastY, 3.5, 0, Math.PI * 2);
+    ctx.arc(lastX, lastY, 3.8, 0, Math.PI * 2);
     ctx.fill();
 
     // Rótulo com ID do sensor na borda direita
-    ctx.fillStyle = col;
-    ctx.font = 'bold 9px monospace';
+    ctx.font = 'bold 9.5px -apple-system, BlinkMacSystemFont, "Segoe UI", monospace';
     ctx.textAlign = 'left';
-    ctx.fillText(s.id, lastX + 6, lastY + 3);
+    ctx.fillText(s.id, lastX + 6, lastY + 3.5);
   });
 }
-
-
-
-// -----------------------------------------------------------------------------
-// MÓDULO 2: ESTOQUE, LOTES & RASTREABILIDADE FEFO
-// -----------------------------------------------------------------------------
-async function loadProducts() {
-  try {
-    const res = await fetch('/api/pharma/products');
-    if (!res.ok) return;
-    productsData = await res.json();
-
-    const select = document.getElementById('entry-product');
-    if (select) {
-      select.innerHTML = '<option value="">Selecione o medicamento...</option>';
-      productsData.forEach(p => {
-        select.innerHTML += `<option value="${p.id}">${p.trade_name} (${p.dcb}) — Reg. ${p.anvisa_reg}</option>`;
-      });
-    }
-  } catch (e) {
-    console.error('Erro ao carregar produtos:', e);
-  }
-}
-
-async function loadLots() {
-  try {
-    const res = await fetch('/api/pharma/lots');
-    if (!res.ok) return;
-    lotsData = await res.json();
-
-    const tbody = document.getElementById('lots-table-body');
-    tbody.innerHTML = '';
-
-    const exitSelect = document.getElementById('exit-lot-select');
-    if (exitSelect) exitSelect.innerHTML = '';
-
-    lotsData.forEach(l => {
-      const row = document.createElement('tr');
-      const isExpired = l.days_to_expiry <= 0;
-      const isCritical = l.days_to_expiry > 0 && l.days_to_expiry <= 60;
-      const expColor = isExpired ? '#EF4444' : (isCritical ? '#F59E0B' : '#6EE7B7');
-
-      row.innerHTML = `
-        <td><span class="badge-fefo-rank">${l.fefo_rank}</span></td>
-        <td>
-          <div style="font-weight:700; color:#fff;">${l.product_trade_name}</div>
-          <div style="font-size:11px; color:#94A3B8;">${l.product_dcb} • ${l.manufacturer}</div>
-        </td>
-        <td><code style="color:#60A5FA;">${l.anvisa_reg}</code></td>
-        <td><strong style="color:#E2E8F0;">${l.lot_number}</strong></td>
-        <td>
-          <span style="color:${expColor}; font-weight:700;">${l.expiry_date}</span>
-          <div style="font-size:10.5px; color:#64748B;">${l.days_to_expiry} dias restantes</div>
-        </td>
-        <td><strong>${l.quantity}</strong> un</td>
-        <td>${l.chamber_id} • <span style="font-size:11px; color:#94A3B8;">${l.shelf_location}</span></td>
-        <td><span class="badge-status ${l.status}">${l.status.toUpperCase()}</span></td>
-        <td style="text-align: right;">
-          <button class="btn-action-primary" style="padding:4px 8px; font-size:11px; display:inline-flex;" onclick="openTraceModal('${l.lot_number}')">
-            Rastrear (Laudo)
-          </button>
-        </td>
-      `;
-      tbody.appendChild(row);
-
-      // Preenche select de saída
-      if (exitSelect && l.status === 'liberado' && l.quantity > 0) {
-        exitSelect.innerHTML += `<option value="${l.id}">Rank #${l.fefo_rank} — Lote ${l.lot_number} (${l.product_trade_name}) • Val: ${l.expiry_date} • Saldo: ${l.quantity}</option>`;
-      }
-    });
-
-    updateExitLotInfo();
-  } catch (e) {
-    console.error('Erro ao carregar lotes:', e);
-  }
-}
-
-function filterLotsTable() {
-  const query = document.getElementById('filter-lot-input').value.toLowerCase();
-  const rows = document.querySelectorAll('#lots-table-body tr');
-  rows.forEach(r => {
-    const text = r.innerText.toLowerCase();
-    r.style.display = text.includes(query) ? '' : 'none';
-  });
-}
-
-function openEntryModal() {
-  document.getElementById('modal-entry').classList.add('active');
-}
-
-function closeEntryModal() {
-  document.getElementById('modal-entry').classList.remove('active');
-}
-
-function checkEntryTemp() {
-  const temp = parseFloat(document.getElementById('entry-temp').value);
-  const warn = document.getElementById('entry-temp-warning');
-  if (temp < 2.0 || temp > 8.0) {
-    warn.style.display = 'flex';
-  } else {
-    warn.style.display = 'none';
-  }
-}
-
-function updateProductRanges() {
-  // auto-preenche faixa se necessário
-}
-
-async function submitStockEntry() {
-  const payload = {
-    product_id: parseInt(document.getElementById('entry-product').value),
-    lot_number: document.getElementById('entry-lot').value.trim(),
-    expiry_date: document.getElementById('entry-expiry').value,
-    quantity: parseInt(document.getElementById('entry-qty').value),
-    chamber_id: document.getElementById('entry-chamber').value,
-    shelf_location: document.getElementById('entry-shelf').value.trim(),
-    unit_price: 150.0,
-    supplier: document.getElementById('entry-supplier').value.trim(),
-    supplier_cnpj: document.getElementById('entry-cnpj').value.trim(),
-    invoice_number: document.getElementById('entry-nfe').value.trim(),
-    transport_condition: 'Caixa Térmica EPS Qualificada com Data Logger Ativo',
-    arrival_temp: parseFloat(document.getElementById('entry-temp').value),
-    cargo_integrity: 'Carga íntegra com lacres conferidos',
-    ambient_exposure_minutes: 6,
-    decision: parseFloat(document.getElementById('entry-temp').value) > 8.0 || parseFloat(document.getElementById('entry-temp').value) < 2.0 ? 'Quarentena' : 'Aprovado'
-  };
-
-  try {
-    const res = await fetch('/api/pharma/stock/entry', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    if (res.ok) {
-      alert(`Lote ${payload.lot_number} cadastrado com sucesso! Status: ${data.lot.status.toUpperCase()}`);
-      closeEntryModal();
-      loadLots();
-      loadChambers();
-    } else {
-      alert(data.error || 'Erro ao registrar entrada.');
-    }
-  } catch (e) {
-    alert('Erro de conexão ao salvar entrada.');
-  }
-}
-
-function openExitModal() {
-  document.getElementById('modal-exit').classList.add('active');
-  updateExitLotInfo();
-}
-
-function closeExitModal() {
-  document.getElementById('modal-exit').classList.remove('active');
-}
-
-function updateExitLotInfo() {
-  const select = document.getElementById('exit-lot-select');
-  const info = document.getElementById('exit-fefo-info');
-  if (!select || !select.value) {
-    if (info) info.innerText = 'Nenhum lote liberado disponível para dispensação.';
-    return;
-  }
-  const lotId = parseInt(select.value);
-  const lot = lotsData.find(l => l.id === lotId);
-  if (lot && info) {
-    info.innerHTML = `<strong>Prioridade FEFO:</strong> Lote <strong>${lot.lot_number}</strong> é o próximo a vencer em <strong>${lot.expiry_date}</strong> (${lot.days_to_expiry} dias restantes). Saldo disponível: <strong>${lot.quantity}</strong> unidades na câmara <strong>${lot.chamber_id}</strong> (${lot.shelf_location}).`;
-  }
-}
-
-async function submitStockExit() {
-  const select = document.getElementById('exit-lot-select');
-  if (!select.value) return;
-
-  const payload = {
-    lot_id: parseInt(select.value),
-    quantity: parseInt(document.getElementById('exit-qty').value),
-    reason: document.getElementById('exit-reason').value,
-    recipient: document.getElementById('exit-recipient').value.trim(),
-    invoice_number: document.getElementById('exit-nfe').value.trim()
-  };
-
-  try {
-    const res = await fetch('/api/pharma/stock/exit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    if (res.ok) {
-      alert('Saída de estoque registrada com sucesso respeitando o algoritmo FEFO!');
-      closeExitModal();
-      loadLots();
-      loadChambers();
-    } else {
-      alert(data.error || 'Erro ao registrar saída.');
-    }
-  } catch (e) {
-    alert('Erro de conexão ao processar saída.');
-  }
-}
-
-// -----------------------------------------------------------------------------
-// LAUDO PERICIAL DE RASTREABILIDADE DO LOTE (TRACE COMPLETO)
-// -----------------------------------------------------------------------------
-async function openTraceModal(lotNum) {
-  const container = document.getElementById('trace-content');
-  container.innerHTML = '<div style="text-align:center; padding:20px; color:#94A3B8;">Gerando laudo pericial de rastreabilidade...</div>';
-  document.getElementById('modal-trace').classList.add('active');
-
-  try {
-    const res = await fetch(`/api/pharma/lots/trace?lot=${encodeURIComponent(lotNum)}`);
-    const data = await res.json();
-    if (!res.ok) {
-      container.innerHTML = `<div class="alert-box">${data.error}</div>`;
-      return;
-    }
-
-    const { lot, product, stock_entry, history, excursions, exits, remaining_qty, total_exited_qty, integrity_alcoa } = data;
-
-    container.innerHTML = `
-      <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:16px; margin-bottom:16px;">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-          <div>
-            <div style="font-size:18px; font-weight:800; color:#fff;">${product.trade_name}</div>
-            <div style="font-size:12px; color:#94A3B8;">${product.dcb} • Fabricante: ${product.manufacturer}</div>
-            <div style="font-size:11px; color:#60A5FA; margin-top:2px;">Reg. ANVISA: ${product.anvisa_reg}</div>
-          </div>
-          <span class="badge-status ${lot.status}" style="font-size:12px; padding:4px 10px;">${lot.status.toUpperCase()}</span>
-        </div>
-
-        <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:14px; background:rgba(0,0,0,0.25); padding:10px; border-radius:8px;">
-          <div><span style="font-size:10px; color:#64748B;">LOTE</span><br><strong style="font-size:13px; color:#fff;">${lot.lot_number}</strong></div>
-          <div><span style="font-size:10px; color:#64748B;">VALIDADE</span><br><strong style="font-size:13px; color:#F59E0B;">${lot.expiry_date}</strong></div>
-          <div><span style="font-size:10px; color:#64748B;">SALDO ATUAL</span><br><strong style="font-size:13px; color:#10B981;">${remaining_qty} un</strong></div>
-          <div><span style="font-size:10px; color:#64748B;">LOCALIZAÇÃO</span><br><strong style="font-size:13px; color:#60A5FA;">${lot.chamber_id}</strong></div>
-        </div>
-      </div>
-
-      <!-- Dados de Entrada na Doca -->
-      <div style="background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:12px 14px; margin-bottom:14px;">
-        <div style="font-size:12px; font-weight:700; color:#CBD5E1; margin-bottom:8px;">1. Conferência Térmica e Recebimento na Doca</div>
-        ${stock_entry ? `
-          <div style="font-size:11.5px; color:#94A3B8; line-height:1.6;">
-            • Fornecedor: <strong>${stock_entry.supplier}</strong> (CNPJ: ${stock_entry.supplier_cnpj})<br>
-            • Nota Fiscal: <strong>${stock_entry.invoice_number}</strong> • Recebido em: ${stock_entry.received_at}<br>
-            • Condição de Transporte: ${stock_entry.transport_condition}<br>
-            • Temperatura no Recebimento: <strong style="color:${stock_entry.arrival_temp > 8.0 ? '#EF4444' : '#10B981'};">${stock_entry.arrival_temp.toFixed(1)} °C</strong> (Exposição na doca: ${stock_entry.ambient_exposure_minutes} min)<br>
-            • Responsável Técnico: ${stock_entry.responsible_name}
-          </div>
-        ` : '<div style="font-size:11px; color:#64748B;">Dados de doca não registrados para este lote pré-semeado.</div>'}
-      </div>
-
-      <!-- Excursões Ocorridas na Câmara -->
-      <div style="background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:12px 14px; margin-bottom:14px;">
-        <div style="font-size:12px; font-weight:700; color:#EF4444; margin-bottom:8px;">2. Histórico de Excursões Térmicas na Câmara</div>
-        ${excursions && excursions.length > 0 ? excursions.map(e => `
-          <div style="font-size:11.5px; color:#94A3B8; line-height:1.5; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.04);">
-            • <strong>${e.code}</strong> (${e.start_time}): Pico de <strong style="color:#EF4444;">${e.peak_temp.toFixed(1)} °C</strong> (${e.accumulated_degree_minutes.toFixed(1)} graus-minuto).<br>
-            Causa: ${e.cause}. Status: <span class="badge-status ${e.status}">${e.status}</span><br>
-            ${e.technical_report ? `Parecer: <em>"${e.technical_report}"</em>` : ''}
-          </div>
-        `).join('') : '<div style="font-size:11px; color:#10B981;">Nenhuma excursão térmica registrada durante o período de armazenagem deste lote.</div>'}
-      </div>
-
-      <!-- Saídas -->
-      <div style="background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:12px 14px; margin-bottom:14px;">
-        <div style="font-size:12px; font-weight:700; color:#CBD5E1; margin-bottom:8px;">3. Saídas e Dispensações Registradas (Total: ${total_exited_qty} un)</div>
-        ${exits && exits.length > 0 ? exits.map(x => `
-          <div style="font-size:11.5px; color:#94A3B8; line-height:1.5;">
-            • ${x.exit_at}: <strong>${x.quantity} un</strong> dispensadas para <strong>${x.recipient}</strong> (Motivo: ${x.reason}, NF: ${x.invoice_number}) por ${x.responsible_name}.
-          </div>
-        `).join('') : '<div style="font-size:11px; color:#64748B;">Nenhuma saída realizada ainda para este lote.</div>'}
-      </div>
-
-      <!-- Selo ALCOA+ -->
-      <div style="font-size:10.5px; color:#6EE7B7; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.3); padding:8px 12px; border-radius:6px; text-align:center;">
-        ✓ ${integrity_alcoa}
-      </div>
-    `;
-  } catch (e) {
-    container.innerHTML = '<div class="alert-box">Erro ao gerar laudo pericial.</div>';
-  }
-}
-
-function closeTraceModal() {
-  document.getElementById('modal-trace').classList.remove('active');
-}
-
-// -----------------------------------------------------------------------------
-// MÓDULO 3: ALARMES & EXCURSÕES ANVISA
-// -----------------------------------------------------------------------------
-async function loadAlarms() {
-  try {
-    const res = await fetch('/api/pharma/alarms');
-    if (!res.ok) return;
-    const alarms = await res.json();
-
-    const tbody = document.getElementById('alarms-table-body');
-    if (!tbody) return;
-    tbody.innerHTML = '';
-
-    if (alarms.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#64748B; padding:16px;">Nenhum alarme operacional ativo. Todos os equipamentos em conformidade.</td></tr>';
-      return;
-    }
-
-    alarms.forEach(a => {
-      const isResolved = a.status === 'resolvido';
-      const isAck = a.status === 'reconhecido';
-      const statusBadge = isResolved ? 'liberado' : (isAck ? 'alerta' : 'quarentena');
-
-      tbody.innerHTML += `
-        <tr>
-          <td><strong>${a.chamber_name}</strong></td>
-          <td><code style="color:#60A5FA;">${a.sensor_id || 'CÂMARA'}</code></td>
-          <td><span style="color:#F59E0B; font-weight:600;">${a.type.toUpperCase()}</span></td>
-          <td>${a.message}</td>
-          <td><strong style="color:#EF4444;">${a.value ? a.value.toFixed(1) + ' °C' : '-'}</strong></td>
-          <td><span class="badge-status ${statusBadge}">${a.status.toUpperCase()}</span></td>
-          <td style="text-align:right;">
-            ${a.status === 'ativo' ? `
-              <button class="btn-action-primary" style="padding:4px 8px; font-size:11px;" onclick="promptAcknowledgeAlarm(${a.id})">
-                Reconhecer
-              </button>
-            ` : (a.status === 'reconhecido' ? `
-              <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
-                <span style="font-size:11px; color:#64748B;">Reconhecido: ${a.acknowledged_by}</span>
-                <button class="btn-action-primary" style="padding:3px 8px; font-size:11px; background:#10B981;" onclick="promptResolveAlarm(${a.id})">
-                  Resolver
-                </button>
-              </div>
-            ` : `<span style="font-size:11px; color:#10B981; font-weight:600;">✓ Resolvido</span>`)}
-          </td>
-        </tr>
-      `;
-    });
-  } catch (e) {
-    console.error('Erro ao carregar alarmes:', e);
-  }
-}
-
-async function promptAcknowledgeAlarm(alarmId) {
-  const action = prompt('Descreva a ação imediata tomada para mitigar o alarme (ex: verificado termostato e fechamento de porta):');
-  if (!action) return;
-
-  try {
-    const res = await fetch('/api/pharma/alarms/acknowledge', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ alarm_id: alarmId, action_taken: action })
-    });
-    if (res.ok) {
-      alert('Alarme reconhecido formalmente e registrado na trilha de auditoria.');
-      loadAlarms();
-      loadKPIs();
-    } else {
-      alert('Erro ao reconhecer alarme.');
-    }
-  } catch (e) {
-    alert('Erro de conexão.');
-  }
-}
-
 
 async function promptResolveAlarm(alarmId) {
   const notes = prompt('Descreva o laudo de encerramento do alarme (ex: temperatura normalizada em 4.5°C, porta inspecionada e fechada):');
