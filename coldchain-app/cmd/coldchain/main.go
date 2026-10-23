@@ -1708,6 +1708,71 @@ func (a *App) routes() http.Handler {
 		json.NewEncoder(w).Encode(saved)
 	})
 
+	// =========================================================================
+	// FASE 6: EXPORTAÇÃO DE RELATÓRIOS REGULATÓRIOS E LAUDOS PERICIAIS
+	// =========================================================================
+
+	// 18. Dossiê Sanitário Oficial em PDF 1.4 com Assinatura Digital ECDSA
+	mux.HandleFunc("/api/pharma/reports/dossier.pdf", func(w http.ResponseWriter, r *http.Request) {
+		data, err := pharma.FetchDossierReportData(a.db, a.signer)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		pdfBytes, err := pharma.GenerateDossierPDF(data)
+		if err != nil {
+			http.Error(w, "Falha ao gerar PDF: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", "attachment; filename=Dossie_Sanitario_RDC430_ANVISA.pdf")
+		w.Header().Set("X-Report-SHA256", data.ReportSHA256)
+		w.Header().Set("X-Signature-ECDSA", data.SignatureHex)
+		w.Write(pdfBytes)
+	})
+
+	// 19. Dossiê Sanitário Completo em CSV Sanitizado
+	mux.HandleFunc("/api/pharma/reports/dossier.csv", func(w http.ResponseWriter, r *http.Request) {
+		data, err := pharma.FetchDossierReportData(a.db, a.signer)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		csvBytes, err := pharma.GenerateDossierCSV(data)
+		if err != nil {
+			http.Error(w, "Falha ao gerar CSV: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", "attachment; filename=Dossie_Sanitario_RDC430_ANVISA.csv")
+		w.Header().Set("X-Report-SHA256", data.ReportSHA256)
+		w.Write(csvBytes)
+	})
+
+	// 20. Laudo Pericial de Impressão HTML / Print-to-PDF
+	mux.HandleFunc("/api/pharma/reports/dossier.html", func(w http.ResponseWriter, r *http.Request) {
+		data, err := pharma.FetchDossierReportData(a.db, a.signer)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		htmlStr := pharma.GenerateDossierHTML(data)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(htmlStr))
+	})
+
+	// 21. Exportação do Ledger WORM em CSV para Auditoria Forense Externa
+	mux.HandleFunc("/api/pharma/reports/ledger.csv", func(w http.ResponseWriter, r *http.Request) {
+		csvBytes, err := pharma.GenerateLedgerCSV(a.db, a.signer)
+		if err != nil {
+			http.Error(w, "Falha ao exportar ledger: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", "attachment; filename=Ledger_WORM_Auditoria_ANVISA.csv")
+		w.Write(csvBytes)
+	})
+
 	return mux
 }
 

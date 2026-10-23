@@ -1211,6 +1211,23 @@ async function loadQualityDossier() {
   }
 }
 
+
+function downloadDossierPDF() {
+  window.open('/api/pharma/reports/dossier.pdf', '_blank');
+}
+
+function downloadDossierCSV() {
+  window.open('/api/pharma/reports/dossier.csv', '_blank');
+}
+
+function openPrintableDossier() {
+  window.open('/api/pharma/reports/dossier.html', '_blank');
+}
+
+function downloadLedgerCSV() {
+  window.open('/api/pharma/reports/ledger.csv', '_blank');
+}
+
 function exportQualityJSON() {
   window.open('/api/pharma/quality/dossier', '_blank');
 }
