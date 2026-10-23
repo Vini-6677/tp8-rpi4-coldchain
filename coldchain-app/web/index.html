@@ -548,9 +548,96 @@
       gap: 8px;
     }
 
+
+    /* PAINEL SINÓTICO - TOGGLE E LEGENDA DE SENSORES */
+    .sensor-view-toggle {
+      display: inline-flex;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      padding: 2px;
+      gap: 2px;
+    }
+
+    .btn-toggle-view {
+      background: transparent;
+      border: none;
+      color: #94A3B8;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn-toggle-view:hover {
+      color: #E2E8F0;
+    }
+
+    .btn-toggle-view.active {
+      background: #2563EB;
+      color: #FFFFFF;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    }
+
+    .chart-legend-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 12px;
+      padding: 8px 12px;
+      background: rgba(15, 23, 42, 0.4);
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      max-height: 84px;
+      overflow-y: auto;
+    }
+
+    .sensor-legend-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: rgba(30, 41, 59, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 5px;
+      padding: 2px 7px;
+      font-size: 11px;
+      color: #E2E8F0;
+      font-family: monospace;
+      transition: transform 0.1s ease, border-color 0.1s ease;
+      cursor: pointer;
+    }
+
+    .sensor-legend-chip:hover {
+      border-color: rgba(255, 255, 255, 0.3);
+      transform: translateY(-1px);
+    }
+
+    .sensor-legend-chip .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .sensor-legend-chip .chip-id {
+      font-weight: 700;
+    }
+
+    .sensor-legend-chip .chip-pos {
+      font-size: 10px;
+      color: #94A3B8;
+    }
+
+    .sensor-legend-chip .chip-temp {
+      color: #93C5FD;
+      font-weight: 600;
+    }
+
     .chart-container {
       position: relative;
-      height: 260px;
+      height: 290px;
       width: 100%;
       background: rgba(0, 0, 0, 0.25);
       border-radius: 10px;
@@ -1001,7 +1088,7 @@
       <nav class="nav-tabs">
         <button class="nav-tab-btn active" id="tab-btn-chambers" onclick="switchTab('chambers')">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
-          Câmaras & TV
+          Painel Sinótico
         </button>
         <button class="nav-tab-btn" id="tab-btn-stock" onclick="switchTab('stock')">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
@@ -1046,56 +1133,6 @@
     </header>
 
     <main class="app-main">
-      <!-- BARRA DE KPIS REGULATÓRIOS ANVISA (RDC 430/2020 & HAGELAB 2025) -->
-      <div class="kpi-banner" id="kpi-banner-container">
-        <div class="kpi-card">
-          <div class="kpi-label">Disponibilidade Operacional</div>
-          <div class="kpi-value text-green" id="kpi-uptime">--%</div>
-          <div class="kpi-sub">
-            <span>Meta ANVISA &ge; 99.5%</span>
-            <span id="kpi-uptime-hours" style="color:#64748B;">720h ciclo</span>
-          </div>
-        </div>
-
-        <div class="kpi-card">
-          <div class="kpi-label">Tempo Médio de Atendimento (MTTR)</div>
-          <div class="kpi-value text-blue" id="kpi-mttr">-- min</div>
-          <div class="kpi-sub">
-            <span>SLA Crítico &le; 30 min</span>
-            <span id="kpi-alarms-stat" style="color:#64748B;">-- alarmes</span>
-          </div>
-        </div>
-
-        <div class="kpi-card">
-          <div class="kpi-label">Taxa de Excursão Térmica</div>
-          <div class="kpi-value text-amber" id="kpi-excursion-rate">--%</div>
-          <div class="kpi-sub">
-            <span>Meta &le; 0.10%</span>
-            <span id="kpi-lots-quarantined" style="color:#F59E0B;">Lotes em segregação</span>
-          </div>
-        </div>
-
-        <div class="kpi-card">
-          <div class="kpi-label">Eficácia de Ações CAPA</div>
-          <div class="kpi-value text-purple" id="kpi-capa-eff">--%</div>
-          <div class="kpi-sub">
-            <span>Laudos e Assinatura Digital</span>
-            <span id="kpi-capa-status" style="color:#10B981;">Concluídas</span>
-          </div>
-        </div>
-
-        <div class="kpi-card">
-          <div class="kpi-label">Status Geral de Conformidade</div>
-          <div class="kpi-value text-white" id="kpi-compliance-short" style="font-size:1.02rem; line-height:1.35;">
-            Verificando...
-          </div>
-          <div class="kpi-sub">
-            <span id="kpi-sensors-summary">Sensores RBC Calibrados</span>
-            <span id="kpi-audit-date" style="color:#64748B;">Auditado</span>
-          </div>
-        </div>
-      </div>
-
       <!-- =====================================================================
            SEÇÃO 1: CÂMARAS & MODO TV
            ===================================================================== -->
@@ -1107,15 +1144,24 @@
 
         <!-- Painel de Detalhe da Câmara Selecionada -->
         <div class="detail-panel">
-          <div class="panel-header-row">
+          <div class="panel-header-row" style="margin-bottom: 12px;">
             <div class="panel-title">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
               <span id="detail-chamber-title">Câmara Fria A — Mapa Térmico Multissensor</span>
             </div>
-            <div style="display:flex; gap:8px;">
-              <span class="tag-badge tag-green" id="detail-qual-badge">Qualificação QI/QO/QD Válida</span>
-              <span class="tag-badge tag-blue" id="detail-sensor-count-badge">10 Sensores PT-100</span>
+            <div style="display:flex; gap:10px; align-items:center;">
+              <div class="sensor-view-toggle">
+                <button class="btn-toggle-view active" id="btn-view-chamber" onclick="setSensorViewMode('chamber')">Sensores da Câmara</button>
+                <button class="btn-toggle-view" id="btn-view-all" onclick="setSensorViewMode('all')">Todos os 30 Sensores</button>
+              </div>
+              <span class="tag-badge tag-green" id="detail-qual-badge">Qualificação DQ/IQ/OQ/PQ</span>
+              <span class="tag-badge tag-blue" id="detail-sensor-count-badge">11 Sensores RBC</span>
             </div>
+          </div>
+
+          <!-- Barra de Legenda Dinâmica de Sensores -->
+          <div class="chart-legend-bar" id="chart-sensor-legend">
+            <!-- Preenchido dinamicamente com os chips de todos os sensores -->
           </div>
 
           <!-- Gráfico Multissensor em Canvas -->
@@ -1125,7 +1171,10 @@
 
           <!-- Grid dos Sensores Metrológicos da Câmara -->
           <div style="margin-top: 18px;">
-            <div style="font-size: 13px; font-weight: 700; color:#CBD5E1; margin-bottom: 10px;">Sensores Físicos Alocados no Mapeamento Térmico</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px;">
+              <div style="font-size: 13px; font-weight: 700; color:#CBD5E1;" id="sensors-grid-title">Sensores Físicos Alocados no Mapeamento Térmico</div>
+              <span style="font-size:11px; color:#64748B;" id="sensors-grid-counter">11 sensores monitorados em tempo real</span>
+            </div>
             <div class="sensors-grid" id="chamber-sensors-grid">
               <!-- Preenchido dinamicamente -->
             </div>

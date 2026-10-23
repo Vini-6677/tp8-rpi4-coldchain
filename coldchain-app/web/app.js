@@ -13,6 +13,7 @@ function filterChamberCategory(cat, btn) {
 let currentUser = null;
 let activeTab = 'chambers';
 let selectedChamberId = 'CH-A';
+let sensorViewMode = 'chamber'; // 'chamber' ou 'all'
 let chambersData = [];
 let sensorsData = [];
 let lotsData = [];
@@ -28,7 +29,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // Atualiza métricas a cada 3 segundos
   setInterval(() => {
     if (currentUser) {
-      if (activeTab === 'chambers') loadChambers(false);
+      if (activeTab === 'chambers') {
+        loadChambers(false);
+        selectChamber(selectedChamberId, false);
+      }
       if (activeTab === 'excursions') loadAlarms();
     }
   }, 3000);
@@ -241,142 +245,264 @@ async function loadChambers(renderDetail = true) {
   }
 }
 
-async function selectChamber(chamberId) {
-  selectedChamberId = chamberId;
-  const currentChamber = chambersData.find(c => c.id === chamberId) || { name: chamberId, sensor_count: 0 };
+function setSensorViewMode(mode) {
+  sensorViewMode = mode;
+  const btnChamber = document.getElementById('btn-view-chamber');
+  const btnAll = document.getElementById('btn-view-all');
+  if (btnChamber) btnChamber.classList.toggle('active', mode === 'chamber');
+  if (btnAll) btnAll.classList.toggle('active', mode === 'all');
+  selectChamber(selectedChamberId, false);
+}
 
-  document.getElementById('detail-chamber-title').innerText = `${currentChamber.name} — Mapa Térmico Multissensor`;
-  document.getElementById('detail-sensor-count-badge').innerText = `${currentChamber.sensor_count} Sensores PT-100`;
+const SENSOR_PALETTE = [
+  '#38BDF8', '#34D399', '#F87171', '#FBBF24', '#A78BFA',
+  '#F472B6', '#4ADE80', '#FB923C', '#E879F9', '#2DD4BF',
+  '#60A5FA', '#FACC15', '#A3E635', '#C084FC', '#F43F5E',
+  '#06B6D4', '#10B981', '#818CF8', '#FB7185', '#22C55E',
+  '#EAB308', '#0EA5E9', '#D946EF', '#6366F1', '#14B8A6',
+  '#EC4899', '#84CC16', '#F97316', '#0284C7', '#8B5CF6'
+];
+
+async function selectChamber(chamberId, forceHighlight = true) {
+  selectedChamberId = chamberId;
+  const currentChamber = chambersData.find(c => c.id === chamberId) || {
+    id: chamberId,
+    name: chamberId,
+    sensor_count: 0,
+    temp_min: 2.0,
+    temp_max: 8.0,
+    qualification_status: 'Qualificado (DQ/IQ/OQ/PQ)'
+  };
+
+  const elTitle = document.getElementById('detail-chamber-title');
+  const elCountBadge = document.getElementById('detail-sensor-count-badge');
+  const elQualBadge = document.getElementById('detail-qual-badge');
+  const elGridTitle = document.getElementById('sensors-grid-title');
+  const elGridCounter = document.getElementById('sensors-grid-counter');
+
+  if (elQualBadge) elQualBadge.innerText = currentChamber.qualification_status || 'Qualificado (DQ/IQ/OQ/PQ)';
 
   // Destacar o card selecionado
-  document.querySelectorAll('.chamber-card').forEach(card => card.classList.remove('selected'));
+  if (forceHighlight) {
+    document.querySelectorAll('.chamber-card').forEach(card => card.classList.remove('selected'));
+  }
 
   try {
-    const res = await fetch(`/api/pharma/sensors?chamber=${chamberId}`);
+    const url = sensorViewMode === 'all' 
+      ? '/api/pharma/sensors' 
+      : `/api/pharma/sensors?chamber=${chamberId}`;
+    
+    const res = await fetch(url);
     if (!res.ok) return;
     sensorsData = await res.json();
 
+    if (sensorViewMode === 'all') {
+      if (elTitle) elTitle.innerText = `Rede Geral da Planta — 30 Sensores Metrológicos RBC`;
+      if (elCountBadge) elCountBadge.innerText = `${sensorsData.length} Sensores RBC (Total Planta)`;
+      if (elGridTitle) elGridTitle.innerText = `Todos os 30 Sensores da Instalação Farmacêutica (6 Ambientes)`;
+      if (elGridCounter) elGridCounter.innerText = `${sensorsData.length}/30 sensores ativos em monitoramento contínuo`;
+    } else {
+      if (elTitle) elTitle.innerText = `${currentChamber.name} — Mapa Térmico Multissensor`;
+      if (elCountBadge) elCountBadge.innerText = `${sensorsData.length} Sensores RBC Ativos`;
+      if (elGridTitle) elGridTitle.innerText = `Sensores Físicos Alocados no Mapeamento Térmico (${currentChamber.id})`;
+      if (elGridCounter) elGridCounter.innerText = `${sensorsData.length} sensores monitorados em tempo real`;
+    }
+
+    // Renderizar Cards de Sensores na Grid
     const grid = document.getElementById('chamber-sensors-grid');
-    grid.innerHTML = '';
+    if (grid) {
+      grid.innerHTML = '';
+      sensorsData.forEach((s, idx) => {
+        const isHot = s.thermal_position.includes('Quente');
+        const isCold = s.thermal_position.includes('Frio');
+        const posColor = isHot ? '#F87171' : (isCold ? '#38BDF8' : '#94A3B8');
+        const sensorCol = SENSOR_PALETTE[idx % SENSOR_PALETTE.length];
 
-    sensorsData.forEach(s => {
-      const isHot = s.thermal_position.includes('Quente');
-      const isCold = s.thermal_position.includes('Frio');
-      const posColor = isHot ? '#F87171' : (isCold ? '#38BDF8' : '#94A3B8');
+        const card = document.createElement('div');
+        card.className = 'sensor-item-card';
+        card.style.borderLeft = `3px solid ${sensorCol}`;
+        card.innerHTML = `
+          <div>
+            <div class="sensor-item-id" style="display:flex; align-items:center; gap:6px;">
+              <span style="width:7px; height:7px; border-radius:50%; background:${sensorCol}; display:inline-block;"></span>
+              ${s.id} <span style="font-size:11px; color:#64748B;">(${s.serial_number})</span>
+            </div>
+            <div class="sensor-item-pos" style="color:${posColor};">${s.thermal_position}</div>
+            <div class="sensor-item-cert">Cert. RBC: ${s.cert_number} • Val: ${s.calib_valid_until}</div>
+          </div>
+          <div>
+            <div class="sensor-item-temp">${s.current_temp.toFixed(1)} °C</div>
+            <div class="sensor-item-hum">${s.current_humidity.toFixed(0)}% UR</div>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
 
-      const card = document.createElement('div');
-      card.className = 'sensor-item-card';
-      card.innerHTML = `
-        <div>
-          <div class="sensor-item-id">${s.id} <span style="font-size:11px; color:#64748B;">(${s.serial_number})</span></div>
-          <div class="sensor-item-pos" style="color:${posColor};">${s.thermal_position}</div>
-          <div class="sensor-item-cert">Cert. RBC: ${s.cert_number} • Val: ${s.calib_valid_until}</div>
-        </div>
-        <div>
-          <div class="sensor-item-temp">${s.current_temp.toFixed(1)} °C</div>
-          <div class="sensor-item-hum">${s.current_humidity.toFixed(0)}% UR</div>
-        </div>
-      `;
-      grid.appendChild(card);
-    });
+    // Renderizar Legenda Acima do Gráfico
+    const legendBar = document.getElementById('chart-sensor-legend');
+    if (legendBar) {
+      legendBar.innerHTML = '';
+      sensorsData.forEach((s, idx) => {
+        const sensorCol = SENSOR_PALETTE[idx % SENSOR_PALETTE.length];
+        const chip = document.createElement('div');
+        chip.className = 'sensor-legend-chip';
+        chip.title = `${s.id}: ${s.thermal_position} (${s.serial_number})`;
+        chip.innerHTML = `
+          <span class="dot" style="background:${sensorCol};"></span>
+          <span class="chip-id">${s.id}</span>
+          <span class="chip-pos">${s.thermal_position.replace('Ponto Mais ', 'Pto ')}</span>
+          <span class="chip-temp">${s.current_temp.toFixed(1)}°C</span>
+        `;
+        legendBar.appendChild(chip);
+      });
+    }
 
-    renderMultiSensorChart(sensorsData);
+    renderMultiSensorChart(sensorsData, currentChamber, sensorViewMode);
   } catch (e) {
     console.error('Erro ao carregar sensores:', e);
   }
 }
 
-function renderMultiSensorChart(sensors) {
+function renderMultiSensorChart(sensors, currentChamber, viewMode) {
   const canvas = document.getElementById('multisensor-chart');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
 
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
+  const clientW = rect.width || (canvas.parentElement ? canvas.parentElement.clientWidth : 800) || 800;
+  const clientH = rect.height || 290;
+
+  canvas.width = Math.floor(clientW * dpr);
+  canvas.height = Math.floor(clientH * dpr);
   ctx.scale(dpr, dpr);
 
-  const W = rect.width;
-  const H = rect.height;
+  const W = clientW;
+  const H = clientH;
 
   // Limpa canvas
   ctx.clearRect(0, 0, W, H);
 
-  // Faixa permitida: 2.0°C a 8.0°C
-  const minTemp = 1.0;
-  const maxTemp = 10.0;
-  const getY = (t) => H - 30 - ((t - minTemp) / (maxTemp - minTemp)) * (H - 50);
+  // Determinar limites de escala dinamicamente
+  let minTemp, maxTemp, targetMin, targetMax, gridStep;
 
-  // Zona verde permitida (2.0 a 8.0)
-  const yTop = getY(8.0);
-  const yBottom = getY(2.0);
-  ctx.fillStyle = 'rgba(16, 185, 129, 0.08)';
-  ctx.fillRect(50, yTop, W - 60, yBottom - yTop);
+  if (viewMode === 'all') {
+    const allTemps = sensors.map(s => s.current_temp);
+    minTemp = Math.floor(Math.min(...allTemps) - 5);
+    maxTemp = Math.ceil(Math.max(...allTemps) + 5);
+    targetMin = null;
+    targetMax = null;
+    gridStep = Math.max(5, Math.ceil((maxTemp - minTemp) / 6));
+  } else {
+    targetMin = currentChamber && currentChamber.temp_min != null ? currentChamber.temp_min : 2.0;
+    targetMax = currentChamber && currentChamber.temp_max != null ? currentChamber.temp_max : 8.0;
 
-  // Linhas de grade e limites
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-  ctx.lineWidth = 1;
+    if (currentChamber && currentChamber.id === 'ULT-01') {
+      minTemp = -88.0;
+      maxTemp = -52.0;
+      gridStep = 5.0;
+    } else if (currentChamber && currentChamber.id === 'ALM-01') {
+      minTemp = 10.0;
+      maxTemp = 35.0;
+      gridStep = 5.0;
+    } else {
+      minTemp = 0.0;
+      maxTemp = 10.0;
+      gridStep = 2.0;
+    }
+  }
 
-  for (let t = 2; t <= 10; t += 2) {
-    const y = getY(t);
+  const leftMargin = 55;
+  const rightMargin = 55;
+  const topMargin = 25;
+  const bottomMargin = 25;
+  const plotW = W - leftMargin - rightMargin;
+  const plotH = H - topMargin - bottomMargin;
+
+  const getY = (t) => topMargin + plotH * (1 - (t - minTemp) / (maxTemp - minTemp));
+
+  // 1. Zona Verde Permitida (se em modo câmara com limites definidos)
+  if (targetMin !== null && targetMax !== null) {
+    const yTop = getY(targetMax);
+    const yBottom = getY(targetMin);
+    const zoneH = yBottom - yTop;
+    ctx.fillStyle = 'rgba(16, 185, 129, 0.08)';
+    ctx.fillRect(leftMargin, yTop, plotW, zoneH);
+
+    // Linhas vermelhas tracejadas de limites ANVISA
+    ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
     ctx.beginPath();
-    ctx.moveTo(50, y);
-    ctx.lineTo(W - 10, y);
+    ctx.moveTo(leftMargin, yTop); ctx.lineTo(leftMargin + plotW, yTop);
+    ctx.moveTo(leftMargin, yBottom); ctx.lineTo(leftMargin + plotW, yBottom);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = '#EF4444';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(`MÁX (${targetMax.toFixed(1)}°C)`, leftMargin + plotW - 4, yTop - 4);
+    ctx.fillText(`MÍN (${targetMin.toFixed(1)}°C)`, leftMargin + plotW - 4, yBottom + 11);
+  }
+
+  // 2. Linhas de grade horizontais e escala Y
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+  ctx.lineWidth = 1;
+  const startGrid = Math.ceil(minTemp / gridStep) * gridStep;
+  for (let t = startGrid; t <= maxTemp; t += gridStep) {
+    const y = getY(t);
+    if (y < topMargin || y > topMargin + plotH) continue;
+
+    ctx.beginPath();
+    ctx.moveTo(leftMargin, y);
+    ctx.lineTo(leftMargin + plotW, y);
     ctx.stroke();
 
     ctx.fillStyle = '#64748B';
     ctx.font = '10px monospace';
     ctx.textAlign = 'right';
-    ctx.fillText(`${t}.0°C`, 45, y + 3);
+    ctx.fillText(`${t.toFixed(0)}°C`, leftMargin - 6, y + 3);
   }
 
-  // Linhas vermelhas de limite ANVISA
-  ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)';
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath();
-  ctx.moveTo(50, yTop); ctx.lineTo(W - 10, yTop);
-  ctx.moveTo(50, yBottom); ctx.lineTo(W - 10, yBottom);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  ctx.fillStyle = '#EF4444';
-  ctx.font = '9px sans-serif';
-  ctx.fillText('LIMITE MÁX (8.0°C)', W - 15, yTop - 4);
-  ctx.fillText('LIMITE MÍN (2.0°C)', W - 15, yBottom + 12);
-
-  // Desenha curvas sobrepostas para cada sensor
-  const colors = ['#60A5FA', '#34D399', '#F87171', '#FBBF24', '#A78BFA', '#38BDF8', '#F472B6', '#4ADE80', '#FB923C', '#E879F9'];
-  const numPoints = 20;
-
+  // 3. Desenhar curvas para CADA sensor
+  const numPoints = 25;
   sensors.forEach((s, idx) => {
-    const col = colors[idx % colors.length];
+    const col = SENSOR_PALETTE[idx % SENSOR_PALETTE.length];
     ctx.strokeStyle = col;
     ctx.lineWidth = 2;
     ctx.beginPath();
 
     const currentT = s.current_temp;
     for (let i = 0; i < numPoints; i++) {
-      const x = 55 + (i / (numPoints - 1)) * (W - 80);
-      // Simula histórico suave terminando na temperatura atual
-      const noise = Math.sin(i * 0.8 + idx) * 0.25;
-      const t = currentT + noise;
-      const y = getY(t);
+      const x = leftMargin + (i / (numPoints - 1)) * plotW;
+      const seed = (s.id.charCodeAt(1) || 1) * 3 + idx;
+      const noise = Math.sin((i + Date.now() / 15000) * 0.4 + seed) * 0.16;
+      const t = (i === numPoints - 1) ? currentT : (currentT + noise);
+      const y = Math.max(topMargin, Math.min(topMargin + plotH, getY(t)));
 
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     }
     ctx.stroke();
 
-    // Ponto final
-    const lastX = 55 + (W - 80);
-    const lastY = getY(currentT);
+    // Ponto final na temperatura atual
+    const lastX = leftMargin + plotW;
+    const lastY = Math.max(topMargin, Math.min(topMargin + plotH, getY(currentT)));
     ctx.fillStyle = col;
     ctx.beginPath();
     ctx.arc(lastX, lastY, 3.5, 0, Math.PI * 2);
     ctx.fill();
+
+    // Rótulo com ID do sensor na borda direita
+    ctx.fillStyle = col;
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(s.id, lastX + 6, lastY + 3);
   });
 }
+
 
 // -----------------------------------------------------------------------------
 // MÓDULO 2: ESTOQUE, LOTES & RASTREABILIDADE FEFO
