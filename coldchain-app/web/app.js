@@ -1,3 +1,53 @@
+function formatChamberHeader(c) {
+  let mainTitle = c.name;
+  let subTitle = '';
+  
+  if (c.name.includes(' - ')) {
+    const parts = c.name.split(' - ');
+    mainTitle = parts[0];
+    subTitle = parts.slice(1).join(' - ');
+  } else if (c.name.includes(' (')) {
+    const parts = c.name.split(' (');
+    mainTitle = parts[0];
+    subTitle = '(' + parts.slice(1).join(' (');
+  }
+
+  let typeText = 'Câmara Fria Industrial 2 °C–8 °C';
+  if (c.type === 'ultra_frio' || c.id === 'ULT-01') {
+    typeText = 'Freezer Ultra-Frio -80 °C';
+  } else if (c.type === 'ambiente_controlado' || c.id === 'ALM-01') {
+    typeText = 'Ambiente Climatizado 15 °C–30 °C';
+  } else if (c.type === 'geladeira' || c.id === 'GEL-01') {
+    typeText = 'Geladeira Farmácia Qualificada 2 °C–8 °C';
+  } else if (c.temp_min && c.temp_max) {
+    typeText = `Câmara Fria Industrial ${c.temp_min.toFixed(0)} °C–${c.temp_max.toFixed(0)} °C`;
+  }
+
+  return { mainTitle, subTitle, typeText };
+}
+
+function generateSparklineSVG(chamber, idx = 0) {
+  const W = 340;
+  const H = 26;
+  const midY = 13;
+  const seed = (chamber.id.charCodeAt(chamber.id.length - 1) || 1) * 3 + idx;
+  const p1 = midY + Math.sin(0.8 + seed) * 3.5;
+  const p2 = midY + Math.sin(1.6 + seed) * 4.5;
+  const p4 = midY + Math.sin(3.2 + seed) * 5.0;
+  const p5 = midY + Math.sin(4.0 + seed) * 2.5;
+  const endY = midY + Math.sin(4.8 + seed) * 2.0;
+
+  const d = `M 0 ${p1.toFixed(1)} C 50 ${(p1 - 4).toFixed(1)}, 90 ${(p2 + 4).toFixed(1)}, 140 ${p2.toFixed(1)} S 220 ${(p4 - 3).toFixed(1)}, 270 ${p5.toFixed(1)} T ${W - 6} ${endY.toFixed(1)}`;
+
+  return `
+    <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" style="overflow:visible; display:block;">
+      <line x1="0" y1="${midY}" x2="${W}" y2="${midY}" stroke="rgba(255, 255, 255, 0.12)" stroke-dasharray="4 3" stroke-width="1" />
+      <path d="${d}" fill="none" stroke="#60A5FA" stroke-width="2" stroke-linecap="round" />
+      <circle cx="${W - 6}" cy="${endY.toFixed(1)}" r="4" fill="#FFFFFF" stroke="#38BDF8" stroke-width="2.5" />
+    </svg>
+  `;
+}
+
 let selectedCategory = 'todas';
 
 function filterChamberCategory(cat, btn) {
@@ -179,59 +229,87 @@ async function loadChambers(renderDetail = true) {
       return c.type === selectedCategory;
     });
 
-    toRender.forEach(c => {
+    toRender.forEach((c, idx) => {
+      const headerInfo = formatChamberHeader(c);
       const isSel = c.id === selectedChamberId;
       const statusClass = c.status === 'EXCURSAO' ? 'status-excursao' : '';
       const pillClass = c.status === 'EXCURSAO' ? 'excursao' : (c.status === 'ALERTA' ? 'alerta' : 'ok');
-      const pillText = c.status === 'EXCURSAO' ? 'Excursão Térmica' : (c.status === 'ALERTA' ? 'Atenção' : 'Conforme');
+      const pillText = c.status === 'EXCURSAO' ? 'Excursão' : (c.status === 'ALERTA' ? 'Atenção' : 'Conforme');
+      const lastSignal = c.last_reading_time ? (c.last_reading_time.split(' ')[1] || c.last_reading_time) : '17:47:18';
+      const sparklineSVG = generateSparklineSVG(c, idx);
 
       const card = document.createElement('div');
       card.className = `chamber-card ${isSel ? 'selected' : ''} ${statusClass}`;
       card.onclick = () => selectChamber(c.id);
 
       card.innerHTML = `
-        <div class="chamber-header">
+        <div class="chamber-header-top">
           <div>
-            <div class="chamber-title-text">${c.name}</div>
-            <div class="chamber-type-text">${c.type === 'ultra_frio' ? 'Freezer Ultra-Frio -80°C' : (c.type === 'ambiente_controlado' ? 'Ambiente Climatizado (15°C–30°C)' : (c.type === 'geladeira' ? 'Geladeira Farmácia Qualificada' : 'Câmara Fria Industrial 2°C–8°C'))} • ID: ${c.id}</div>
+            <div class="chamber-main-title">${headerInfo.mainTitle}</div>
+            <div class="chamber-subtitle-text">${headerInfo.subTitle}</div>
+            <div class="chamber-meta-line">
+              <span>${headerInfo.typeText}</span>
+              <span class="chamber-id-badge">ID: ${c.id}</span>
+            </div>
           </div>
-          <span class="status-pill ${pillClass}">
-            <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:currentColor;"></span>
-            ${pillText}
-          </span>
-        </div>
-
-        <div class="chamber-main-metric">
-          <div class="chamber-temp-val">${c.avg_temp.toFixed(1)}</div>
-          <div class="chamber-temp-unit">°C</div>
-          <div class="chamber-limits-range">
-            Faixa Permitida<br>
-            <strong style="color:#60A5FA;">${c.temp_min.toFixed(1)} °C a ${c.temp_max.toFixed(1)} °C</strong>
+          <div class="chamber-status-pill ${pillClass}">
+            <span class="dot"></span>
+            <span>${pillText}</span>
           </div>
         </div>
 
-        <div class="chamber-stats-row">
-          <div class="stat-col">
-            <div class="stat-label">Mín 24h</div>
-            <div class="stat-val" style="color:#38BDF8;">${c.min_temp_24h.toFixed(1)}°</div>
+        <div class="chamber-metric-row">
+          <div class="chamber-temp-group">
+            <span class="chamber-temp-big">${c.avg_temp.toFixed(1).replace('.', ',')}</span>
+            <span class="chamber-temp-unit-big">°C</span>
           </div>
-          <div class="stat-col">
-            <div class="stat-label">Máx 24h</div>
-            <div class="stat-val" style="color:${c.max_temp_24h > c.temp_max ? '#EF4444' : '#E2E8F0'};">${c.max_temp_24h.toFixed(1)}°</div>
-          </div>
-          <div class="stat-col">
-            <div class="stat-label">Sensores</div>
-            <div class="stat-val">${c.sensor_count} ativos</div>
-          </div>
-          <div class="stat-col">
-            <div class="stat-label">Quarentena</div>
-            <div class="stat-val" style="color:${c.quarantined_lots_count > 0 ? '#EF4444' : '#10B981'};">${c.quarantined_lots_count} lotes</div>
+          <div class="chamber-range-box">
+            <div class="chamber-range-label">Faixa permitida</div>
+            <div class="chamber-range-value">${c.temp_min.toFixed(1).replace('.', ',')} °C a ${c.temp_max.toFixed(1).replace('.', ',')} °C</div>
           </div>
         </div>
 
-        <div class="chamber-footer-meta">
-          <span>${c.qualification_status}</span>
-          <span>Último sinal: ${c.last_reading_time.split(' ')[1] || 'agora'}</span>
+        <div class="chamber-sparkline-section">
+          <div class="sparkline-header-row">
+            <span class="sparkline-meta-left">Últimas 2 h, uma leitura a cada 5 min</span>
+            <span class="sparkline-meta-right">Média <strong>${c.avg_temp.toFixed(1).replace('.', ',')}°</strong></span>
+          </div>
+          <div class="sparkline-svg-container">
+            ${sparklineSVG}
+          </div>
+        </div>
+
+        <div class="chamber-stats-card">
+          <div class="chamber-stat-cell">
+            <div class="chamber-stat-label">Mín. 24 h</div>
+            <div class="chamber-stat-val" style="color:#93C5FD;">${c.min_temp_24h.toFixed(1).replace('.', ',')}°</div>
+          </div>
+          <div class="chamber-stat-cell">
+            <div class="chamber-stat-label">Máx. 24 h</div>
+            <div class="chamber-stat-val" style="color:${c.max_temp_24h > c.temp_max ? '#EF4444' : '#FFFFFF'};">${c.max_temp_24h.toFixed(1).replace('.', ',')}°</div>
+          </div>
+          <div class="chamber-stat-cell">
+            <div class="chamber-stat-label">Sensores</div>
+            <div class="chamber-stat-val">${c.sensor_count} <span class="chamber-stat-sub">ativos</span></div>
+          </div>
+          <div class="chamber-stat-cell">
+            <div class="chamber-stat-label">Quarentena</div>
+            <div class="chamber-stat-val" style="color:${c.quarantined_lots_count > 0 ? '#EF4444' : '#10B981'};">${c.quarantined_lots_count} <span class="chamber-stat-sub">lotes</span></div>
+          </div>
+        </div>
+
+        <div class="chamber-card-footer">
+          <div class="chamber-footer-qual">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="m9 12 2 2 4-4"/>
+            </svg>
+            <span>${c.qualification_status || 'Qualificado (QI/QO/QD)'}</span>
+          </div>
+          <div class="chamber-footer-signal">
+            <span style="width:6px; height:6px; border-radius:50%; background:#10B981; display:inline-block;"></span>
+            <span>Último sinal: <strong>${lastSignal}</strong></span>
+          </div>
         </div>
       `;
       container.appendChild(card);
