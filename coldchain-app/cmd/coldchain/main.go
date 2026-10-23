@@ -1556,6 +1556,126 @@ func (a *App) routes() http.Handler {
 		json.NewEncoder(w).Encode(dossier)
 	})
 
+	// 15. Gestão de POPs (Registro / Revisão pelo Farmacêutico RT)
+	mux.HandleFunc("/api/pharma/quality/pops", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodPost {
+			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+			return
+		}
+
+		sess, ok := a.getSession(r)
+		if !ok {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Autenticação requerida."})
+			return
+		}
+		if sess.Role != "gerente" && sess.Role != "admin" {
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Acesso negado: apenas Farmacêutico RT ou Admin podem revisar POPs."})
+			return
+		}
+
+		var payload pharma.POPItem
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Payload JSON inválido."})
+			return
+		}
+
+		saved, err := pharma.RegisterPOP(a.db, payload)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+
+		ip := getClientIP(r)
+		a.logAudit(sess.Username, sess.Role, "REVISAO_POP", fmt.Sprintf("Revisão de POP '%s' (%s) aprovada por %s (Versão: %s, Próxima: %s)", saved.Code, saved.Title, sess.Name, saved.Version, saved.NextReview), ip)
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(saved)
+	})
+
+	// 16. Registro de Treinamentos da Equipe
+	mux.HandleFunc("/api/pharma/quality/trainings", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodPost {
+			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+			return
+		}
+
+		sess, ok := a.getSession(r)
+		if !ok {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Autenticação requerida."})
+			return
+		}
+		if sess.Role != "gerente" && sess.Role != "admin" {
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Acesso negado: apenas Farmacêutico RT ou Admin podem lançar treinamentos."})
+			return
+		}
+
+		var payload pharma.TrainingRecord
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Payload JSON inválido."})
+			return
+		}
+
+		saved, err := pharma.RegisterTraining(a.db, payload)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+
+		ip := getClientIP(r)
+		a.logAudit(sess.Username, sess.Role, "REGISTRO_TREINAMENTO", fmt.Sprintf("Treinamento de %s registrado por %s (POPs: %s, Nota: %d%%, Status: %s)", saved.EmployeeName, sess.Name, saved.POPCode, saved.ScorePct, saved.Status), ip)
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(saved)
+	})
+
+	// 17. Registro de Laudos de Qualificação Térmica (DQ/IQ/OQ/PQ)
+	mux.HandleFunc("/api/pharma/quality/qualifications", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodPost {
+			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+			return
+		}
+
+		sess, ok := a.getSession(r)
+		if !ok {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Autenticação requerida."})
+			return
+		}
+		if sess.Role != "gerente" && sess.Role != "admin" {
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Acesso negado: apenas Farmacêutico RT ou Admin podem cadastrar qualificações."})
+			return
+		}
+
+		var payload pharma.QualificationItem
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Payload JSON inválido."})
+			return
+		}
+
+		saved, err := pharma.RegisterChamberQualification(a.db, payload)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+
+		ip := getClientIP(r)
+		a.logAudit(sess.Username, sess.Role, "REGISTRO_QUALIFICACAO", fmt.Sprintf("Laudo de Qualificação '%s' da câmara '%s' registrado por %s (Validade: %s)", saved.ReportNumber, saved.ChamberID, sess.Name, saved.ValidUntil), ip)
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(saved)
+	})
+
 	return mux
 }
 

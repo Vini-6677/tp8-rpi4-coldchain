@@ -460,3 +460,140 @@ func TestPharmaSensorRegistrationAndCalibration(t *testing.T) {
 		t.Errorf("esperava cert 'CAL-RBC-2026/NEW-001', obteve '%s'", s32Found.CertNumber)
 	}
 }
+
+
+func TestPharmaQualityDossierPersistence(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// 1. Verificar se o dossiê inicial vem carregado do banco SQLite
+	dossier, err := GetQualityDossier(db)
+	if err != nil {
+		t.Fatalf("erro ao buscar dossiê de qualidade: %v", err)
+	}
+	if len(dossier.POPs) != 6 {
+		t.Errorf("esperava 6 POPs iniciais no SQLite, obteve %d", len(dossier.POPs))
+	}
+	if len(dossier.Qualifications) < 5 {
+		t.Errorf("esperava pelo menos 5 qualificações iniciais, obteve %d", len(dossier.Qualifications))
+	}
+	if len(dossier.Trainings) < 4 {
+		t.Errorf("esperava pelo menos 4 treinamentos iniciais, obteve %d", len(dossier.Trainings))
+	}
+
+	// 2. Registrar nova revisão de POP existente (POP-GQ-001)
+	rev := POPItem{
+		Code:        "POP-GQ-001",
+		Title:       "Monitoramento Contínuo e Ininterrupto de Temperatura e Umidade 24/7",
+		Version:     "Rev. 05/2026",
+		LastReview:  "2026-01-15",
+		NextReview:  "2027-01-15",
+		Responsible: "Farmacêutica RT",
+		Status:      "Vigente",
+	}
+	_, err = RegisterPOP(db, rev)
+	if err != nil {
+		t.Fatalf("erro ao atualizar revisão de POP: %v", err)
+	}
+
+	// 3. Cadastrar novo POP inédito (POP-GQ-007)
+	newPOP := POPItem{
+		Code:        "POP-GQ-007",
+		Title:       "Validação de Sistemas Computadorizados e Auditoria de Software (GAMP 5)",
+		Version:     "Rev. 01/2026",
+		LastReview:  "2026-03-01",
+		NextReview:  "2027-03-01",
+		Responsible: "Garantia da Qualidade / TI",
+		Status:      "Vigente",
+	}
+	_, err = RegisterPOP(db, newPOP)
+	if err != nil {
+		t.Fatalf("erro ao cadastrar novo POP: %v", err)
+	}
+
+	// 4. Registrar novos Treinamentos com notas distintas (Apto >= 85 e Pendente < 85)
+	tApto := TrainingRecord{
+		EmployeeName: "Lucas Almeida Ramos",
+		Role:         "Operador Logístico",
+		POPCode:      "POP-GQ-001, POP-GQ-004",
+		TrainedAt:    "2026-04-10",
+		ScorePct:     95,
+	}
+	tRec, err := RegisterTraining(db, tApto)
+	if err != nil {
+		t.Fatalf("erro ao registrar treinamento aprovado: %v", err)
+	}
+	if tRec.Status != "Apto" {
+		t.Errorf("esperava status 'Apto' para nota 95, obteve '%s'", tRec.Status)
+	}
+
+	tPendente := TrainingRecord{
+		EmployeeName: "Marcos Vinicius Silva",
+		Role:         "Auxiliar de Expedição",
+		POPCode:      "POP-GQ-003",
+		TrainedAt:    "2026-04-12",
+		ScorePct:     75,
+	}
+	tRec2, err := RegisterTraining(db, tPendente)
+	if err != nil {
+		t.Fatalf("erro ao registrar treinamento pendente: %v", err)
+	}
+	if tRec2.Status != "Pendente Reciclagem" {
+		t.Errorf("esperava status 'Pendente Reciclagem' para nota 75, obteve '%s'", tRec2.Status)
+	}
+
+	// 5. Registrar Laudo de Qualificação Térmica para câmara nova
+	newQual := QualificationItem{
+		ChamberID:       "CH-A",
+		Stage:           "DQ / IQ / OQ / PQ",
+		ReportNumber:    "QUAL-2026-REC-01",
+		ExecutedBy:      "LabMetrologia RBC Cert nº 412",
+		ExecutionDate:   "2026-05-20",
+		ValidUntil:      "2028-05-20",
+		ThermalAutonomy: "7h 15min sem energia (limite 8.0°C)",
+		Status:          "Aprovado",
+	}
+	_, err = RegisterChamberQualification(db, newQual)
+	if err != nil {
+		t.Fatalf("erro ao registrar laudo de qualificação: %v", err)
+	}
+
+	// 6. Consultar dossiê final e validar todas as atualizações
+	updatedDossier, err := GetQualityDossier(db)
+	if err != nil {
+		t.Fatalf("erro ao consultar dossiê atualizado: %v", err)
+	}
+
+	if len(updatedDossier.POPs) != 7 {
+		t.Errorf("esperava 7 POPs no total, obteve %d", len(updatedDossier.POPs))
+	}
+	var pop1Found, pop7Found bool
+	for _, p := range updatedDossier.POPs {
+		if p.Code == "POP-GQ-001" && p.Version == "Rev. 05/2026" {
+			pop1Found = true
+		}
+		if p.Code == "POP-GQ-007" {
+			pop7Found = true
+		}
+	}
+	if !pop1Found {
+		t.Errorf("POP-GQ-001 não teve a revisão 05/2026 persistida no SQLite")
+	}
+	if !pop7Found {
+		t.Errorf("POP-GQ-007 não foi encontrado no SQLite")
+	}
+
+	// Validar que os novos treinamentos aparecem na lista
+	var foundLucas, foundMarcos bool
+	for _, tr := range updatedDossier.Trainings {
+		if tr.EmployeeName == "Lucas Almeida Ramos" && tr.Status == "Apto" {
+			foundLucas = true
+		}
+		if tr.EmployeeName == "Marcos Vinicius Silva" && tr.Status == "Pendente Reciclagem" {
+			foundMarcos = true
+		}
+	}
+	if !foundLucas || !foundMarcos {
+		t.Errorf("treinamentos não persistidos corretamente: Lucas=%v, Marcos=%v", foundLucas, foundMarcos)
+	}
+}

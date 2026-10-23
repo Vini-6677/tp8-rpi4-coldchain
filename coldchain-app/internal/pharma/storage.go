@@ -142,12 +142,48 @@ func InitPharmaSchema(db *sql.DB) error {
 		chamber_id TEXT,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+
+	CREATE TABLE IF NOT EXISTS quality_pops (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		code TEXT NOT NULL UNIQUE,
+		title TEXT NOT NULL,
+		version TEXT NOT NULL,
+		last_review TEXT NOT NULL,
+		next_review TEXT NOT NULL,
+		responsible TEXT NOT NULL,
+		status TEXT NOT NULL DEFAULT 'Vigente'
+	);
+
+	CREATE TABLE IF NOT EXISTS chamber_qualifications (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		chamber_id TEXT NOT NULL REFERENCES chambers(id),
+		stage TEXT NOT NULL DEFAULT 'DQ / IQ / OQ / PQ',
+		report_number TEXT NOT NULL,
+		executed_by TEXT NOT NULL,
+		execution_date TEXT NOT NULL,
+		valid_until TEXT NOT NULL,
+		thermal_autonomy TEXT NOT NULL,
+		status TEXT NOT NULL DEFAULT 'Aprovado'
+	);
+
+	CREATE TABLE IF NOT EXISTS staff_trainings (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		employee_name TEXT NOT NULL,
+		role TEXT NOT NULL,
+		pop_code TEXT NOT NULL,
+		trained_at TEXT NOT NULL,
+		score_pct INTEGER NOT NULL,
+		status TEXT NOT NULL DEFAULT 'Apto'
+	);
 	`
 	if _, err := db.Exec(schema); err != nil {
 		return fmt.Errorf("falha ao criar schema pharma: %w", err)
 	}
 
-	return seedPharmaData(db)
+	if err := seedPharmaData(db); err != nil {
+		return err
+	}
+	return seedQualityData(db)
 }
 
 func seedPharmaData(db *sql.DB) error {
@@ -921,50 +957,149 @@ func GetPharmaKPIs(db *sql.DB) (PharmaKPIs, error) {
 	return kpi, nil
 }
 
-// GetQualityDossier retorna a estrutura completa de POPs, Qualificação DQ/IQ/OQ/PQ e Treinamentos para inspeção sanitária.
+// GetQualityDossier retorna a estrutura completa de POPs, Qualificação DQ/IQ/OQ/PQ e Treinamentos a partir do banco de dados relacional SQLite.
 func GetQualityDossier(db *sql.DB) (QualityDossier, error) {
 	dossier := QualityDossier{
 		GeneratedAt:   time.Now().Format("2006-01-02 15:04:05"),
 		TechnicalLead: "Dra. Mariana Vasconcelos",
 		CRF:           "CRF-SP nº 48.912",
-		POPs: []POPItem{
-			{Code: "POP-GQ-001", Title: "Monitoramento Contínuo e Ininterrupto de Temperatura e Umidade 24/7", Version: "Rev. 04/2025", LastReview: "2025-01-10", NextReview: "2026-01-10", Responsible: "Farmacêutica RT", Status: "Vigente"},
-			{Code: "POP-GQ-002", Title: "Calibração e Rastreabilidade Metrológica RBC/INMETRO de Sensores e Termômetros", Version: "Rev. 03/2025", LastReview: "2025-02-14", NextReview: "2026-02-14", Responsible: "Engenharia Clínica", Status: "Vigente"},
-			{Code: "POP-GQ-003", Title: "Gestão de Alarmes Críticos, Notificação Remota 24h e Escalonamento Imediato", Version: "Rev. 05/2025", LastReview: "2025-03-01", NextReview: "2026-03-01", Responsible: "Central de Monitoramento", Status: "Vigente"},
-			{Code: "POP-GQ-004", Title: "Investigação de Desvios Térmicos, Segregação de Lotes e Plano de Ação CAPA", Version: "Rev. 04/2025", LastReview: "2025-02-20", NextReview: "2026-02-20", Responsible: "Garantia da Qualidade", Status: "Vigente"},
-			{Code: "POP-GQ-005", Title: "Qualificação Térmica de Câmaras Frias (DQ, IQ, OQ, PQ) e Mapeamento Térmico", Version: "Rev. 02/2025", LastReview: "2025-01-25", NextReview: "2026-01-25", Responsible: "Validação & Metrologia", Status: "Vigente"},
-			{Code: "POP-GQ-006", Title: "Plano de Contingência Energética, Redundância e Teste de Geradores/Nobreaks", Version: "Rev. 03/2025", LastReview: "2025-03-12", NextReview: "2026-03-12", Responsible: "Manutenção Predial", Status: "Vigente"},
-		},
-		Qualifications: []QualificationItem{
-			{ChamberID: "CH-A", ChamberName: "Câmara Fria A (Vacinas & Imunobiológicos)", Stage: "DQ / IQ / OQ / PQ", ReportNumber: "QUAL-2025-089A", ExecutedBy: "LabMetrologia RBC Cert nº 412", ExecutionDate: "2025-08-15", ValidUntil: "2027-08-30", ThermalAutonomy: "6h 30min sem energia (limite 8.0°C)", Status: "Aprovado"},
-			{ChamberID: "CH-B", ChamberName: "Câmara Fria B (Termolábeis RDC 430)", Stage: "DQ / IQ / OQ / PQ", ReportNumber: "QUAL-2025-089B", ExecutedBy: "LabMetrologia RBC Cert nº 412", ExecutionDate: "2025-05-10", ValidUntil: "2027-05-15", ThermalAutonomy: "5h 45min sem energia (limite 8.0°C)", Status: "Aprovado"},
-			{ChamberID: "GEL-01", ChamberName: "Geladeira Farmácia Hospitalar 01", Stage: "DQ / IQ / OQ / PQ", ReportNumber: "QUAL-2025-044G", ExecutedBy: "LabMetrologia RBC Cert nº 412", ExecutionDate: "2025-12-05", ValidUntil: "2026-12-10", ThermalAutonomy: "3h 15min sem energia (limite 8.0°C)", Status: "Aprovado"},
-			{ChamberID: "ALM-01", ChamberName: "Almoxarifado Central (Ambiente Controlado)", Stage: "DQ / IQ / OQ / PQ", ReportNumber: "QUAL-2025-101M", ExecutedBy: "LabMetrologia RBC Cert nº 412", ExecutionDate: "2025-10-18", ValidUntil: "2027-10-20", ThermalAutonomy: "Controle de HVAC / Climatização Dupla", Status: "Aprovado"},
-			{ChamberID: "ULT-01", ChamberName: "Freezer Científico Ultra-Frio -80°C", Stage: "DQ / IQ / OQ / PQ", ReportNumber: "QUAL-2026-012U", ExecutedBy: "LabMetrologia RBC Cert nº 412", ExecutionDate: "2026-04-05", ValidUntil: "2027-04-12", ThermalAutonomy: "Backup de CO2 Líquido de Emergência", Status: "Aprovado"},
-		},
-		Trainings: []TrainingRecord{
-			{EmployeeName: "Dra. Mariana Vasconcelos", Role: "Farmacêutica RT", POPCode: "POP-GQ-001 ao 006", TrainedAt: "2025-03-15", ScorePct: 100, Status: "Apto"},
-			{EmployeeName: "Carlos Eduardo Mendes", Role: "Técnico em Refrigeração", POPCode: "POP-GQ-002, POP-GQ-006", TrainedAt: "2025-03-18", ScorePct: 98, Status: "Apto"},
-			{EmployeeName: "Juliana Rocha Paes", Role: "Enfermeira Chefe UTI", POPCode: "POP-GQ-001, POP-GQ-003", TrainedAt: "2025-03-20", ScorePct: 100, Status: "Apto"},
-			{EmployeeName: "Roberto Lima Ferreira", Role: "Almoxarife / Recebimento", POPCode: "POP-GQ-001, POP-GQ-004", TrainedAt: "2025-03-22", ScorePct: 96, Status: "Apto"},
-		},
-		ChecklistItems: []ChecklistItem{
-			{Item: "1. Monitoramento Ininterrupto 24/7", Requirement: "Art. 15 da RDC 430 - Leitura contínua sem lacunas de dados", Evidence: "Ledger ALCOA+ e banco SQLite WAL com histórico ativo", Compliant: true},
-			{Item: "2. Frequência de Medição Sanitária", Requirement: "Refrigerados ≤ 5 min; Ambiente controlado ≤ 15 min", Evidence: "Leituras em tempo real a cada 3 segundos com retenção contínua", Compliant: true},
-			{Item: "3. Calibração Periódica RBC", Requirement: "Certificados de calibração vigentes emitidos por rede acreditada", Evidence: "28/28 sensores vinculados a certificados RBC nº 412", Compliant: true},
-			{Item: "4. Qualificação DQ/IQ/OQ/PQ", Requirement: "Art. 12 da RDC 430 - Mapeamento térmico de pontos críticos", Evidence: "Laudos vigentes para Câmaras A/B, Geladeira, Almoxarifado e Ultra-Frio", Compliant: true},
-			{Item: "5. Gestão de Alarmes & Escalonamento", Requirement: "Alarmes sonoros/visuais e notificação remota 24 horas", Evidence: "Regra de escalonamento em 3 níveis (Operador, Supervisor, RT)", Compliant: true},
-			{Item: "6. Segregação Automática de Lotes", Requirement: "Art. 38 da RDC 430 - Quarentena imediata em excursões térmicas", Evidence: "Mecanismo automático de transição de status para 'quarentena'", Compliant: true},
-			{Item: "7. Assinatura Eletrônica na Decisão", Requirement: "Validação pericial com assinatura digital na liberação/descarte", Evidence: "Hash ECDSA P-256 gravado no Ledger Criptográfico", Compliant: true},
-			{Item: "8. Conferência no Recebimento (Docas)", Requirement: "Art. 32 da RDC 430 - Temperatura e integridade da carga", Evidence: "Formulário de entrada com tempo de exposição ambiente e NF", Compliant: true},
-			{Item: "9. Rastreabilidade pelo Método FEFO", Requirement: "Art. 30 da RDC 430 - Primeiro que vence, primeiro que sai", Evidence: "Algoritmo FEFO mandatário com bloqueio de quebra de fila", Compliant: true},
-			{Item: "10. Retenção de Dados por 5 Anos", Requirement: "Art. 60 da RDC 430 - Disponibilidade integral de registros", Evidence: "Backup criptográfico e trilha WORM inalterável", Compliant: true},
-			{Item: "11. Redundância e Backup Energético", Requirement: "Alimentação contínua com nobreaks e gerador automatizado", Evidence: "Gerador Diesel Stemac 150 kVA + Nobreak Eaton 20 kVA", Compliant: true},
-			{Item: "12. Trilha de Auditoria ALCOA+", Requirement: "Imutabilidade de logs com quem, o quê, quando e por quê", Evidence: "Ledger SHA-256 com verificação em tempo de execução", Compliant: true},
-		},
 	}
+
+	// 1. POPs cadastrados
+	pRows, err := db.Query(`SELECT code, title, version, last_review, next_review, responsible, status FROM quality_pops ORDER BY code ASC`)
+	if err == nil {
+		defer pRows.Close()
+		for pRows.Next() {
+			var p POPItem
+			if err := pRows.Scan(&p.Code, &p.Title, &p.Version, &p.LastReview, &p.NextReview, &p.Responsible, &p.Status); err == nil {
+				dossier.POPs = append(dossier.POPs, p)
+			}
+		}
+	}
+
+	// 2. Laudos de Qualificação Térmica
+	qRows, err := db.Query(`
+		SELECT q.chamber_id, COALESCE(c.name, q.chamber_id), q.stage, q.report_number,
+		       q.executed_by, q.execution_date, q.valid_until, q.thermal_autonomy, q.status
+		FROM chamber_qualifications q
+		LEFT JOIN chambers c ON q.chamber_id = c.id
+		ORDER BY q.id ASC`)
+	if err == nil {
+		defer qRows.Close()
+		for qRows.Next() {
+			var q QualificationItem
+			if err := qRows.Scan(&q.ChamberID, &q.ChamberName, &q.Stage, &q.ReportNumber,
+				&q.ExecutedBy, &q.ExecutionDate, &q.ValidUntil, &q.ThermalAutonomy, &q.Status); err == nil {
+				dossier.Qualifications = append(dossier.Qualifications, q)
+			}
+		}
+	}
+
+	// 3. Treinamentos da Equipe
+	tRows, err := db.Query(`SELECT employee_name, role, pop_code, trained_at, score_pct, status FROM staff_trainings ORDER BY id DESC`)
+	if err == nil {
+		defer tRows.Close()
+		for tRows.Next() {
+			var t TrainingRecord
+			if err := tRows.Scan(&t.EmployeeName, &t.Role, &t.POPCode, &t.TrainedAt, &t.ScorePct, &t.Status); err == nil {
+				dossier.Trainings = append(dossier.Trainings, t)
+			}
+		}
+	}
+
+	// 4. Checklist de Autoinspeção Sanitária RDC 430
+	dossier.ChecklistItems = []ChecklistItem{
+		{Item: "1. Monitoramento Ininterrupto 24/7", Requirement: "Art. 15 da RDC 430 - Leitura contínua sem lacunas de dados", Evidence: "Ledger ALCOA+ e banco SQLite WAL com histórico ativo", Compliant: true},
+		{Item: "2. Frequência de Medição Sanitária", Requirement: "Refrigerados ≤ 5 min; Ambiente controlado ≤ 15 min", Evidence: "Leituras em tempo real a cada 3 segundos com retenção contínua", Compliant: true},
+		{Item: "3. Calibração Periódica RBC", Requirement: "Certificados de calibração vigentes emitidos por rede acreditada", Evidence: "Sensores vinculados a certificados RBC rastreáveis Cgcre", Compliant: true},
+		{Item: "4. Qualificação DQ/IQ/OQ/PQ", Requirement: "Art. 12 da RDC 430 - Mapeamento térmico de pontos críticos", Evidence: "Laudos vigentes cadastrados para todas as áreas de estocagem", Compliant: true},
+		{Item: "5. Gestão de Alarmes & Escalonamento", Requirement: "Alarmes sonoros/visuais e notificação remota 24 horas", Evidence: "Regra de escalonamento em 3 níveis (Operador, Supervisor, RT)", Compliant: true},
+		{Item: "6. Segregação Automática de Lotes", Requirement: "Art. 38 da RDC 430 - Quarentena imediata em excursões térmicas", Evidence: "Mecanismo automático de transição de status para 'quarentena'", Compliant: true},
+		{Item: "7. Assinatura Eletrônica na Decisão", Requirement: "Validação pericial com assinatura digital na liberação/descarte", Evidence: "Hash ECDSA P-256 gravado no Ledger Criptográfico", Compliant: true},
+		{Item: "8. Conferência no Recebimento (Docas)", Requirement: "Art. 32 da RDC 430 - Temperatura e integridade da carga", Evidence: "Formulário de entrada com tempo de exposição ambiente e NF", Compliant: true},
+		{Item: "9. Rastreabilidade pelo Método FEFO", Requirement: "Art. 30 da RDC 430 - Primeiro que vence, primeiro que sai", Evidence: "Algoritmo FEFO mandatário com bloqueio de quebra de fila", Compliant: true},
+		{Item: "10. Retenção de Dados por 5 Anos", Requirement: "Art. 60 da RDC 430 - Disponibilidade integral de registros", Evidence: "Backup criptográfico e trilha WORM inalterável", Compliant: true},
+		{Item: "11. Redundância e Backup Energético", Requirement: "Alimentação contínua com nobreaks e gerador automatizado", Evidence: "Gerador Diesel Stemac 150 kVA + Nobreak Eaton 20 kVA", Compliant: true},
+		{Item: "12. Trilha de Auditoria ALCOA+", Requirement: "Imutabilidade de logs com quem, o quê, quando e por quê", Evidence: "Ledger SHA-256 com verificação em tempo de execução", Compliant: true},
+	}
+
 	return dossier, nil
 }
+
+// RegisterPOP cadastra ou atualiza uma revisão periódica de Procedimento Operacional Padrão.
+func RegisterPOP(db *sql.DB, p POPItem) (*POPItem, error) {
+	if p.Code == "" || p.Title == "" || p.Version == "" || p.LastReview == "" || p.NextReview == "" || p.Responsible == "" {
+		return nil, fmt.Errorf("código, título, versão, datas de revisão e responsável são obrigatórios")
+	}
+	if p.Status == "" {
+		p.Status = "Vigente"
+	}
+
+	_, err := db.Exec(`INSERT INTO quality_pops (code, title, version, last_review, next_review, responsible, status)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(code) DO UPDATE SET
+			title = excluded.title,
+			version = excluded.version,
+			last_review = excluded.last_review,
+			next_review = excluded.next_review,
+			responsible = excluded.responsible,
+			status = excluded.status`,
+		p.Code, p.Title, p.Version, p.LastReview, p.NextReview, p.Responsible, p.Status)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao registrar POP: %w", err)
+	}
+
+	return &p, nil
+}
+
+// RegisterTraining registra a conclusão de treinamento e avaliação de um colaborador.
+func RegisterTraining(db *sql.DB, t TrainingRecord) (*TrainingRecord, error) {
+	if t.EmployeeName == "" || t.Role == "" || t.POPCode == "" || t.TrainedAt == "" {
+		return nil, fmt.Errorf("nome do colaborador, cargo, POP e data são obrigatórios")
+	}
+	if t.ScorePct >= 85 {
+		t.Status = "Apto"
+	} else {
+		t.Status = "Pendente Reciclagem"
+	}
+
+	_, err := db.Exec(`INSERT INTO staff_trainings (employee_name, role, pop_code, trained_at, score_pct, status)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		t.EmployeeName, t.Role, t.POPCode, t.TrainedAt, t.ScorePct, t.Status)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao registrar treinamento: %w", err)
+	}
+
+	return &t, nil
+}
+
+// RegisterChamberQualification registra um laudo de qualificação térmica periódica (DQ/IQ/OQ/PQ).
+func RegisterChamberQualification(db *sql.DB, q QualificationItem) (*QualificationItem, error) {
+	if q.ChamberID == "" || q.ReportNumber == "" || q.ExecutedBy == "" || q.ExecutionDate == "" || q.ValidUntil == "" {
+		return nil, fmt.Errorf("câmara, nº do laudo, executor e datas são obrigatórios")
+	}
+	if q.Stage == "" {
+		q.Stage = "DQ / IQ / OQ / PQ"
+	}
+	if q.Status == "" {
+		q.Status = "Aprovado"
+	}
+	if q.ThermalAutonomy == "" {
+		q.ThermalAutonomy = "Conforme laudo técnico"
+	}
+
+	_, err := db.Exec(`INSERT INTO chamber_qualifications (chamber_id, stage, report_number, executed_by, execution_date, valid_until, thermal_autonomy, status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		q.ChamberID, q.Stage, q.ReportNumber, q.ExecutedBy, q.ExecutionDate, q.ValidUntil, q.ThermalAutonomy, q.Status)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao registrar qualificação: %w", err)
+	}
+
+	// Consulta o nome descritivo da câmara
+	_ = db.QueryRow("SELECT name FROM chambers WHERE id = ?", q.ChamberID).Scan(&q.ChamberName)
+	return &q, nil
+}
+
 
 
 // RegisterProduct valida e cadastra um novo medicamento no catálogo ANVISA.
@@ -1173,6 +1308,65 @@ func UpdateSensor(db *sql.DB, s Sensor) error {
 	rows, err := res.RowsAffected()
 	if err != nil || rows == 0 {
 		return fmt.Errorf("sensor com id '%s' não encontrado", s.ID)
+	}
+
+	return nil
+}
+
+
+func seedQualityData(db *sql.DB) error {
+	var count int
+	_ = db.QueryRow("SELECT COUNT(*) FROM quality_pops").Scan(&count)
+	if count > 0 {
+		return nil
+	}
+
+	// 1. POPs Mandatórios da RDC 430/2020
+	pops := []POPItem{
+		{Code: "POP-GQ-001", Title: "Monitoramento Contínuo e Ininterrupto de Temperatura e Umidade 24/7", Version: "Rev. 04/2025", LastReview: "2025-01-10", NextReview: "2026-01-10", Responsible: "Farmacêutica RT", Status: "Vigente"},
+		{Code: "POP-GQ-002", Title: "Calibração e Rastreabilidade Metrológica RBC/INMETRO de Sensores e Termômetros", Version: "Rev. 03/2025", LastReview: "2025-02-14", NextReview: "2026-02-14", Responsible: "Engenharia Clínica", Status: "Vigente"},
+		{Code: "POP-GQ-003", Title: "Gestão de Alarmes Críticos, Notificação Remota 24h e Escalonamento Imediato", Version: "Rev. 05/2025", LastReview: "2025-03-01", NextReview: "2026-03-01", Responsible: "Central de Monitoramento", Status: "Vigente"},
+		{Code: "POP-GQ-004", Title: "Investigação de Desvios Térmicos, Segregação de Lotes e Plano de Ação CAPA", Version: "Rev. 04/2025", LastReview: "2025-02-20", NextReview: "2026-02-20", Responsible: "Garantia da Qualidade", Status: "Vigente"},
+		{Code: "POP-GQ-005", Title: "Qualificação Térmica de Câmaras Frias (DQ, IQ, OQ, PQ) e Mapeamento Térmico", Version: "Rev. 02/2025", LastReview: "2025-01-25", NextReview: "2026-01-25", Responsible: "Validação & Metrologia", Status: "Vigente"},
+		{Code: "POP-GQ-006", Title: "Plano de Contingência Energética, Redundância e Teste de Geradores/Nobreaks", Version: "Rev. 03/2025", LastReview: "2025-03-12", NextReview: "2026-03-12", Responsible: "Manutenção Predial", Status: "Vigente"},
+	}
+	for _, p := range pops {
+		_, err := db.Exec(`INSERT OR IGNORE INTO quality_pops (code, title, version, last_review, next_review, responsible, status)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`, p.Code, p.Title, p.Version, p.LastReview, p.NextReview, p.Responsible, p.Status)
+		if err != nil {
+			return err
+		}
+	}
+
+	// 2. Laudos de Qualificação Térmica DQ/IQ/OQ/PQ
+	quals := []QualificationItem{
+		{ChamberID: "CH-A", Stage: "DQ / IQ / OQ / PQ", ReportNumber: "QUAL-2025-089A", ExecutedBy: "LabMetrologia RBC Cert nº 412", ExecutionDate: "2025-08-15", ValidUntil: "2027-08-30", ThermalAutonomy: "6h 30min sem energia (limite 8.0°C)", Status: "Aprovado"},
+		{ChamberID: "CH-B", Stage: "DQ / IQ / OQ / PQ", ReportNumber: "QUAL-2025-089B", ExecutedBy: "LabMetrologia RBC Cert nº 412", ExecutionDate: "2025-05-10", ValidUntil: "2027-05-15", ThermalAutonomy: "5h 45min sem energia (limite 8.0°C)", Status: "Aprovado"},
+		{ChamberID: "GEL-01", Stage: "DQ / IQ / OQ / PQ", ReportNumber: "QUAL-2025-044G", ExecutedBy: "LabMetrologia RBC Cert nº 412", ExecutionDate: "2025-12-05", ValidUntil: "2026-12-10", ThermalAutonomy: "3h 15min sem energia (limite 8.0°C)", Status: "Aprovado"},
+		{ChamberID: "ALM-01", Stage: "DQ / IQ / OQ / PQ", ReportNumber: "QUAL-2025-101M", ExecutedBy: "LabMetrologia RBC Cert nº 412", ExecutionDate: "2025-10-18", ValidUntil: "2027-10-20", ThermalAutonomy: "Controle de HVAC / Climatização Dupla", Status: "Aprovado"},
+		{ChamberID: "ULT-01", Stage: "DQ / IQ / OQ / PQ", ReportNumber: "QUAL-2026-012U", ExecutedBy: "LabMetrologia RBC Cert nº 412", ExecutionDate: "2026-04-05", ValidUntil: "2027-04-12", ThermalAutonomy: "Backup de CO2 Líquido de Emergência", Status: "Aprovado"},
+	}
+	for _, q := range quals {
+		_, err := db.Exec(`INSERT INTO chamber_qualifications (chamber_id, stage, report_number, executed_by, execution_date, valid_until, thermal_autonomy, status)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, q.ChamberID, q.Stage, q.ReportNumber, q.ExecutedBy, q.ExecutionDate, q.ValidUntil, q.ThermalAutonomy, q.Status)
+		if err != nil {
+			return err
+		}
+	}
+
+	// 3. Treinamentos da Equipe
+	trainings := []TrainingRecord{
+		{EmployeeName: "Dra. Mariana Vasconcelos", Role: "Farmacêutica RT", POPCode: "POP-GQ-001 ao 006", TrainedAt: "2025-03-15", ScorePct: 100, Status: "Apto"},
+		{EmployeeName: "Carlos Eduardo Mendes", Role: "Técnico em Refrigeração", POPCode: "POP-GQ-002, POP-GQ-006", TrainedAt: "2025-03-18", ScorePct: 98, Status: "Apto"},
+		{EmployeeName: "Juliana Rocha Paes", Role: "Enfermeira Chefe UTI", POPCode: "POP-GQ-001, POP-GQ-003", TrainedAt: "2025-03-20", ScorePct: 100, Status: "Apto"},
+		{EmployeeName: "Roberto Lima Ferreira", Role: "Almoxarife / Recebimento", POPCode: "POP-GQ-001, POP-GQ-004", TrainedAt: "2025-03-22", ScorePct: 96, Status: "Apto"},
+	}
+	for _, t := range trainings {
+		_, err := db.Exec(`INSERT INTO staff_trainings (employee_name, role, pop_code, trained_at, score_pct, status)
+			VALUES (?, ?, ?, ?, ?, ?)`, t.EmployeeName, t.Role, t.POPCode, t.TrainedAt, t.ScorePct, t.Status)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil

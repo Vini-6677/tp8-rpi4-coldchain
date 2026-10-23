@@ -1080,9 +1080,11 @@ async function loadQualityDossier() {
     if (!res.ok) return;
     const dossier = await res.json();
 
+    window.currentQualityDossier = dossier;
+
     // 1. POPs Obrigatórios
     const popsTbody = document.getElementById('quality-pops-tbody');
-    if (popsTbody) {
+    if (popsTbody && dossier.pops) {
       popsTbody.innerHTML = dossier.pops.map(p => `
         <tr>
           <td><strong style="color:#38bdf8">${p.code}</strong></td>
@@ -1092,8 +1094,9 @@ async function loadQualityDossier() {
           <td>${p.next_review}</td>
           <td>${p.responsible}</td>
           <td><span class="tag-badge tag-green">${p.status}</span></td>
-          <td>
+          <td style="display:flex; gap:6px;">
             <button class="btn-table-action" onclick="alert('Exibindo documento oficial auditado:\n' + '${p.code} - ${p.title}\nVersão: ${p.version}\nResponsável: ${p.responsible}\nStatus: 100% VIGENTE')">Visualizar</button>
+            <button class="btn-action-secondary" style="padding:2px 8px; font-size:11px;" onclick="openEditPOPModal('${p.code}')">Revisar</button>
           </td>
         </tr>
       `).join('');
@@ -1452,5 +1455,257 @@ async function submitSensor() {
   } catch (e) {
     console.error('Erro na requisição metrológica:', e);
     alert('Erro de conexão ao salvar sensor metrológico.');
+  }
+}
+
+
+// ==============================================================================
+// FASE 4: GESTÃO DO SISTEMA DE GESTÃO DA QUALIDADE (SGC) NO SQLITE
+// ==============================================================================
+
+function openNewPOPModal() {
+  const m = document.getElementById('modal-pop');
+  if (!m) return;
+  m.classList.add('active');
+
+  document.getElementById('modal-pop-title').textContent = 'Cadastrar Novo Procedimento (POP)';
+  const cInp = document.getElementById('pop-code');
+  cInp.value = '';
+  cInp.disabled = false;
+
+  document.getElementById('pop-title').value = '';
+  document.getElementById('pop-version').value = 'Rev. 01/2026';
+
+  const now = new Date();
+  document.getElementById('pop-last-review').value = now.toISOString().split('T')[0];
+  const next = new Date();
+  next.setFullYear(next.getFullYear() + 1);
+  document.getElementById('pop-next-review').value = next.toISOString().split('T')[0];
+
+  document.getElementById('pop-responsible').value = 'Farmacêutica RT';
+  document.getElementById('pop-status').value = 'Vigente';
+}
+
+function openEditPOPModal(popCode) {
+  if (!window.currentQualityDossier || !window.currentQualityDossier.pops) return;
+  const p = window.currentQualityDossier.pops.find(x => x.code === popCode);
+  if (!p) return;
+
+  const m = document.getElementById('modal-pop');
+  if (!m) return;
+  m.classList.add('active');
+
+  document.getElementById('modal-pop-title').textContent = `Revisar Procedimento ${p.code}`;
+  const cInp = document.getElementById('pop-code');
+  cInp.value = p.code;
+  cInp.disabled = true;
+
+  document.getElementById('pop-title').value = p.title;
+  document.getElementById('pop-version').value = p.version;
+
+  const now = new Date();
+  document.getElementById('pop-last-review').value = now.toISOString().split('T')[0];
+  const next = new Date();
+  next.setFullYear(next.getFullYear() + 1);
+  document.getElementById('pop-next-review').value = next.toISOString().split('T')[0];
+
+  document.getElementById('pop-responsible').value = p.responsible;
+  document.getElementById('pop-status').value = p.status || 'Vigente';
+}
+
+function closePOPModal() {
+  const m = document.getElementById('modal-pop');
+  if (m) m.classList.remove('active');
+  const f = document.getElementById('form-pop');
+  if (f) f.reset();
+}
+
+async function submitPOP() {
+  const code = document.getElementById('pop-code').value.trim();
+  const title = document.getElementById('pop-title').value.trim();
+  const version = document.getElementById('pop-version').value.trim();
+  const lastRev = document.getElementById('pop-last-review').value;
+  const nextRev = document.getElementById('pop-next-review').value;
+  const resp = document.getElementById('pop-responsible').value.trim();
+  const status = document.getElementById('pop-status').value;
+
+  if (!code || !title || !version || !lastRev || !nextRev || !resp) {
+    alert('Por favor, preencha todos os campos obrigatórios do POP.');
+    return;
+  }
+
+  const payload = {
+    code: code,
+    title: title,
+    version: version,
+    last_review: lastRev,
+    next_review: nextRev,
+    responsible: resp,
+    status: status
+  };
+
+  try {
+    const res = await fetch('/api/pharma/quality/pops', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert('Erro ao salvar POP: ' + (data.error || 'Erro desconhecido'));
+      return;
+    }
+
+    alert(`Procedimento ${code} salvo com sucesso no SGC!`);
+    closePOPModal();
+    loadQualityDossier();
+  } catch (e) {
+    console.error('Erro na requisição de POP:', e);
+    alert('Erro de conexão ao salvar POP.');
+  }
+}
+
+function openNewTrainingModal() {
+  const m = document.getElementById('modal-training');
+  if (!m) return;
+  m.classList.add('active');
+
+  document.getElementById('train-name').value = '';
+  document.getElementById('train-role').value = '';
+  document.getElementById('train-pops').value = 'POP-GQ-001, POP-GQ-003';
+  document.getElementById('train-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('train-score').value = 95;
+}
+
+function closeTrainingModal() {
+  const m = document.getElementById('modal-training');
+  if (m) m.classList.remove('active');
+  const f = document.getElementById('form-training');
+  if (f) f.reset();
+}
+
+async function submitTraining() {
+  const name = document.getElementById('train-name').value.trim();
+  const role = document.getElementById('train-role').value.trim();
+  const pops = document.getElementById('train-pops').value.trim();
+  const date = document.getElementById('train-date').value;
+  const score = parseInt(document.getElementById('train-score').value, 10);
+
+  if (!name || !role || !pops || !date || isNaN(score)) {
+    alert('Por favor, preencha todos os campos do treinamento.');
+    return;
+  }
+
+  const payload = {
+    employee_name: name,
+    role: role,
+    pop_code: pops,
+    trained_at: date,
+    score_pct: score
+  };
+
+  try {
+    const res = await fetch('/api/pharma/quality/trainings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert('Erro ao registrar treinamento: ' + (data.error || 'Erro desconhecido'));
+      return;
+    }
+
+    alert(`Treinamento de ${name} registrado com sucesso! Status: ${data.status}`);
+    closeTrainingModal();
+    loadQualityDossier();
+  } catch (e) {
+    console.error('Erro na requisição de treinamento:', e);
+    alert('Erro de conexão ao salvar treinamento.');
+  }
+}
+
+async function openNewQualModal() {
+  const m = document.getElementById('modal-qual');
+  if (!m) return;
+  m.classList.add('active');
+
+  const sel = document.getElementById('qual-chamber-id');
+  sel.innerHTML = '';
+  try {
+    const res = await fetch('/api/pharma/chambers');
+    if (res.ok) {
+      const chambers = await res.json();
+      chambers.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = `${c.name} (${c.id})`;
+        sel.appendChild(opt);
+      });
+    }
+  } catch (e) {}
+
+  document.getElementById('qual-stage').value = 'DQ / IQ / OQ / PQ';
+  document.getElementById('qual-report').value = '';
+  document.getElementById('qual-lab').value = 'LabMetrologia RBC Cert nº 412';
+
+  const now = new Date();
+  document.getElementById('qual-date').value = now.toISOString().split('T')[0];
+  const valid = new Date();
+  valid.setFullYear(valid.getFullYear() + 2);
+  document.getElementById('qual-valid').value = valid.toISOString().split('T')[0];
+  document.getElementById('qual-autonomy').value = '6h 30min sem energia (limite 8.0°C)';
+}
+
+function closeQualModal() {
+  const m = document.getElementById('modal-qual');
+  if (m) m.classList.remove('active');
+  const f = document.getElementById('form-qual');
+  if (f) f.reset();
+}
+
+async function submitQual() {
+  const chId = document.getElementById('qual-chamber-id').value;
+  const stage = document.getElementById('qual-stage').value.trim();
+  const report = document.getElementById('qual-report').value.trim();
+  const lab = document.getElementById('qual-lab').value.trim();
+  const date = document.getElementById('qual-date').value;
+  const valid = document.getElementById('qual-valid').value;
+  const autonomy = document.getElementById('qual-autonomy').value.trim();
+
+  if (!chId || !stage || !report || !lab || !date || !valid || !autonomy) {
+    alert('Por favor, preencha todos os campos do laudo de qualificação.');
+    return;
+  }
+
+  const payload = {
+    chamber_id: chId,
+    stage: stage,
+    report_number: report,
+    executed_by: lab,
+    execution_date: date,
+    valid_until: valid,
+    thermal_autonomy: autonomy,
+    status: 'Aprovado'
+  };
+
+  try {
+    const res = await fetch('/api/pharma/quality/qualifications', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert('Erro ao registrar laudo: ' + (data.error || 'Erro desconhecido'));
+      return;
+    }
+
+    alert(`Laudo ${report} registrado com sucesso para a câmara ${chId}!`);
+    closeQualModal();
+    loadQualityDossier();
+  } catch (e) {
+    console.error('Erro na requisição de qualificação:', e);
+    alert('Erro de conexão ao salvar laudo.');
   }
 }
