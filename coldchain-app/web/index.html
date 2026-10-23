@@ -1289,24 +1289,15 @@
 
         <!-- Painel de Detalhe da Câmara Selecionada -->
         <div class="detail-panel">
-          <div class="panel-header-row" style="margin-bottom: 12px;">
+          <div class="panel-header-row" style="margin-bottom: 16px;">
             <div class="panel-title">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
               <span id="detail-chamber-title">Câmara Fria A — Mapa Térmico Multissensor</span>
             </div>
-            <div style="display:flex; gap:10px; align-items:center;">
-              <div class="sensor-view-toggle">
-                <button class="btn-toggle-view active" id="btn-view-chamber" onclick="setSensorViewMode('chamber')">Sensores da Câmara</button>
-                <button class="btn-toggle-view" id="btn-view-all" onclick="setSensorViewMode('all')">Todos os 30 Sensores</button>
-              </div>
+            <div style="display:flex; gap:8px; align-items:center;">
               <span class="tag-badge tag-green" id="detail-qual-badge">Qualificação DQ/IQ/OQ/PQ</span>
               <span class="tag-badge tag-blue" id="detail-sensor-count-badge">11 Sensores RBC</span>
             </div>
-          </div>
-
-          <!-- Barra de Legenda Dinâmica de Sensores -->
-          <div class="chart-legend-bar" id="chart-sensor-legend">
-            <!-- Preenchido dinamicamente com os chips de todos os sensores -->
           </div>
 
           <!-- Gráfico Multissensor em Canvas -->

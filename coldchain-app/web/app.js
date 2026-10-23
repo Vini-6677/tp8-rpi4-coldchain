@@ -323,15 +323,6 @@ async function loadChambers(renderDetail = true) {
   }
 }
 
-function setSensorViewMode(mode) {
-  sensorViewMode = mode;
-  const btnChamber = document.getElementById('btn-view-chamber');
-  const btnAll = document.getElementById('btn-view-all');
-  if (btnChamber) btnChamber.classList.toggle('active', mode === 'chamber');
-  if (btnAll) btnAll.classList.toggle('active', mode === 'all');
-  selectChamber(selectedChamberId, false);
-}
-
 const SENSOR_PALETTE = [
   '#38BDF8', '#34D399', '#F87171', '#FBBF24', '#A78BFA',
   '#F472B6', '#4ADE80', '#FB923C', '#E879F9', '#2DD4BF',
@@ -358,6 +349,7 @@ async function selectChamber(chamberId, forceHighlight = true) {
   const elGridTitle = document.getElementById('sensors-grid-title');
   const elGridCounter = document.getElementById('sensors-grid-counter');
 
+  if (elTitle) elTitle.innerText = `${currentChamber.name} — Mapa Térmico Multissensor`;
   if (elQualBadge) elQualBadge.innerText = currentChamber.qualification_status || 'Qualificado (DQ/IQ/OQ/PQ)';
 
   // Destacar o card selecionado
@@ -366,25 +358,13 @@ async function selectChamber(chamberId, forceHighlight = true) {
   }
 
   try {
-    const url = sensorViewMode === 'all' 
-      ? '/api/pharma/sensors' 
-      : `/api/pharma/sensors?chamber=${chamberId}`;
-    
-    const res = await fetch(url);
+    const res = await fetch(`/api/pharma/sensors?chamber=${chamberId}`);
     if (!res.ok) return;
     sensorsData = await res.json();
 
-    if (sensorViewMode === 'all') {
-      if (elTitle) elTitle.innerText = `Rede Geral da Planta — 30 Sensores Metrológicos RBC`;
-      if (elCountBadge) elCountBadge.innerText = `${sensorsData.length} Sensores RBC (Total Planta)`;
-      if (elGridTitle) elGridTitle.innerText = `Todos os 30 Sensores da Instalação Farmacêutica (6 Ambientes)`;
-      if (elGridCounter) elGridCounter.innerText = `${sensorsData.length}/30 sensores ativos em monitoramento contínuo`;
-    } else {
-      if (elTitle) elTitle.innerText = `${currentChamber.name} — Mapa Térmico Multissensor`;
-      if (elCountBadge) elCountBadge.innerText = `${sensorsData.length} Sensores RBC Ativos`;
-      if (elGridTitle) elGridTitle.innerText = `Sensores Físicos Alocados no Mapeamento Térmico (${currentChamber.id})`;
-      if (elGridCounter) elGridCounter.innerText = `${sensorsData.length} sensores monitorados em tempo real`;
-    }
+    if (elCountBadge) elCountBadge.innerText = `${sensorsData.length} Sensores RBC Ativos`;
+    if (elGridTitle) elGridTitle.innerText = `Sensores Físicos Alocados no Mapeamento Térmico (${currentChamber.id})`;
+    if (elGridCounter) elGridCounter.innerText = `${sensorsData.length} sensores monitorados em tempo real`;
 
     // Renderizar Cards de Sensores na Grid
     const grid = document.getElementById('chamber-sensors-grid');
@@ -417,32 +397,13 @@ async function selectChamber(chamberId, forceHighlight = true) {
       });
     }
 
-    // Renderizar Legenda Acima do Gráfico
-    const legendBar = document.getElementById('chart-sensor-legend');
-    if (legendBar) {
-      legendBar.innerHTML = '';
-      sensorsData.forEach((s, idx) => {
-        const sensorCol = SENSOR_PALETTE[idx % SENSOR_PALETTE.length];
-        const chip = document.createElement('div');
-        chip.className = 'sensor-legend-chip';
-        chip.title = `${s.id}: ${s.thermal_position} (${s.serial_number})`;
-        chip.innerHTML = `
-          <span class="dot" style="background:${sensorCol};"></span>
-          <span class="chip-id">${s.id}</span>
-          <span class="chip-pos">${s.thermal_position.replace('Ponto Mais ', 'Pto ')}</span>
-          <span class="chip-temp">${s.current_temp.toFixed(1)}°C</span>
-        `;
-        legendBar.appendChild(chip);
-      });
-    }
-
-    renderMultiSensorChart(sensorsData, currentChamber, sensorViewMode);
+    renderMultiSensorChart(sensorsData, currentChamber);
   } catch (e) {
     console.error('Erro ao carregar sensores:', e);
   }
 }
 
-function renderMultiSensorChart(sensors, currentChamber, viewMode) {
+function renderMultiSensorChart(sensors, currentChamber) {
   const canvas = document.getElementById('multisensor-chart');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
@@ -465,30 +426,21 @@ function renderMultiSensorChart(sensors, currentChamber, viewMode) {
   // Determinar limites de escala dinamicamente
   let minTemp, maxTemp, targetMin, targetMax, gridStep;
 
-  if (viewMode === 'all') {
-    const allTemps = sensors.map(s => s.current_temp);
-    minTemp = Math.floor(Math.min(...allTemps) - 5);
-    maxTemp = Math.ceil(Math.max(...allTemps) + 5);
-    targetMin = null;
-    targetMax = null;
-    gridStep = Math.max(5, Math.ceil((maxTemp - minTemp) / 6));
-  } else {
-    targetMin = currentChamber && currentChamber.temp_min != null ? currentChamber.temp_min : 2.0;
-    targetMax = currentChamber && currentChamber.temp_max != null ? currentChamber.temp_max : 8.0;
+  targetMin = currentChamber && currentChamber.temp_min != null ? currentChamber.temp_min : 2.0;
+  targetMax = currentChamber && currentChamber.temp_max != null ? currentChamber.temp_max : 8.0;
 
-    if (currentChamber && currentChamber.id === 'ULT-01') {
-      minTemp = -88.0;
-      maxTemp = -52.0;
-      gridStep = 5.0;
-    } else if (currentChamber && currentChamber.id === 'ALM-01') {
-      minTemp = 10.0;
-      maxTemp = 35.0;
-      gridStep = 5.0;
-    } else {
-      minTemp = 0.0;
-      maxTemp = 10.0;
-      gridStep = 2.0;
-    }
+  if (currentChamber && currentChamber.id === 'ULT-01') {
+    minTemp = -88.0;
+    maxTemp = -52.0;
+    gridStep = 5.0;
+  } else if (currentChamber && currentChamber.id === 'ALM-01') {
+    minTemp = 10.0;
+    maxTemp = 35.0;
+    gridStep = 5.0;
+  } else {
+    minTemp = 0.0;
+    maxTemp = 10.0;
+    gridStep = 2.0;
   }
 
   const leftMargin = 55;
@@ -500,7 +452,7 @@ function renderMultiSensorChart(sensors, currentChamber, viewMode) {
 
   const getY = (t) => topMargin + plotH * (1 - (t - minTemp) / (maxTemp - minTemp));
 
-  // 1. Zona Verde Permitida (se em modo câmara com limites definidos)
+  // 1. Zona Verde Permitida
   if (targetMin !== null && targetMax !== null) {
     const yTop = getY(targetMax);
     const yBottom = getY(targetMin);
@@ -580,6 +532,7 @@ function renderMultiSensorChart(sensors, currentChamber, viewMode) {
     ctx.fillText(s.id, lastX + 6, lastY + 3);
   });
 }
+
 
 
 // -----------------------------------------------------------------------------
