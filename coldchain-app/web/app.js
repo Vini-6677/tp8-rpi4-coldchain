@@ -410,31 +410,73 @@ async function selectChamber(chamberId, forceHighlight = true) {
     if (elGridTitle) elGridTitle.innerText = `Sensores Físicos Alocados no Mapeamento Térmico (${currentChamber.id})`;
     if (elGridCounter) elGridCounter.innerText = `${sensorsData.length} sensores monitorados em tempo real`;
 
-    // Renderizar Cards de Sensores na Grid
+    // Renderizar Cards de Sensores na Grid (Layout Harmônico Oficial)
     const grid = document.getElementById('chamber-sensors-grid');
     if (grid) {
       grid.innerHTML = '';
       sensorsData.forEach((s, idx) => {
-        const isHot = s.thermal_position.includes('Quente');
-        const isCold = s.thermal_position.includes('Frio');
-        const posColor = isHot ? '#F87171' : (isCold ? '#38BDF8' : '#94A3B8');
         const sensorCol = getSensorColor(s.id, idx);
+
+        // Formatação de data de validade (DD/MM/YYYY) e dias restantes
+        let valDateFormatted = s.calib_valid_until || '--/--/----';
+        let daysRemainingText = '--';
+        let badgeClass = 'badge-green';
+
+        if (s.calib_valid_until && s.calib_valid_until.includes('-')) {
+          const parts = s.calib_valid_until.split('-');
+          if (parts.length === 3) {
+            valDateFormatted = `${parts[2]}/${parts[1]}/${parts[0]}`;
+            const now = new Date();
+            const valDate = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+            const diffDays = Math.ceil((valDate - now) / (1000 * 60 * 60 * 24));
+            if (diffDays > 0) {
+              daysRemainingText = `${diffDays} dias`;
+              badgeClass = diffDays <= 30 ? 'badge-amber' : 'badge-green';
+            } else if (diffDays === 0) {
+              daysRemainingText = 'Hoje';
+              badgeClass = 'badge-amber';
+            } else {
+              daysRemainingText = `Vencido (${Math.abs(diffDays)}d)`;
+              badgeClass = 'badge-red';
+            }
+          }
+        }
+
+        const tempFormatted = s.current_temp != null ? s.current_temp.toFixed(1).replace('.', ',') : '--,-';
+        const humVal = s.current_humidity != null ? Math.round(s.current_humidity) : 50;
 
         const card = document.createElement('div');
         card.className = 'sensor-item-card';
-        card.style.borderLeft = `3px solid ${sensorCol}`;
+        card.style.borderLeft = `3.5px solid ${sensorCol}`;
         card.innerHTML = `
           <div>
-            <div class="sensor-item-id" style="display:flex; align-items:center; gap:6px; color:${sensorCol};">
-              <span style="width:7px; height:7px; border-radius:50%; background:${sensorCol}; display:inline-block;"></span>
-              ${s.id} <span style="font-size:11px; color:#64748B;">(${s.serial_number})</span>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="sensor-pill-badge" style="border-color:${sensorCol}55; color:${sensorCol};">${s.id}</span>
+              <span class="sensor-sn-text">${s.serial_number}</span>
             </div>
-            <div class="sensor-item-pos" style="color:${posColor};">${s.thermal_position}</div>
-            <div class="sensor-item-cert">Cert. RBC: ${s.cert_number} • Val: ${s.calib_valid_until}</div>
+            <div class="sensor-pos-title">${s.thermal_position}</div>
           </div>
-          <div>
-            <div class="sensor-item-temp">${s.current_temp.toFixed(1)} °C</div>
-            <div class="sensor-item-hum">${s.current_humidity.toFixed(0)}% UR</div>
+
+          <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom: 4px;">
+            <div style="display:flex; align-items:baseline;">
+              <span class="sensor-temp-display">${tempFormatted}</span>
+              <span class="sensor-temp-unit">°C</span>
+            </div>
+            <div>
+              <div class="sensor-hum-value">${humVal}%</div>
+              <div class="sensor-hum-label">UR</div>
+            </div>
+          </div>
+
+          <div class="sensor-card-footer">
+            <div>
+              <div class="sensor-cert-label">Certificado RBC</div>
+              <div class="sensor-cert-val">${s.cert_number}</div>
+            </div>
+            <div style="text-align:right;">
+              <div class="sensor-val-label">Val. ${valDateFormatted}</div>
+              <span class="sensor-days-badge ${badgeClass}">${daysRemainingText}</span>
+            </div>
           </div>
         `;
         grid.appendChild(card);
