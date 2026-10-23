@@ -203,11 +203,44 @@
       border-color: rgba(59, 130, 246, 0.4);
     }
 
+    /* CUSTOM DARK SCROLLBAR (Elimina a cor branca nativa do navegador) */
+    html, :root {
+      color-scheme: dark;
+    }
+
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255, 255, 255, 0.16) #070B19;
+    }
+
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #070B19;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.18);
+      border-radius: 4px;
+      border: 2px solid #070B19;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.32);
+    }
+
+    ::-webkit-scrollbar-corner {
+      background: #070B19;
+    }
+
     /* TOP HEADER & NAVBAR */
     .top-navbar {
       background: #070B19;
       border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-      padding: 0 28px;
+      padding: 0 32px;
       height: 64px;
       display: flex;
       align-items: center;
@@ -221,23 +254,12 @@
     .brand-section {
       display: flex;
       align-items: center;
-      gap: 12px;
-    }
-
-    .brand-icon {
-      width: 38px;
-      height: 38px;
-      border-radius: 10px;
-      background: linear-gradient(135deg, #2563EB, #06B6D4);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
-      flex-shrink: 0;
+      padding-left: 8px;
+      margin-right: 32px;
     }
 
     .brand-title {
-      font-size: 16px;
+      font-size: 17px;
       font-weight: 700;
       letter-spacing: -0.2px;
       color: #FFFFFF;
@@ -246,7 +268,7 @@
 
     .nav-tabs {
       display: flex;
-      gap: 4px;
+      gap: 6px;
       background: rgba(255, 255, 255, 0.03);
       padding: 4px;
       border-radius: 10px;
@@ -256,13 +278,13 @@
     .nav-tab-btn {
       display: flex;
       align-items: center;
-      gap: 7px;
+      justify-content: center;
       background: transparent;
       border: none;
       color: #94A3B8;
       font-size: 12.5px;
       font-weight: 600;
-      padding: 7px 14px;
+      padding: 8px 16px;
       border-radius: 7px;
       cursor: pointer;
       transition: all 0.18s ease;
@@ -283,71 +305,75 @@
     .nav-right {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 14px;
     }
 
     .user-capsule {
       display: flex;
       align-items: center;
-      gap: 9px;
-      background: rgba(255, 255, 255, 0.04);
-      padding: 4px 10px 4px 6px;
-      border-radius: 20px;
+      gap: 10px;
+      background: rgba(15, 23, 42, 0.65);
+      padding: 5px 14px 5px 6px;
+      border-radius: 24px;
       border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
     }
 
     .user-avatar {
-      width: 28px;
-      height: 28px;
+      width: 32px;
+      height: 32px;
       border-radius: 50%;
-      background: #3B82F6;
-      color: #fff;
-      font-size: 11px;
+      background: linear-gradient(135deg, #2563EB, #1D4ED8);
+      color: #FFFFFF;
+      font-size: 11.5px;
       font-weight: 700;
       display: flex;
       align-items: center;
       justify-content: center;
+      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.35);
+      flex-shrink: 0;
     }
 
-    .user-meta-name { font-size: 12px; font-weight: 600; color: #fff; line-height: 1.2; }
-    .user-meta-role { font-size: 10px; color: #94A3B8; text-transform: capitalize; }
-
-    .btn-tv-mode {
-      background: rgba(139, 92, 246, 0.15);
-      border: 1px solid rgba(139, 92, 246, 0.35);
-      color: #C4B5FD;
-      font-size: 11.5px;
+    .user-meta-name {
+      font-size: 12.5px;
       font-weight: 600;
-      padding: 6px 12px;
-      border-radius: 6px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      transition: all 0.2s;
+      color: #F8FAFC;
+      line-height: 1.2;
+      white-space: nowrap;
     }
 
-    .btn-tv-mode:hover {
-      background: rgba(139, 92, 246, 0.3);
+    .user-meta-role {
+      font-size: 10px;
+      color: #38BDF8;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 1px;
     }
 
     .btn-logout {
-      background: rgba(239, 68, 68, 0.1);
-      border: 1px solid rgba(239, 68, 68, 0.25);
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.3);
       color: #FCA5A5;
-      font-size: 11.5px;
+      font-size: 12px;
       font-weight: 600;
-      padding: 6px 12px;
-      border-radius: 6px;
+      padding: 7px 18px;
+      border-radius: 8px;
       cursor: pointer;
-      display: flex;
+      display: inline-flex;
       align-items: center;
-      gap: 5px;
-      transition: all 0.2s;
+      justify-content: center;
+      transition: all 0.18s ease;
+      box-shadow: 0 2px 6px rgba(239, 68, 68, 0.15);
+      white-space: nowrap;
     }
 
     .btn-logout:hover {
       background: rgba(239, 68, 68, 0.25);
+      border-color: rgba(239, 68, 68, 0.5);
+      color: #FFFFFF;
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+      transform: translateY(-1px);
     }
 
     /* SUB-SEÇÕES */
@@ -1307,50 +1333,22 @@
     <!-- NAVBAR PRINCIPAL -->
     <header class="top-navbar">
       <div class="brand-section">
-        <div class="brand-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        </div>
         <div class="brand-title">ColdChain Pharma RT</div>
       </div>
 
       <nav class="nav-tabs">
-        <button class="nav-tab-btn active" id="tab-btn-chambers" onclick="switchTab('chambers')">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
-          Painel Sinótico
-        </button>
-        <button class="nav-tab-btn" id="tab-btn-stock" onclick="switchTab('stock')">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-          Estoque FEFO
-        </button>
-        <button class="nav-tab-btn" id="tab-btn-excursions" onclick="switchTab('excursions')">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          Alarmes & Excursões
-        </button>
-        <button class="nav-tab-btn" id="tab-btn-metrology" onclick="switchTab('metrology')">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
-          Metrologia RBC
-        </button>
-        <button class="nav-tab-btn" id="tab-btn-ledger" onclick="switchTab('ledger')">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
-          Auditoria & Ledger
-        </button>
-        <button class="nav-tab-btn" id="tab-btn-quality" onclick="switchTab('quality')">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-          Qualidade & POPs
-        </button>
-        <button class="nav-tab-btn" id="tab-btn-users" onclick="switchTab('users')" style="display: none;">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          Usuários
-        </button>
+        <button class="nav-tab-btn active" id="tab-btn-chambers" onclick="switchTab('chambers')">Painel Sinótico</button>
+        <button class="nav-tab-btn" id="tab-btn-stock" onclick="switchTab('stock')">Estoque FEFO</button>
+        <button class="nav-tab-btn" id="tab-btn-excursions" onclick="switchTab('excursions')">Alarmes & Excursões</button>
+        <button class="nav-tab-btn" id="tab-btn-metrology" onclick="switchTab('metrology')">Metrologia RBC</button>
+        <button class="nav-tab-btn" id="tab-btn-ledger" onclick="switchTab('ledger')">Auditoria & Ledger</button>
+        <button class="nav-tab-btn" id="tab-btn-quality" onclick="switchTab('quality')">Qualidade & POPs</button>
+        <button class="nav-tab-btn" id="tab-btn-users" onclick="switchTab('users')" style="display: none;">Usuários</button>
       </nav>
 
       <div class="nav-right">
-        <button class="btn-tv-mode" onclick="toggleTVMode()" title="Alternar Painel Modo TV">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"/><polyline points="17 2 12 7 7 2"/></svg>
-          Modo TV
-        </button>
         <div class="user-capsule">
-          <div class="user-avatar" id="app-user-avatar">US</div>
+          <div class="user-avatar" id="app-user-avatar">DR</div>
           <div>
             <div class="user-meta-name" id="app-user-name">Usuário</div>
             <div class="user-meta-role" id="app-user-role">Perfil</div>
@@ -2001,7 +1999,7 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=header_refactor_v6"></script>
+  <script src="/static/app.js?v=clean_header_v7"></script>
 
   <!-- =========================================================================
        MODAL 5: CADASTRO DE MEDICAMENTO (CATÁLOGO ANVISA)
