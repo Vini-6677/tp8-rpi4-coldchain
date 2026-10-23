@@ -1748,7 +1748,7 @@ async function loadLots() {
       const tr = document.createElement('tr');
       tr.className = 'lot-table-row';
       tr.innerHTML = `
-        <td><span class="badge-fefo-rank" style="background:${idx === 0 ? '#10B981' : '#334155'}; font-size:11px; font-weight:700;">${idx + 1}º</span></td>
+        <td style="text-align: center;"><span class="badge-fefo-rank" style="background:${idx === 0 ? '#10B981' : '#334155'}; font-size:11px; font-weight:700; margin: 0 auto;">${idx + 1}º</span></td>
         <td>
           <strong style="color:#F8FAFC;">${l.product_trade_name}</strong>
           <div style="font-size:11px; color:#94A3B8;">${l.product_dcb} — ${l.manufacturer || ''}</div>
@@ -1767,8 +1767,8 @@ async function loadLots() {
           <div style="font-size:10.5px; color:#94A3B8;">${l.shelf_location || ''}</div>
         </td>
         <td><span class="badge-status ${badgeClass}">${l.status.toUpperCase()}</span></td>
-        <td style="text-align:right;">
-          <button class="btn-action-secondary" style="padding:4px 10px; font-size:11px;" onclick="openTraceModal('${l.lot_number}')">
+        <td style="text-align: center;">
+          <button class="btn-action-secondary" style="padding:5px 14px; font-size:11.5px; margin: 0 auto; display: inline-flex; align-items: center; justify-content: center;" onclick="openTraceModal('${l.lot_number}')">
             Rastreabilidade
           </button>
         </td>
@@ -1908,7 +1908,7 @@ function openExitModal() {
   validLots.forEach((l, idx) => {
     const opt = document.createElement('option');
     opt.value = l.id;
-    opt.textContent = `${idx === 0 ? '★ PRIORIDADE MÁXIMA — ' : ''}${l.product_trade_name} | Lote: ${l.lot_number} | Vence: ${l.expiry_date} (${l.days_to_expiry}d) | Saldo: ${l.quantity} un.`;
+    opt.textContent = `${idx === 0 ? 'Prioridade 1 — ' : ''}${l.product_trade_name} | Lote: ${l.lot_number} | Vence: ${l.expiry_date} (${l.days_to_expiry}d) | Saldo: ${l.quantity} un.`;
     select.appendChild(opt);
   });
 

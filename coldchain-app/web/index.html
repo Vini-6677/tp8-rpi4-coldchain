@@ -1452,13 +1452,13 @@
         <div class="actions-bar">
           <div style="display: flex; gap: 10px;">
             <button class="btn-action-entry" onclick="openEntryModal()">
-              + Nova Entrada (Conferência na Doca)
+              Nova Entrada (Conferência na Doca)
             </button>
             <button class="btn-action-dispensation" onclick="openExitModal()">
               Saída / Dispensação (Por Validade)
             </button>
             <button class="btn-action-secondary" id="btn-new-product" onclick="openNewProductModal()">
-              + Novo Medicamento (Catálogo)
+              Novo Medicamento (Catálogo)
             </button>
           </div>
           <div style="display: flex; gap: 8px;">
@@ -1470,7 +1470,7 @@
           <table class="data-table" id="lots-table">
             <thead>
               <tr>
-                <th style="width: 70px;">Prioridade</th>
+                <th style="width: 85px; text-align: center;">Prioridade</th>
                 <th>Medicamento (Nome Comercial / DCB)</th>
                 <th>Registro ANVISA</th>
                 <th>Nº do Lote</th>
@@ -1478,7 +1478,7 @@
                 <th>Saldo</th>
                 <th>Localização</th>
                 <th>Status</th>
-                <th style="text-align: right;">Ação</th>
+                <th style="width: 140px; text-align: center;">Ação</th>
               </tr>
             </thead>
             <tbody id="lots-table-body">
@@ -1516,7 +1516,7 @@
                   <th>Mensagem do Alarme</th>
                   <th>Valor Lido</th>
                   <th>Status</th>
-                  <th style="text-align: right;">Ação</th>
+                  <th style="width: 140px; text-align: center;">Ação</th>
                 </tr>
               </thead>
               <tbody id="alarms-table-body">
@@ -1572,7 +1572,7 @@
           <div class="panel-title" style="margin-bottom: 0;">Parque Metrológico de Sensores Calibrados RBC</div>
           <button class="btn-action-secondary" id="btn-new-sensor" onclick="openNewSensorModal()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-            + Novo Sensor / Certificado RBC
+            Novo Sensor / Certificado RBC
           </button>
         </div>
           <div class="data-table-wrapper">
@@ -1720,7 +1720,7 @@
               <span class="tag-badge tag-blue">POPs Vigentes</span>
               <button class="btn-action-secondary" id="btn-new-pop" onclick="openNewPOPModal()">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-                + Novo / Revisar POP
+                Novo / Revisar POP
               </button>
             </div>
           </div>
@@ -1754,7 +1754,7 @@
               <span class="tag-badge tag-green">Laboratório Acreditado RBC</span>
               <button class="btn-action-secondary" id="btn-new-qual" onclick="openNewQualModal()">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-                + Novo Laudo
+                Novo Laudo
               </button>
             </div>
           </div>
@@ -1787,7 +1787,7 @@
               </div>
               <button class="btn-action-secondary" id="btn-new-training" onclick="openNewTrainingModal()">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-                + Registrar Treinamento
+                Registrar Treinamento
               </button>
             </div>
             <table>
@@ -2049,7 +2049,7 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=stock_refactor_v8"></script>
+  <script src="/static/app.js?v=clean_center_v9"></script>
 
   <!-- =========================================================================
        MODAL 5: CADASTRO DE MEDICAMENTO (CATÁLOGO ANVISA)
