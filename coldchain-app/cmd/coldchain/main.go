@@ -1424,6 +1424,38 @@ func (a *App) routes() http.Handler {
 		json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
 	})
 
+	// 9b. Resolução de Alarme Operacional com Encerramento e Laudo Técnico
+	mux.HandleFunc("/api/pharma/alarms/resolve", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		sess, ok := a.getSession(r)
+		if !ok {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		var payload struct {
+			AlarmID int64  `json:"alarm_id"`
+			Notes   string `json:"notes"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, "JSON inválido", http.StatusBadRequest)
+			return
+		}
+
+		if err := pharma.ResolveAlarm(a.db, payload.AlarmID, sess.Name, payload.Notes); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		ip := getClientIP(r)
+		a.logAudit(sess.Username, sess.Role, "RESOLVE_ALARME", fmt.Sprintf("Alarme #%d encerrado por %s. Laudo: %s", payload.AlarmID, sess.Name, payload.Notes), ip)
+		json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
+	})
+
 	// 10. Processos de Excursão Térmica (ANVISA RDC 430/2020 Art. 38)
 	mux.HandleFunc("/api/pharma/excursions", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

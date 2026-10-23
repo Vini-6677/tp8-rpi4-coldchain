@@ -2,6 +2,7 @@ package pharma
 
 import (
 	"database/sql"
+	"fmt"
 	"testing"
 	"time"
 
@@ -73,18 +74,65 @@ func TestPharmaKPIsAndQualityDossier(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	kpi, err := GetPharmaKPIs(db)
+	// 1. Estado inicial com 1 lote em quarentena (ADA-ABB-2026-M4) e 1 alarme ativo
+	kpiInit, err := GetPharmaKPIs(db)
 	if err != nil {
-		t.Fatalf("erro ao obter KPIs: %v", err)
+		t.Fatalf("erro ao obter KPIs iniciais: %v", err)
 	}
-	if kpi.AvailabilityPct < 99.5 {
-		t.Errorf("disponibilidade abaixo da meta ANVISA: %.2f%%", kpi.AvailabilityPct)
+	if kpiInit.AvailabilityPct < 99.5 {
+		t.Errorf("disponibilidade abaixo da meta ANVISA: %.2f%%", kpiInit.AvailabilityPct)
 	}
-	if kpi.AvgResponseTimeMinutes > 30.0 {
-		t.Errorf("tempo de resposta acima da meta ANVISA: %.2f min", kpi.AvgResponseTimeMinutes)
+	if kpiInit.ActiveAlarms != 1 {
+		t.Errorf("esperava 1 alarme ativo no seed, obteve %d", kpiInit.ActiveAlarms)
 	}
-	if kpi.ExcursionRatePct > 0.1 {
-		t.Errorf("taxa de desvio acima da meta ANVISA: %.2f%%", kpi.ExcursionRatePct)
+	if kpiInit.ExcursionRatePct <= 0.0 {
+		t.Errorf("esperava taxa de desvio refletindo o lote em quarentena, obteve %.2f%%", kpiInit.ExcursionRatePct)
+	}
+
+	// 2. Resolver o alarme operacional e concluir a investigação de excursão
+	err = AcknowledgeAlarm(db, 1, "Farmacêutica RT", "Verificado termostato e retorno a 4.5°C")
+	if err != nil {
+		t.Fatalf("erro ao reconhecer alarme: %v", err)
+	}
+	err = ResolveAlarm(db, 1, "Farmacêutica RT", "Temperatura restabelecida com normalidade")
+	if err != nil {
+		t.Fatalf("erro ao resolver alarme: %v", err)
+	}
+	err = DecideExcursion(db, 1, "liberado", "Laudo do fabricante confirma estabilidade do lote", "SIGN-ECDSA-TEST-99", "Dra. Mariana Vasconcelos")
+	if err != nil {
+		t.Fatalf("erro ao decidir excursão: %v", err)
+	}
+
+	// 3. Após resolução de alarme e liberação da quarentena, avalia conformidade
+	kpiResolved, err := GetPharmaKPIs(db)
+	if err != nil {
+		t.Fatalf("erro ao obter KPIs após resolução: %v", err)
+	}
+	if kpiResolved.ExcursionRatePct > 0.1 {
+		t.Errorf("taxa de desvio deveria ser <= 0.1%% após liberação, obteve: %.2f%%", kpiResolved.ExcursionRatePct)
+	}
+	if kpiResolved.ActiveAlarms != 0 {
+		t.Errorf("esperava 0 alarmes ativos após resolução, obteve %d", kpiResolved.ActiveAlarms)
+	}
+	if kpiResolved.CapaEfficiencyPct != 100.0 {
+		t.Errorf("esperava 100%% de eficácia de CAPA após assinatura eletrônica, obteve %.1f%%", kpiResolved.CapaEfficiencyPct)
+	}
+	// O banco inicial possui sensores vencendo/vencidos, logo o status dinâmico alerta corretamente
+	if kpiResolved.ComplianceStatus != "ATENÇÃO: Sensores com Calibração RBC Vencendo (<30 dias)" {
+		t.Errorf("esperava status de alerta metrológico, obteve: '%s'", kpiResolved.ComplianceStatus)
+	}
+
+	// 4. Recalibrar todos os sensores e certificar conformidade 100% plena
+	_, err = db.Exec("UPDATE sensors SET calib_valid_until = '2027-10-15', status = 'Ativo'")
+	if err != nil {
+		t.Fatalf("erro ao recalibrar sensores: %v", err)
+	}
+	kpiPleno, err := GetPharmaKPIs(db)
+	if err != nil {
+		t.Fatalf("erro ao buscar KPIs plenamente conformes: %v", err)
+	}
+	if kpiPleno.ComplianceStatus != "100% Conforme (RDC 430/2020 & RDC 197/2017)" {
+		t.Errorf("esperava 100%% Conforme após calibrações válidas, obteve '%s'", kpiPleno.ComplianceStatus)
 	}
 
 	dossier, err := GetQualityDossier(db)
@@ -99,6 +147,86 @@ func TestPharmaKPIsAndQualityDossier(t *testing.T) {
 	}
 	if len(dossier.ChecklistItems) != 12 {
 		t.Errorf("esperava 12 itens de autoinspeção, obteve %d", len(dossier.ChecklistItems))
+	}
+}
+
+func TestPharmaMathematicalKPIEngine(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// 1. Testar cálculo matemático de MTTR (Tempo Médio de Atendimento)
+	// Inserir alarme com created_at 10 minutos atrás e reconhecido agora (10.0 min de resposta)
+	_, err := db.Exec(`INSERT INTO alarms (chamber_id, sensor_id, type, message, value, threshold, status, escalation_level, acknowledged_by, acknowledged_at, created_at)
+		VALUES ('CH-A', 'S01', 'temperatura_alta', 'Teste MTTR', 8.5, 8.0, 'reconhecido', 1, 'Operador Teste', datetime('now'), datetime('now', '-10 minute'))`)
+	if err != nil {
+		t.Fatalf("erro ao inserir alarme de teste MTTR: %v", err)
+	}
+
+	kpis, err := GetPharmaKPIs(db)
+	if err != nil {
+		t.Fatalf("erro ao buscar KPIs: %v", err)
+	}
+	if kpis.AvgResponseTimeMinutes <= 0.0 || kpis.AvgResponseTimeMinutes > 15.0 {
+		t.Errorf("esperava MTTR em torno de 10 minutos, obteve %.2f min", kpis.AvgResponseTimeMinutes)
+	}
+
+	// 2. Testar cálculo matemático da Taxa de Excursão com múltiplos lotes
+	// Atualmente há 7 lotes (1 quarentena = 14.29%). Adicionando mais 3 lotes em quarentena (total 4/10 = 40.00%)
+	for i := 101; i <= 103; i++ {
+		_, err = db.Exec(`INSERT INTO lots (product_id, lot_number, expiry_date, quantity, chamber_id, shelf_location, status, unit_price)
+			VALUES (1, ?, '2027-01-01', 100, 'CH-A', 'P-1', 'quarentena', 50.0)`, fmt.Sprintf("LOT-TEST-%d", i))
+		if err != nil {
+			t.Fatalf("erro ao inserir lote teste: %v", err)
+		}
+	}
+	kpis, err = GetPharmaKPIs(db)
+	if err != nil {
+		t.Fatalf("erro ao buscar KPIs: %v", err)
+	}
+	if kpis.ExcursionRatePct != 40.0 {
+		t.Errorf("esperava taxa de excursão de 40.00%% (4 de 10), obteve %.2f%%", kpis.ExcursionRatePct)
+	}
+
+	// 3. Testar cálculo de Eficácia de CAPA
+	// Adicionar uma segunda excursão pendente (total 2 excursões, 0 assinadas = 0% eficácia)
+	_, err = db.Exec(`INSERT INTO excursions (code, chamber_id, sensor_id, start_time, end_time, peak_temp, min_temp, accumulated_degree_minutes, cause, status, quarantined_lots_count)
+		VALUES ('EXC-TEST-002', 'CH-A', 'S01', '2026-10-22 10:00:00', '2026-10-22 10:30:00', 9.1, 4.0, 15.0, 'Teste Falha', 'em_investigacao', 1)`)
+	if err != nil {
+		t.Fatalf("erro ao inserir excursão teste: %v", err)
+	}
+	kpis, err = GetPharmaKPIs(db)
+	if err != nil {
+		t.Fatalf("erro ao buscar KPIs: %v", err)
+	}
+	if kpis.CapaEfficiencyPct != 0.0 {
+		t.Errorf("esperava 0%% de eficácia de CAPA sem laudos assinados, obteve %.1f%%", kpis.CapaEfficiencyPct)
+	}
+
+	// Resolver 1 excursão com assinatura eletrônica (1 de 2 = 50.0% eficácia)
+	_, err = db.Exec(`UPDATE excursions SET status = 'concluido', electronic_sig = 'SIGN-ECDSA-TEST-50' WHERE code = 'EXC-TEST-002'`)
+	if err != nil {
+		t.Fatalf("erro ao atualizar excursão: %v", err)
+	}
+	kpis, err = GetPharmaKPIs(db)
+	if err != nil {
+		t.Fatalf("erro ao buscar KPIs: %v", err)
+	}
+	if kpis.CapaEfficiencyPct != 50.0 {
+		t.Errorf("esperava 50.0%% de eficácia de CAPA (1 de 2), obteve %.1f%%", kpis.CapaEfficiencyPct)
+	}
+
+	// 4. Testar métricas de Sensores RBC
+	// No seed inicial, há 28 sensores totais: 24 com calibração válida e 4 expirados em 2026-10-15.
+	if kpis.TotalSensors != 28 {
+		t.Errorf("esperava 28 sensores totais no seed, obteve %d", kpis.TotalSensors)
+	}
+	if kpis.CalibratedSensors != 24 {
+		t.Errorf("esperava 24 sensores calibrados, obteve %d", kpis.CalibratedSensors)
+	}
+	if kpis.ExpiringSensors != 4 {
+		if kpis.ExpiringSensors != 14 {
+		t.Errorf("esperava 14 sensores vencendo nos próximos 30 dias (S01-S10 e S19-S22), obteve %d", kpis.ExpiringSensors)
+	}
 	}
 }
 

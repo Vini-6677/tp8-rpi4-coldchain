@@ -1046,6 +1046,56 @@
     </header>
 
     <main class="app-main">
+      <!-- BARRA DE KPIS REGULATÓRIOS ANVISA (RDC 430/2020 & HAGELAB 2025) -->
+      <div class="kpi-banner" id="kpi-banner-container">
+        <div class="kpi-card">
+          <div class="kpi-label">Disponibilidade Operacional</div>
+          <div class="kpi-value text-green" id="kpi-uptime">--%</div>
+          <div class="kpi-sub">
+            <span>Meta ANVISA &ge; 99.5%</span>
+            <span id="kpi-uptime-hours" style="color:#64748B;">720h ciclo</span>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-label">Tempo Médio de Atendimento (MTTR)</div>
+          <div class="kpi-value text-blue" id="kpi-mttr">-- min</div>
+          <div class="kpi-sub">
+            <span>SLA Crítico &le; 30 min</span>
+            <span id="kpi-alarms-stat" style="color:#64748B;">-- alarmes</span>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-label">Taxa de Excursão Térmica</div>
+          <div class="kpi-value text-amber" id="kpi-excursion-rate">--%</div>
+          <div class="kpi-sub">
+            <span>Meta &le; 0.10%</span>
+            <span id="kpi-lots-quarantined" style="color:#F59E0B;">Lotes em segregação</span>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-label">Eficácia de Ações CAPA</div>
+          <div class="kpi-value text-purple" id="kpi-capa-eff">--%</div>
+          <div class="kpi-sub">
+            <span>Laudos e Assinatura Digital</span>
+            <span id="kpi-capa-status" style="color:#10B981;">Concluídas</span>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-label">Status Geral de Conformidade</div>
+          <div class="kpi-value text-white" id="kpi-compliance-short" style="font-size:1.02rem; line-height:1.35;">
+            Verificando...
+          </div>
+          <div class="kpi-sub">
+            <span id="kpi-sensors-summary">Sensores RBC Calibrados</span>
+            <span id="kpi-audit-date" style="color:#64748B;">Auditado</span>
+          </div>
+        </div>
+      </div>
+
       <!-- =====================================================================
            SEÇÃO 1: CÂMARAS & MODO TV
            ===================================================================== -->

@@ -3,6 +3,7 @@ package pharma
 import (
 	"database/sql"
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -927,32 +928,126 @@ func AcknowledgeAlarm(db *sql.DB, alarmID int64, username, actionTaken string) e
 	return err
 }
 
+// ResolveAlarm finaliza e encerra o alarme operacional com laudo técnico e retorno à conformidade.
+func ResolveAlarm(db *sql.DB, alarmID int64, username, notes string) error {
+	nowStr := time.Now().Format("2006-01-02 15:04:05")
+	_, err := db.Exec(`UPDATE alarms
+		SET status = 'resolvido', resolved_at = ?, 
+		    action_taken = CASE 
+		        WHEN action_taken IS NULL OR action_taken = '' THEN ? 
+		        ELSE action_taken || ' | Encerramento (' || ? || '): ' || ? 
+		    END
+		WHERE id = ?`,
+		nowStr, notes, username, notes, alarmID)
+	return err
+}
 
-// GetPharmaKPIs calcula os indicadores regulatórios exigidos pela ANVISA (RDC 430/2020 e Artigo HageLab 2025).
+// GetPharmaKPIs calcula os indicadores regulatórios matemáticos exigidos pela ANVISA (RDC 430/2020 e Artigo HageLab 2025).
 func GetPharmaKPIs(db *sql.DB) (PharmaKPIs, error) {
 	kpi := PharmaKPIs{
-		AvailabilityPct:        99.98,
-		AvgResponseTimeMinutes: 4.2,
-		ExcursionRatePct:       0.02,
-		CapaEfficiencyPct:      100.0,
-		TotalMonitoredHours:    720.0,
-		UptimeHours:            719.86,
-		RetentionYears:         5,
-		LastAuditDate:          time.Now().Format("2006-01-02 15:04:05"),
-		ComplianceStatus:       "100% Conforme (RDC 430/2020 & RDC 197/2017)",
+		RetentionYears: 5,
+		LastAuditDate:  time.Now().Format("2006-01-02 15:04:05"),
 	}
 
-	// Alarms count
+	// 1. Contadores Metrológicos de Sensores RBC
+	_ = db.QueryRow(`SELECT COUNT(*),
+		COALESCE(SUM(CASE WHEN date(calib_valid_until) >= date('now') THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN status = 'Vencendo' OR (date(calib_valid_until) >= date('now') AND date(calib_valid_until) <= date('now', '+30 day')) THEN 1 ELSE 0 END), 0)
+		FROM sensors`).Scan(&kpi.TotalSensors, &kpi.CalibratedSensors, &kpi.ExpiringSensors)
+
+	// 2. Contadores e Métricas de Alarmes
 	_ = db.QueryRow(`SELECT COUNT(*), 
 		COALESCE(SUM(CASE WHEN status IN ('reconhecido', 'resolvido') THEN 1 ELSE 0 END), 0),
 		COALESCE(SUM(CASE WHEN status = 'ativo' THEN 1 ELSE 0 END), 0)
 		FROM alarms`).Scan(&kpi.TotalAlarms, &kpi.AcknowledgedAlarms, &kpi.ActiveAlarms)
 
-	// Sensors count
-	_ = db.QueryRow(`SELECT COUNT(*),
-		COALESCE(SUM(CASE WHEN status = 'Ativo' THEN 1 ELSE 0 END), 0),
-		COALESCE(SUM(CASE WHEN status = 'Vencendo' THEN 1 ELSE 0 END), 0)
-		FROM sensors`).Scan(&kpi.TotalSensors, &kpi.CalibratedSensors, &kpi.ExpiringSensors)
+	// 3. Tempo Médio de Atendimento / MTTR (em minutos)
+	var avgResponseMinutes sql.NullFloat64
+	_ = db.QueryRow(`SELECT AVG((strftime('%s', COALESCE(acknowledged_at, resolved_at)) - strftime('%s', created_at)) / 60.0)
+		FROM alarms
+		WHERE (acknowledged_at IS NOT NULL OR resolved_at IS NOT NULL)
+		  AND strftime('%s', COALESCE(acknowledged_at, resolved_at)) >= strftime('%s', created_at)`).Scan(&avgResponseMinutes)
+
+	if avgResponseMinutes.Valid && avgResponseMinutes.Float64 >= 0 {
+		kpi.AvgResponseTimeMinutes = math.Round(avgResponseMinutes.Float64*10) / 10
+	} else if kpi.ActiveAlarms > 0 {
+		var pendingAvg sql.NullFloat64
+		_ = db.QueryRow(`SELECT AVG((strftime('%s', 'now') - strftime('%s', created_at)) / 60.0)
+			FROM alarms WHERE status = 'ativo'`).Scan(&pendingAvg)
+		if pendingAvg.Valid && pendingAvg.Float64 >= 0 {
+			kpi.AvgResponseTimeMinutes = math.Round(pendingAvg.Float64*10) / 10
+		} else {
+			kpi.AvgResponseTimeMinutes = 0.0
+		}
+	} else {
+		kpi.AvgResponseTimeMinutes = 0.0
+	}
+
+	// 4. Taxa de Excursão Térmica (% de lotes em quarentena / total de lotes)
+	var totalLots, quarantinedLots int
+	_ = db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(CASE WHEN status = 'quarentena' THEN 1 ELSE 0 END), 0) FROM lots`).Scan(&totalLots, &quarantinedLots)
+	if totalLots > 0 {
+		kpi.ExcursionRatePct = math.Round((float64(quarantinedLots)/float64(totalLots)*100.0)*100) / 100
+	} else {
+		kpi.ExcursionRatePct = 0.0
+	}
+
+	// 5. Eficácia de Ações Corretivas / CAPA (% de desvios investigados e formalmente concluídos)
+	var totalExcursions, resolvedExcursions int
+	_ = db.QueryRow(`SELECT COUNT(*), 
+		COALESCE(SUM(CASE WHEN status IN ('concluido', 'fechado', 'resolvido', 'aprovado', 'descartado') OR (electronic_sig IS NOT NULL AND electronic_sig != '') THEN 1 ELSE 0 END), 0)
+		FROM excursions`).Scan(&totalExcursions, &resolvedExcursions)
+
+	if totalExcursions == 0 {
+		kpi.CapaEfficiencyPct = 100.0
+	} else {
+		kpi.CapaEfficiencyPct = math.Round((float64(resolvedExcursions)/float64(totalExcursions)*100.0)*10) / 10
+	}
+
+	// 6. Disponibilidade Operacional e Horas Monitoradas (Ciclo Mensal Padrão 720h RDC 430)
+	kpi.TotalMonitoredHours = 720.0
+	var downtimeHours sql.NullFloat64
+	_ = db.QueryRow(`SELECT COALESCE(SUM(
+		CASE 
+			WHEN end_time IS NOT NULL AND strftime('%s', end_time) > strftime('%s', start_time) 
+			THEN (strftime('%s', end_time) - strftime('%s', start_time)) / 3600.0
+			ELSE 0.4 
+		END
+	), 0.0)
+	FROM excursions`).Scan(&downtimeHours)
+
+	downtime := 0.0
+	if downtimeHours.Valid {
+		downtime = downtimeHours.Float64
+	}
+	kpi.UptimeHours = math.Round((kpi.TotalMonitoredHours-downtime)*100) / 100
+	if kpi.UptimeHours < 0 {
+		kpi.UptimeHours = 0
+	}
+	kpi.AvailabilityPct = math.Round((kpi.UptimeHours/kpi.TotalMonitoredHours*100.0)*100) / 100
+	if kpi.AvailabilityPct > 100.0 {
+		kpi.AvailabilityPct = 100.0
+	}
+
+	// 7. Data do Último Registro de Auditoria no Ledger
+	var lastAudit sql.NullString
+	_ = db.QueryRow(`SELECT created_at FROM ledger ORDER BY id DESC LIMIT 1`).Scan(&lastAudit)
+	if lastAudit.Valid && lastAudit.String != "" {
+		kpi.LastAuditDate = lastAudit.String
+	}
+
+	// 8. Avaliação Dinâmica de Conformidade Sanitária (RDC 430 & RDC 197)
+	if kpi.ActiveAlarms > 0 && kpi.ExcursionRatePct > 0 {
+		kpi.ComplianceStatus = "CRÍTICO: Excursão Térmica Ativa e Lote em Quarentena"
+	} else if kpi.ActiveAlarms > 0 {
+		kpi.ComplianceStatus = "ALERTA: Alarme Operacional Pendente de Ação Imediata"
+	} else if kpi.ExpiringSensors > 0 {
+		kpi.ComplianceStatus = "ATENÇÃO: Sensores com Calibração RBC Vencendo (<30 dias)"
+	} else if kpi.AvailabilityPct < 99.5 {
+		kpi.ComplianceStatus = "ALERTA: Disponibilidade Térmica Abaixo da Meta Regulamentar (99.5%)"
+	} else {
+		kpi.ComplianceStatus = "100% Conforme (RDC 430/2020 & RDC 197/2017)"
+	}
 
 	return kpi, nil
 }

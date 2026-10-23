@@ -700,7 +700,14 @@ async function loadAlarms() {
               <button class="btn-action-primary" style="padding:4px 8px; font-size:11px;" onclick="promptAcknowledgeAlarm(${a.id})">
                 Reconhecer
               </button>
-            ` : `<span style="font-size:11px; color:#64748B;">Reconhecido por ${a.acknowledged_by}</span>`}
+            ` : (a.status === 'reconhecido' ? `
+              <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+                <span style="font-size:11px; color:#64748B;">Reconhecido: ${a.acknowledged_by}</span>
+                <button class="btn-action-primary" style="padding:3px 8px; font-size:11px; background:#10B981;" onclick="promptResolveAlarm(${a.id})">
+                  Resolver
+                </button>
+              </div>
+            ` : `<span style="font-size:11px; color:#10B981; font-weight:600;">✓ Resolvido</span>`)}
           </td>
         </tr>
       `;
@@ -723,11 +730,35 @@ async function promptAcknowledgeAlarm(alarmId) {
     if (res.ok) {
       alert('Alarme reconhecido formalmente e registrado na trilha de auditoria.');
       loadAlarms();
+      loadKPIs();
     } else {
       alert('Erro ao reconhecer alarme.');
     }
   } catch (e) {
     alert('Erro de conexão.');
+  }
+}
+
+
+async function promptResolveAlarm(alarmId) {
+  const notes = prompt('Descreva o laudo de encerramento do alarme (ex: temperatura normalizada em 4.5°C, porta inspecionada e fechada):');
+  if (!notes) return;
+
+  try {
+    const res = await fetch('/api/pharma/alarms/resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ alarm_id: alarmId, notes: notes })
+    });
+    if (res.ok) {
+      alert('Alarme encerrado e resolvido com sucesso!');
+      loadAlarms();
+      loadKPIs();
+    } else {
+      alert('Erro ao resolver alarme.');
+    }
+  } catch (e) {
+    alert('Erro de conexão ao resolver alarme.');
   }
 }
 
@@ -1065,10 +1096,39 @@ async function loadKPIs() {
     const elMttr = document.getElementById('kpi-mttr');
     const elExc = document.getElementById('kpi-excursion-rate');
     const elCapa = document.getElementById('kpi-capa-eff');
+    const elUptimeHours = document.getElementById('kpi-uptime-hours');
+    const elAlarmsStat = document.getElementById('kpi-alarms-stat');
+    const elLotsQuar = document.getElementById('kpi-lots-quarantined');
+    const elCapaStatus = document.getElementById('kpi-capa-status');
+    const elCompliance = document.getElementById('kpi-compliance-short');
+    const elSensorsSummary = document.getElementById('kpi-sensors-summary');
+    const elAuditDate = document.getElementById('kpi-audit-date');
+
     if (elUptime) elUptime.innerText = `${kpi.availability_pct.toFixed(2)}%`;
     if (elMttr) elMttr.innerText = `${kpi.avg_response_time_minutes.toFixed(1)} min`;
     if (elExc) elExc.innerText = `${kpi.excursion_rate_pct.toFixed(2)}%`;
     if (elCapa) elCapa.innerText = `${kpi.capa_efficiency_pct.toFixed(1)}%`;
+
+    if (elUptimeHours) elUptimeHours.innerText = `${kpi.uptime_hours.toFixed(1)}h / ${kpi.total_monitored_hours.toFixed(0)}h`;
+    if (elAlarmsStat) elAlarmsStat.innerText = `${kpi.active_alarms} ativos / ${kpi.total_alarms} total`;
+    if (elLotsQuar) elLotsQuar.innerText = kpi.excursion_rate_pct > 0 ? 'Lotes em segregação' : '0 lotes em segregação';
+    if (elCapaStatus) elCapaStatus.innerText = kpi.capa_efficiency_pct >= 95.0 ? 'Concluídas e Aprovadas' : 'Investigação em Aberto';
+    if (elSensorsSummary) elSensorsSummary.innerText = `${kpi.calibrated_sensors}/${kpi.total_sensors} Calibrados (${kpi.expiring_sensors} vencendo)`;
+    if (elAuditDate) elAuditDate.innerText = kpi.last_audit_date ? `Audit: ${kpi.last_audit_date.split(' ')[0]}` : 'Auditado';
+
+    if (elCompliance) {
+      elCompliance.innerText = kpi.compliance_status;
+      if (kpi.compliance_status.includes('100% Conforme')) {
+        elCompliance.className = 'kpi-value text-green';
+        elCompliance.style.color = '#52d68a';
+      } else if (kpi.compliance_status.includes('CRÍTICO')) {
+        elCompliance.className = 'kpi-value text-amber';
+        elCompliance.style.color = '#EF4444';
+      } else {
+        elCompliance.className = 'kpi-value text-amber';
+        elCompliance.style.color = '#F59E0B';
+      }
+    }
   } catch (e) {
     console.error('Erro ao carregar KPIs regulatórios:', e);
   }
