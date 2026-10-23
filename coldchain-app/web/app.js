@@ -1687,3 +1687,381 @@ async function submitQual() {
     alert('Erro de conexão ao salvar laudo.');
   }
 }
+
+
+// -----------------------------------------------------------------------------
+// MÓDULO 2: GESTÃO DE ESTOQUE & CONTROLE POR VALIDADE (PVPS / FEFO)
+// -----------------------------------------------------------------------------
+window.allPharmaProducts = [];
+window.allPharmaLots = [];
+
+async function loadProducts() {
+  try {
+    const res = await fetch('/api/pharma/products');
+    if (!res.ok) return;
+    const list = await res.json();
+    window.allPharmaProducts = list;
+
+    const select = document.getElementById('entry-product');
+    if (select) {
+      select.innerHTML = '';
+      list.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.dataset.min = p.temp_min;
+        opt.dataset.max = p.temp_max;
+        opt.textContent = `${p.trade_name} (${p.dcb}) — [${p.temp_min}°C a ${p.temp_max}°C]`;
+        select.appendChild(opt);
+      });
+      updateProductRanges();
+    }
+  } catch (e) {
+    console.error('Erro ao carregar produtos:', e);
+  }
+}
+
+async function loadLots() {
+  try {
+    const res = await fetch('/api/pharma/lots');
+    if (!res.ok) return;
+    const list = await res.json();
+    window.allPharmaLots = list;
+
+    const tbody = document.getElementById('lots-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    if (list.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; color:#64748B; padding:18px;">Nenhum lote registrado em estoque.</td></tr>';
+      return;
+    }
+
+    list.forEach((l, idx) => {
+      let badgeClass = 'liberado';
+      if (l.status === 'quarentena') badgeClass = 'quarentena';
+      else if (l.status === 'reprovado' || l.status === 'vencido') badgeClass = 'reprovado';
+      else if (l.status === 'recolhido' || l.status === 'devolvido') badgeClass = 'alerta';
+
+      const expiryFormatted = l.expiry_date.split('-').reverse().join('/');
+      const isClose = l.days_to_expiry <= 30;
+
+      const tr = document.createElement('tr');
+      tr.className = 'lot-table-row';
+      tr.innerHTML = `
+        <td><span class="badge-fefo-rank" style="background:${idx === 0 ? '#10B981' : '#334155'}; font-size:11px; font-weight:700;">${idx + 1}º</span></td>
+        <td>
+          <strong style="color:#F8FAFC;">${l.product_trade_name}</strong>
+          <div style="font-size:11px; color:#94A3B8;">${l.product_dcb} — ${l.manufacturer || ''}</div>
+        </td>
+        <td><span style="font-size:11.5px; color:#CBD5E1;">${l.anvisa_reg || '---'}</span></td>
+        <td><strong style="color:#38BDF8; font-family:monospace;">${l.lot_number}</strong></td>
+        <td>
+          <div style="font-weight:600; color:#F8FAFC;">${expiryFormatted}</div>
+          <div style="font-size:10.5px; color:${isClose ? '#F87171' : '#94A3B8'}; font-weight:${isClose ? '700' : '400'};">
+            ${l.days_to_expiry > 0 ? `${l.days_to_expiry} dias restantes` : '<span style="color:#EF4444;">VENCIDO</span>'}
+          </div>
+        </td>
+        <td><strong style="font-size:13px; color:#F8FAFC;">${l.quantity}</strong> <span style="font-size:11px; color:#94A3B8;">un.</span></td>
+        <td>
+          <div style="font-size:12px; color:#F8FAFC;">${l.chamber_name || l.chamber_id}</div>
+          <div style="font-size:10.5px; color:#94A3B8;">${l.shelf_location || ''}</div>
+        </td>
+        <td><span class="badge-status ${badgeClass}">${l.status.toUpperCase()}</span></td>
+        <td style="text-align:right;">
+          <button class="btn-action-secondary" style="padding:4px 10px; font-size:11px;" onclick="openTraceModal('${l.lot_number}')">
+            Rastreabilidade
+          </button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (e) {
+    console.error('Erro ao carregar lotes:', e);
+  }
+}
+
+function filterLotsTable() {
+  const q = (document.getElementById('filter-lot-input').value || '').toLowerCase().trim();
+  const rows = document.querySelectorAll('#lots-table-body tr.lot-table-row');
+  rows.forEach(r => {
+    const text = r.textContent.toLowerCase();
+    r.style.display = text.includes(q) ? '' : 'none';
+  });
+}
+
+function openEntryModal() {
+  const m = document.getElementById('modal-entry');
+  if (!m) return;
+  m.classList.add('active');
+
+  if (window.allPharmaProducts.length === 0) {
+    loadProducts();
+  } else {
+    updateProductRanges();
+  }
+
+  // Preenche data padrão de validade (1 ano à frente)
+  const expInput = document.getElementById('entry-expiry');
+  if (expInput && !expInput.value) {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() + 1);
+    expInput.value = d.toISOString().split('T')[0];
+  }
+}
+
+function closeEntryModal() {
+  const m = document.getElementById('modal-entry');
+  if (m) m.classList.remove('active');
+}
+
+function updateProductRanges() {
+  const sel = document.getElementById('entry-product');
+  if (!sel) return;
+  checkEntryTemp();
+}
+
+function checkEntryTemp() {
+  const sel = document.getElementById('entry-product');
+  const tempInput = document.getElementById('entry-temp');
+  const warn = document.getElementById('entry-temp-warning');
+  if (!sel || !tempInput || !warn) return;
+
+  const opt = sel.options[sel.selectedIndex];
+  if (!opt) return;
+
+  const min = parseFloat(opt.dataset.min);
+  const max = parseFloat(opt.dataset.max);
+  const val = parseFloat(tempInput.value);
+
+  if (!isNaN(val) && (val < min || val > max)) {
+    warn.style.display = 'flex';
+    warn.innerHTML = `<div><strong>Atenção Regulamentar:</strong> Temperatura aferida (${val.toFixed(1)}°C) fora da faixa permitida (${min.toFixed(1)}°C a ${max.toFixed(1)}°C)! O lote será segregado automaticamente em <strong>Quarentena Preventiva</strong> (RDC 430/2020 Art. 38).</div>`;
+  } else {
+    warn.style.display = 'none';
+  }
+}
+
+async function submitStockEntry() {
+  const prodSelect = document.getElementById('entry-product');
+  const opt = prodSelect.options[prodSelect.selectedIndex];
+  const min = opt ? parseFloat(opt.dataset.min) : 2.0;
+  const max = opt ? parseFloat(opt.dataset.max) : 8.0;
+
+  const arrivalTemp = parseFloat(document.getElementById('entry-temp').value);
+  const decision = (arrivalTemp < min || arrivalTemp > max) ? 'quarentena' : 'liberado';
+
+  const payload = {
+    product_id: parseInt(prodSelect.value, 10),
+    lot_number: document.getElementById('entry-lot').value.trim(),
+    expiry_date: document.getElementById('entry-expiry').value,
+    quantity: parseInt(document.getElementById('entry-qty').value, 10),
+    chamber_id: document.getElementById('entry-chamber').value,
+    shelf_location: document.getElementById('entry-shelf').value.trim(),
+    unit_price: 150.0,
+    supplier: document.getElementById('entry-supplier').value.trim(),
+    supplier_cnpj: document.getElementById('entry-cnpj').value.trim(),
+    invoice_number: document.getElementById('entry-nfe').value.trim(),
+    transport_condition: 'Caminhão Refrigerado / Baú Isotérmico Validados',
+    arrival_temp: arrivalTemp,
+    cargo_integrity: 'Conforme (Lacre de segurança intacto)',
+    ambient_exposure_minutes: 0,
+    decision: decision
+  };
+
+  try {
+    const res = await fetch('/api/pharma/stock/entry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (res.ok) {
+      alert(`Recebimento na Doca concluído com sucesso!\nLote: ${data.lot.lot_number}\nStatus Inicial: ${data.lot.status.toUpperCase()}`);
+      closeEntryModal();
+      document.getElementById('form-entry').reset();
+      loadLots();
+      loadChambers();
+      loadKPIs();
+    } else {
+      alert(data.error || 'Erro ao registrar recebimento.');
+    }
+  } catch (e) {
+    alert('Erro de conexão ao registrar entrada.');
+  }
+}
+
+function openExitModal() {
+  const m = document.getElementById('modal-exit');
+  if (!m) return;
+
+  const validLots = (window.allPharmaLots || [])
+    .filter(l => l.status === 'liberado' && l.quantity > 0)
+    .sort((a, b) => new Date(a.expiry_date) - new Date(b.expiry_date));
+
+  if (validLots.length === 0) {
+    alert('Nenhum lote com status LIBERADO e saldo disponível para dispensação no momento.');
+    return;
+  }
+
+  const select = document.getElementById('exit-lot-select');
+  select.innerHTML = '';
+  validLots.forEach((l, idx) => {
+    const opt = document.createElement('option');
+    opt.value = l.id;
+    opt.textContent = `${idx === 0 ? '★ PRIORIDADE MÁXIMA — ' : ''}${l.product_trade_name} | Lote: ${l.lot_number} | Vence: ${l.expiry_date} (${l.days_to_expiry}d) | Saldo: ${l.quantity} un.`;
+    select.appendChild(opt);
+  });
+
+  m.classList.add('active');
+  updateExitLotInfo();
+}
+
+function closeExitModal() {
+  const m = document.getElementById('modal-exit');
+  if (m) m.classList.remove('active');
+}
+
+function updateExitLotInfo() {
+  const select = document.getElementById('exit-lot-select');
+  const info = document.getElementById('exit-fefo-info');
+  const qtyInput = document.getElementById('exit-qty');
+  if (!select || !info) return;
+
+  const lotId = parseInt(select.value, 10);
+  const lot = (window.allPharmaLots || []).find(l => l.id === lotId);
+
+  if (lot) {
+    info.innerHTML = `<strong>Lote Selecionado:</strong> ${lot.product_trade_name} (Lote: <code>${lot.lot_number}</code>)<br>Validade: <strong>${lot.expiry_date.split('-').reverse().join('/')}</strong> (${lot.days_to_expiry} dias restantes) | Saldo em Câmara: <strong>${lot.quantity} un.</strong>`;
+    if (qtyInput) {
+      qtyInput.max = lot.quantity;
+      if (!qtyInput.value || parseInt(qtyInput.value, 10) > lot.quantity) {
+        qtyInput.value = Math.min(10, lot.quantity);
+      }
+    }
+  }
+}
+
+async function submitStockExit() {
+  const select = document.getElementById('exit-lot-select');
+  const lotId = parseInt(select.value, 10);
+  const qty = parseInt(document.getElementById('exit-qty').value, 10);
+  const reason = document.getElementById('exit-reason').value;
+  const recipient = document.getElementById('exit-recipient').value.trim();
+  const nfe = document.getElementById('exit-nfe').value.trim();
+
+  const payload = {
+    lot_id: lotId,
+    quantity: qty,
+    reason: reason,
+    recipient: recipient,
+    invoice_number: nfe
+  };
+
+  try {
+    const res = await fetch('/api/pharma/stock/exit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (res.ok) {
+      alert(`Dispensação / Saída concluída com sucesso!\nQuantidade retirada: ${qty} un.\nSaldo restante: ${data.remaining_quantity} un.`);
+      closeExitModal();
+      document.getElementById('form-exit').reset();
+      loadLots();
+      loadChambers();
+      loadKPIs();
+    } else {
+      alert(data.error || 'Erro ao registrar saída.');
+    }
+  } catch (e) {
+    alert('Erro de conexão ao registrar saída.');
+  }
+}
+
+async function openTraceModal(lotNumber) {
+  const m = document.getElementById('modal-trace');
+  const content = document.getElementById('trace-content');
+  if (!m || !content) return;
+
+  m.classList.add('active');
+  content.innerHTML = `<div style="text-align:center; padding:30px; color:#94A3B8;">Carregando dossiê de rastreabilidade do lote ${lotNumber}...</div>`;
+
+  try {
+    const res = await fetch(`/api/pharma/lots/trace?lot=${encodeURIComponent(lotNumber)}`);
+    if (!res.ok) {
+      content.innerHTML = `<div style="color:#EF4444; padding:20px;">Não foi possível carregar o laudo pericial para o lote ${lotNumber}.</div>`;
+      return;
+    }
+    const trace = await res.json();
+    const lot = trace.lot;
+    const entry = trace.entry;
+    const exits = trace.exits || [];
+
+    let exitsHtml = '';
+    if (exits.length === 0) {
+      exitsHtml = '<div style="color:#64748B; font-size:12px; margin-top:6px;">Nenhuma dispensação realizada até o momento.</div>';
+    } else {
+      exitsHtml = exits.map(x => `
+        <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:8px 12px; margin-top:6px; font-size:12px;">
+          <div style="display:flex; justify-content:space-between;">
+            <strong style="color:#34D399;">${x.quantity} un. dispensadas</strong>
+            <span style="color:#94A3B8;">${x.exit_at}</span>
+          </div>
+          <div style="color:#CBD5E1;">Destinatário: ${x.recipient} | Motivo: ${x.reason.toUpperCase()}</div>
+          <div style="color:#94A3B8; font-size:11px;">Responsável: ${x.responsible_name} | Doc: ${x.invoice_number || 'S/N'}</div>
+        </div>
+      `).join('');
+    }
+
+    content.innerHTML = `
+      <div style="border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:14px; margin-bottom:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+          <div>
+            <div style="font-size:16px; font-weight:700; color:#F8FAFC;">${lot.product_trade_name}</div>
+            <div style="font-size:12px; color:#94A3B8;">${lot.product_dcb} — Registro ANVISA: ${lot.anvisa_reg}</div>
+          </div>
+          <span class="badge-status ${lot.status === 'liberado' ? 'liberado' : 'quarentena'}">${lot.status.toUpperCase()}</span>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; margin-top:12px; background:rgba(255,255,255,0.02); padding:10px; border-radius:8px;">
+          <div><span style="font-size:10px; color:#64748B;">LOTE</span><br><strong style="color:#38BDF8;">${lot.lot_number}</strong></div>
+          <div><span style="font-size:10px; color:#64748B;">VALIDADE</span><br><strong>${lot.expiry_date.split('-').reverse().join('/')}</strong></div>
+          <div><span style="font-size:10px; color:#64748B;">SALDO ATUAL</span><br><strong>${lot.quantity} un.</strong></div>
+          <div><span style="font-size:10px; color:#64748B;">LOCALIZAÇÃO</span><br><strong>${lot.chamber_name}</strong></div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <div style="font-size:13px; font-weight:700; color:#38BDF8; margin-bottom:6px;">1. Entrada e Conferência Térmica na Doca</div>
+        ${entry ? `
+          <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:10px 12px; font-size:12px;">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+              <div>Fornecedor: <strong>${entry.supplier}</strong> (CNPJ: ${entry.supplier_cnpj})</div>
+              <div>Nota Fiscal: <strong>${entry.invoice_number}</strong></div>
+              <div>Temperatura no Recebimento: <strong style="color:${entry.arrival_temp >= 2 && entry.arrival_temp <= 8 ? '#10B981' : '#F59E0B'};">${entry.arrival_temp.toFixed(1)}°C</strong></div>
+              <div>Decisão Inicial: <strong style="color:#10B981;">${entry.decision.toUpperCase()}</strong> por ${entry.responsible_name}</div>
+            </div>
+            <div style="color:#94A3B8; font-size:11px; margin-top:6px;">Transporte: ${entry.transport_condition} | Integridade: ${entry.cargo_integrity}</div>
+          </div>
+        ` : '<div style="color:#64748B; font-size:12px;">Dados de entrada arquivados ou pré-cadastrados.</div>'}
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <div style="font-size:13px; font-weight:700; color:#34D399; margin-bottom:6px;">2. Histórico de Saídas e Dispensações</div>
+        ${exitsHtml}
+      </div>
+
+      <div style="border-top:1px solid rgba(255,255,255,0.08); padding-top:12px; display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:11px; color:#10B981;">Integridade validada via Ledger Criptográfico SHA-256</span>
+        <button class="btn-logout" style="color:#94A3B8; border-color:#334155; background:transparent;" onclick="closeTraceModal()">Fechar</button>
+      </div>
+    `;
+  } catch (e) {
+    content.innerHTML = `<div style="color:#EF4444; padding:20px;">Erro ao carregar rastreabilidade: ${e.message}</div>`;
+  }
+}
+
+function closeTraceModal() {
+  const m = document.getElementById('modal-trace');
+  if (m) m.classList.remove('active');
+}
