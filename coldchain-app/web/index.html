@@ -1209,7 +1209,13 @@
         </div>
 
         <div class="detail-panel">
-          <div class="panel-title" style="margin-bottom: 12px;">Parque Metrológico de Sensores Calibrados RBC</div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+          <div class="panel-title" style="margin-bottom: 0;">Parque Metrológico de Sensores Calibrados RBC</div>
+          <button class="btn-action-secondary" id="btn-new-sensor" onclick="openNewSensorModal()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            + Novo Sensor / Certificado RBC
+          </button>
+        </div>
           <div class="data-table-wrapper">
             <table class="data-table">
               <thead>
@@ -1790,6 +1796,74 @@
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 1rem;">
           <button type="button" class="btn-cancel" onclick="closeNewChamberModal()">Cancelar</button>
           <button type="submit" class="btn-primary">Cadastrar Equipamento</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <!-- =========================================================================
+       MODAL 7: CADASTRO E RECALIBRAÇÃO DE SENSORES METROLÓGICOS RBC
+       ========================================================================= -->
+  <div id="modal-sensor" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title" id="modal-sensor-title">Cadastrar Sensor / Certificado RBC</div>
+        <button class="btn-close-modal" onclick="closeSensorModal()">&times;</button>
+      </div>
+
+      <form id="form-sensor" onsubmit="event.preventDefault(); submitSensor();">
+        <input type="hidden" id="sensor-is-edit" value="0">
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">ID Único do Sensor</label>
+            <input type="text" id="sensor-id" class="form-control" placeholder="ex: S29, SENS-030" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Câmara Vinculada</label>
+            <select id="sensor-chamber-id" class="form-control" required>
+              <!-- Preenchido dinamicamente via JS -->
+            </select>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Número de Série (Hardware)</label>
+            <input type="text" id="sensor-sn" class="form-control" placeholder="ex: SN-PT100-9929" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Posição no Mapeamento Térmico</label>
+            <input type="text" id="sensor-pos" class="form-control" placeholder="ex: Ponto Crítico Superior (Porta)" required>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Número do Certificado RBC</label>
+            <input type="text" id="sensor-cert" class="form-control" placeholder="ex: CAL-RBC-2026/029" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Laboratório Acreditado Cgcre / INMETRO</label>
+            <input type="text" id="sensor-lab" class="form-control" value="LabMetrologia RBC nº 412" required>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Data da Calibração</label>
+            <input type="date" id="sensor-calib-at" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Validade da Calibração (Ciclo Anual)</label>
+            <input type="date" id="sensor-valid-until" class="form-control" required>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 1rem;">
+          <button type="button" class="btn-cancel" onclick="closeSensorModal()">Cancelar</button>
+          <button type="submit" class="btn-primary" id="btn-submit-sensor">Salvar no Parque Metrológico</button>
         </div>
       </form>
     </div>

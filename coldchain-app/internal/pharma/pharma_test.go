@@ -3,6 +3,7 @@ package pharma
 import (
 	"database/sql"
 	"testing"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -340,5 +341,122 @@ func TestPharmaChamberRegistrationAndEdit(t *testing.T) {
 	}
 	if found.TempMax != 7.5 || found.AlarmDelayMin != 2 {
 		t.Errorf("alterações não persistidas: TempMax=%.1f, Delay=%d", found.TempMax, found.AlarmDelayMin)
+	}
+}
+
+
+func TestPharmaSensorRegistrationAndCalibration(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	now := time.Now()
+	validFuture := now.AddDate(1, 0, 0).Format("2006-01-02")
+	expiringSoon := now.AddDate(0, 0, 15).Format("2006-01-02")
+	alreadyExpired := now.AddDate(0, 0, -10).Format("2006-01-02")
+
+	// 1. Cadastrar sensor ativo com validade de 1 ano
+	s1 := Sensor{
+		ID:              "S29",
+		ChamberID:       "CH-A",
+		SerialNumber:    "SN-PT100-9929",
+		ThermalPosition: "Ponto Crítico Superior (Porta)",
+		CertNumber:      "CAL-RBC-2026/029",
+		CalibratedBy:    "LabMetrologia RBC nº 412",
+		CalibratedAt:    now.Format("2006-01-02"),
+		CalibValidUntil: validFuture,
+	}
+	created1, err := RegisterSensor(db, s1)
+	if err != nil {
+		t.Fatalf("erro ao cadastrar sensor S29: %v", err)
+	}
+	if created1.Status != "Ativo" {
+		t.Errorf("esperava status Ativo, obteve '%s'", created1.Status)
+	}
+
+	// 2. Tentar cadastrar sensor com câmara inexistente
+	invalidChamber := Sensor{
+		ID:              "S30",
+		ChamberID:       "CAMARA_FANTASMA",
+		SerialNumber:    "SN-TEST-00",
+		ThermalPosition: "Centro",
+		CertNumber:      "CAL-00",
+		CalibratedBy:    "Lab Teste",
+		CalibValidUntil: validFuture,
+	}
+	_, err = RegisterSensor(db, invalidChamber)
+	if err == nil {
+		t.Fatalf("esperava erro ao cadastrar sensor com câmara inexistente, mas passou")
+	}
+
+	// 3. Cadastrar sensor com vencimento próximo (15 dias)
+	s2 := Sensor{
+		ID:              "S31",
+		ChamberID:       "CH-B",
+		SerialNumber:    "SN-PT100-9931",
+		ThermalPosition: "Prateleira 03",
+		CertNumber:      "CAL-RBC-2025/931",
+		CalibratedBy:    "LabMetrologia RBC nº 412",
+		CalibratedAt:    now.AddDate(-1, 0, 15).Format("2006-01-02"),
+		CalibValidUntil: expiringSoon,
+	}
+	created2, err := RegisterSensor(db, s2)
+	if err != nil {
+		t.Fatalf("erro ao cadastrar sensor S31: %v", err)
+	}
+	if created2.Status != "Atenção: Vencendo em breve" {
+		t.Errorf("esperava status 'Atenção: Vencendo em breve', obteve '%s'", created2.Status)
+	}
+
+	// 4. Cadastrar sensor vencido
+	s3 := Sensor{
+		ID:              "S32",
+		ChamberID:       "CH-A",
+		SerialNumber:    "SN-PT100-9932",
+		ThermalPosition: "Evaporador",
+		CertNumber:      "CAL-RBC-2024/932",
+		CalibratedBy:    "LabMetrologia RBC nº 412",
+		CalibratedAt:    now.AddDate(-1, 0, -10).Format("2006-01-02"),
+		CalibValidUntil: alreadyExpired,
+	}
+	created3, err := RegisterSensor(db, s3)
+	if err != nil {
+		t.Fatalf("erro ao cadastrar sensor S32: %v", err)
+	}
+	if created3.Status != "Vencido (Calibração Obrigatória)" {
+		t.Errorf("esperava status 'Vencido (Calibração Obrigatória)', obteve '%s'", created3.Status)
+	}
+
+	// 5. Recalibração de sensor (UpdateSensor)
+	recal := Sensor{
+		ID:              "S32",
+		CertNumber:      "CAL-RBC-2026/NEW-001",
+		CalibratedAt:    now.Format("2006-01-02"),
+		CalibValidUntil: validFuture,
+	}
+	err = UpdateSensor(db, recal)
+	if err != nil {
+		t.Fatalf("erro ao atualizar/recalibrar sensor S32: %v", err)
+	}
+
+	// 6. Verificar persistência em GetSensors
+	sensorsA, err := GetSensors(db, "CH-A")
+	if err != nil {
+		t.Fatalf("erro ao buscar sensores da câmara CH-A: %v", err)
+	}
+	var s32Found *Sensor
+	for _, s := range sensorsA {
+		if s.ID == "S32" {
+			s32Found = &s
+			break
+		}
+	}
+	if s32Found == nil {
+		t.Fatalf("sensor S32 não encontrado na lista de CH-A")
+	}
+	if s32Found.Status != "Ativo" {
+		t.Errorf("esperava status 'Ativo' após recalibração, obteve '%s'", s32Found.Status)
+	}
+	if s32Found.CertNumber != "CAL-RBC-2026/NEW-001" {
+		t.Errorf("esperava cert 'CAL-RBC-2026/NEW-001', obteve '%s'", s32Found.CertNumber)
 	}
 }

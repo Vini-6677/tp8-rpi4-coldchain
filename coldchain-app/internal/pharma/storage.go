@@ -1068,3 +1068,112 @@ func UpdateChamber(db *sql.DB, c Chamber) error {
 	}
 	return nil
 }
+
+
+// RegisterSensor cadastra um novo sensor metrológico e valida a conformidade RBC.
+func RegisterSensor(db *sql.DB, s Sensor) (*Sensor, error) {
+	if s.ID == "" || s.ChamberID == "" || s.SerialNumber == "" || s.ThermalPosition == "" || s.CertNumber == "" || s.CalibratedBy == "" || s.CalibValidUntil == "" {
+		return nil, fmt.Errorf("todos os campos metrológicos são obrigatórios")
+	}
+
+	// 1. Valida se a câmara vinculada existe
+	var chCount int
+	if err := db.QueryRow("SELECT COUNT(*) FROM chambers WHERE id = ?", s.ChamberID).Scan(&chCount); err != nil || chCount == 0 {
+		return nil, fmt.Errorf("câmara vinculada '%s' não existe", s.ChamberID)
+	}
+
+	// 2. Calcula status regulatório com base na data de validade
+	now := time.Now()
+	valDate, err := time.Parse("2006-01-02", s.CalibValidUntil)
+	if err != nil {
+		valDate, err = time.Parse(time.RFC3339, s.CalibValidUntil)
+		if err != nil {
+			return nil, fmt.Errorf("formato inválido para calib_valid_until (esperado AAAA-MM-DD): %w", err)
+		}
+	}
+
+	daysRemaining := int(valDate.Sub(now).Hours() / 24)
+	if daysRemaining < 0 {
+		s.Status = "Vencido (Calibração Obrigatória)"
+	} else if daysRemaining <= 30 {
+		s.Status = "Atenção: Vencendo em breve"
+	} else {
+		s.Status = "Ativo"
+	}
+
+	if s.BatteryPct <= 0 {
+		s.BatteryPct = 100
+	}
+	if s.CalibratedAt == "" {
+		s.CalibratedAt = now.Format("2006-01-02")
+	}
+
+	var tMin, tMax, hMin, hMax float64
+	_ = db.QueryRow("SELECT temp_min, temp_max, humidity_min, humidity_max FROM chambers WHERE id = ?", s.ChamberID).Scan(&tMin, &tMax, &hMin, &hMax)
+	s.CurrentTemp = (tMin + tMax) / 2.0
+	s.CurrentHumidity = (hMin + hMax) / 2.0
+	if s.CurrentHumidity <= 0 {
+		s.CurrentHumidity = 50.0
+	}
+
+	_, err = db.Exec(`INSERT INTO sensors (
+		id, chamber_id, serial_number, thermal_position, cert_number, calibrated_by, calibrated_at, calib_valid_until, status, battery_pct, current_temp, current_humidity, last_seen
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		s.ID, s.ChamberID, s.SerialNumber, s.ThermalPosition, s.CertNumber, s.CalibratedBy, s.CalibratedAt, s.CalibValidUntil, s.Status, s.BatteryPct, s.CurrentTemp, s.CurrentHumidity)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao inserir sensor: %w", err)
+	}
+
+	return &s, nil
+}
+
+// UpdateSensor atualiza parâmetros ou registra recalibração metrológica de um sensor existente.
+func UpdateSensor(db *sql.DB, s Sensor) error {
+	if s.ID == "" {
+		return fmt.Errorf("id do sensor é obrigatório")
+	}
+
+	if s.ChamberID != "" {
+		var chCount int
+		if err := db.QueryRow("SELECT COUNT(*) FROM chambers WHERE id = ?", s.ChamberID).Scan(&chCount); err != nil || chCount == 0 {
+			return fmt.Errorf("câmara vinculada '%s' não existe", s.ChamberID)
+		}
+	}
+
+	now := time.Now()
+	if s.CalibValidUntil != "" {
+		valDate, err := time.Parse("2006-01-02", s.CalibValidUntil)
+		if err == nil {
+			daysRemaining := int(valDate.Sub(now).Hours() / 24)
+			if daysRemaining < 0 {
+				s.Status = "Vencido (Calibração Obrigatória)"
+			} else if daysRemaining <= 30 {
+				s.Status = "Atenção: Vencendo em breve"
+			} else {
+				s.Status = "Ativo"
+			}
+		}
+	}
+
+	res, err := db.Exec(`UPDATE sensors SET
+		chamber_id = COALESCE(NULLIF(?, ''), chamber_id),
+		serial_number = COALESCE(NULLIF(?, ''), serial_number),
+		thermal_position = COALESCE(NULLIF(?, ''), thermal_position),
+		cert_number = COALESCE(NULLIF(?, ''), cert_number),
+		calibrated_by = COALESCE(NULLIF(?, ''), calibrated_by),
+		calibrated_at = COALESCE(NULLIF(?, ''), calibrated_at),
+		calib_valid_until = COALESCE(NULLIF(?, ''), calib_valid_until),
+		status = COALESCE(NULLIF(?, ''), status)
+		WHERE id = ?`,
+		s.ChamberID, s.SerialNumber, s.ThermalPosition, s.CertNumber, s.CalibratedBy, s.CalibratedAt, s.CalibValidUntil, s.Status, s.ID)
+	if err != nil {
+		return fmt.Errorf("erro ao atualizar sensor: %w", err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil || rows == 0 {
+		return fmt.Errorf("sensor com id '%s' não encontrado", s.ID)
+	}
+
+	return nil
+}

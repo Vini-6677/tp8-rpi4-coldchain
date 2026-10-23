@@ -1105,9 +1105,76 @@ func (a *App) routes() http.Handler {
 		json.NewEncoder(w).Encode(list)
 	})
 
-	// 2. Sensores Metrológicos RBC
+	// 2. Sensores Metrológicos RBC (GET / POST / PUT)
 	mux.HandleFunc("/api/pharma/sensors", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method == http.MethodPost {
+			sess, ok := a.getSession(r)
+			if !ok {
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(map[string]string{"error": "Autenticação requerida."})
+				return
+			}
+			if sess.Role != "gerente" && sess.Role != "admin" {
+				w.WriteHeader(http.StatusForbidden)
+				json.NewEncoder(w).Encode(map[string]string{"error": "Acesso negado: apenas Gerente RT ou Admin podem cadastrar sensores."})
+				return
+			}
+
+			var payload pharma.Sensor
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "Payload JSON inválido."})
+				return
+			}
+
+			created, err := pharma.RegisterSensor(a.db, payload)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+
+			ip := getClientIP(r)
+			a.logAudit(sess.Username, sess.Role, "CADASTRO_SENSOR", fmt.Sprintf("Novo sensor '%s' cadastrado na câmara '%s' (Série: %s, Cert: %s, Validade: %s)", created.ID, created.ChamberID, created.SerialNumber, created.CertNumber, created.CalibValidUntil), ip)
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(created)
+			return
+		}
+
+		if r.Method == http.MethodPut {
+			sess, ok := a.getSession(r)
+			if !ok {
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(map[string]string{"error": "Autenticação requerida."})
+				return
+			}
+			if sess.Role != "gerente" && sess.Role != "admin" {
+				w.WriteHeader(http.StatusForbidden)
+				json.NewEncoder(w).Encode(map[string]string{"error": "Acesso negado: apenas Gerente RT ou Admin podem atualizar/recalibrar sensores."})
+				return
+			}
+
+			var payload pharma.Sensor
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "Payload JSON inválido."})
+				return
+			}
+
+			if err := pharma.UpdateSensor(a.db, payload); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+
+			ip := getClientIP(r)
+			a.logAudit(sess.Username, sess.Role, "RECALIBRACAO_SENSOR", fmt.Sprintf("Sensor '%s' recalibrado/atualizado por %s (Cert: %s, Nova Validade: %s, Status: %s)", payload.ID, sess.Name, payload.CertNumber, payload.CalibValidUntil, payload.Status), ip)
+			json.NewEncoder(w).Encode(map[string]any{"status": "ok", "message": "Sensor atualizado com sucesso."})
+			return
+		}
+
 		chID := r.URL.Query().Get("chamber")
 		list, err := pharma.GetSensors(a.db, chID)
 		if err != nil {
@@ -1648,15 +1715,39 @@ func (a *App) pharmaSimulatorLoop(ctx context.Context) {
 		case <-ticker.C:
 			step++
 			nowStr := time.Now().Format("2006-01-02 15:04:05")
-			for id, base := range offsets {
-				// Pequena oscilação de ±0.15°C
-				factor := float64((step*7+int(id[1]))%10 - 5) * 0.03
-				tVal := base + factor
-				hVal := 50.0 + float64((step*3+int(id[1]))%8-4)*0.8
 
-				_, _ = a.db.Exec(`UPDATE sensors 
-					SET current_temp = ?, current_humidity = ?, last_seen = ? 
-					WHERE id = ?`, tVal, hVal, nowStr, id)
+			rows, err := a.db.Query(`
+				SELECT s.id, c.temp_min, c.temp_max, c.humidity_min, c.humidity_max 
+				FROM sensors s
+				JOIN chambers c ON s.chamber_id = c.id`)
+			if err == nil {
+				for rows.Next() {
+					var sID string
+					var tMin, tMax, hMin, hMax float64
+					if err := rows.Scan(&sID, &tMin, &tMax, &hMin, &hMax); err == nil {
+						baseTemp, exists := offsets[sID]
+						if !exists {
+							baseTemp = (tMin + tMax) / 2.0
+						}
+						baseHum := (hMin + hMax) / 2.0
+						if baseHum <= 0 {
+							baseHum = 50.0
+						}
+
+						charVal := 1
+						if len(sID) > 1 {
+							charVal = int(sID[len(sID)-1])
+						}
+						factor := float64((step*7+charVal)%10-5) * 0.03
+						tVal := baseTemp + factor
+						hVal := baseHum + float64((step*3+charVal)%8-4)*0.8
+
+						_, _ = a.db.Exec(`UPDATE sensors 
+							SET current_temp = ?, current_humidity = ?, last_seen = ? 
+							WHERE id = ?`, tVal, hVal, nowStr, sID)
+					}
+				}
+				rows.Close()
 			}
 		}
 	}

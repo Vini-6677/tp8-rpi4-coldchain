@@ -852,12 +852,20 @@ async function loadMetrology() {
     const res = await fetch('/api/pharma/sensors');
     if (!res.ok) return;
     const list = await res.json();
+    window.allMetrologySensors = list;
 
     const tbody = document.getElementById('metrology-table-body');
     if (!tbody) return;
     tbody.innerHTML = '';
 
     list.forEach(s => {
+      let badgeClass = 'liberado';
+      if (s.status.includes('Vencido')) {
+        badgeClass = 'reprovado';
+      } else if (s.status.includes('Atenção') || s.status.includes('Vencendo')) {
+        badgeClass = 'quarentena';
+      }
+
       tbody.innerHTML += `
         <tr>
           <td><code style="color:#60A5FA; font-weight:700;">${s.id}</code></td>
@@ -867,7 +875,12 @@ async function loadMetrology() {
           <td><strong style="color:#C4B5FD;">${s.cert_number}</strong></td>
           <td>${s.calibrated_by}</td>
           <td><span style="color:#6EE7B7;">${s.calib_valid_until}</span></td>
-          <td><span class="badge-status liberado">${s.status}</span></td>
+          <td><span class="badge-status ${badgeClass}">${s.status}</span></td>
+          <td style="text-align: right;">
+            <button class="btn-action-secondary" style="padding: 3px 8px; font-size: 11px;" onclick="openEditSensorModal('${s.id}')">
+              Recalibrar / Editar
+            </button>
+          </td>
         </tr>
       `;
     });
@@ -1291,5 +1304,153 @@ async function submitNewChamber() {
   } catch (e) {
     console.error('Erro na requisição:', e);
     alert('Erro de conexão ao cadastrar câmara.');
+  }
+}
+
+
+// ==============================================================================
+// FASE 3: GESTÃO METROLÓGICA DE SENSORES E RASTREABILIDADE RBC
+// ==============================================================================
+
+async function populateSensorChambersSelect(selectedChamberId) {
+  const sel = document.getElementById('sensor-chamber-id');
+  if (!sel) return;
+  sel.innerHTML = '';
+  try {
+    const res = await fetch('/api/pharma/chambers');
+    if (res.ok) {
+      const chambers = await res.json();
+      chambers.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = `${c.name} (${c.id}) - ${c.temp_min}°C a ${c.temp_max}°C`;
+        if (selectedChamberId && c.id === selectedChamberId) {
+          opt.selected = true;
+        }
+        sel.appendChild(opt);
+      });
+    }
+  } catch (e) {
+    console.error('Erro ao buscar câmaras para o select de sensores:', e);
+  }
+}
+
+function openNewSensorModal() {
+  const m = document.getElementById('modal-sensor');
+  if (!m) return;
+  m.classList.add('active');
+
+  document.getElementById('modal-sensor-title').textContent = 'Cadastrar Sensor / Certificado RBC';
+  document.getElementById('sensor-is-edit').value = '0';
+
+  const idInp = document.getElementById('sensor-id');
+  idInp.value = '';
+  idInp.disabled = false;
+
+  document.getElementById('sensor-sn').value = '';
+  document.getElementById('sensor-pos').value = '';
+  document.getElementById('sensor-cert').value = '';
+  document.getElementById('sensor-lab').value = 'LabMetrologia RBC nº 412';
+
+  const now = new Date();
+  document.getElementById('sensor-calib-at').value = now.toISOString().split('T')[0];
+  const nextYear = new Date();
+  nextYear.setFullYear(nextYear.getFullYear() + 1);
+  document.getElementById('sensor-valid-until').value = nextYear.toISOString().split('T')[0];
+
+  document.getElementById('btn-submit-sensor').textContent = 'Cadastrar no Parque Metrológico';
+
+  populateSensorChambersSelect();
+}
+
+function openEditSensorModal(sensorId) {
+  if (!window.allMetrologySensors) return;
+  const s = window.allMetrologySensors.find(x => x.id === sensorId);
+  if (!s) return;
+
+  const m = document.getElementById('modal-sensor');
+  if (!m) return;
+  m.classList.add('active');
+
+  document.getElementById('modal-sensor-title').textContent = `Recalibrar / Atualizar Sensor ${s.id}`;
+  document.getElementById('sensor-is-edit').value = '1';
+
+  const idInp = document.getElementById('sensor-id');
+  idInp.value = s.id;
+  idInp.disabled = true;
+
+  document.getElementById('sensor-sn').value = s.serial_number;
+  document.getElementById('sensor-pos').value = s.thermal_position;
+  document.getElementById('sensor-cert').value = s.cert_number;
+  document.getElementById('sensor-lab').value = s.calibrated_by;
+
+  const now = new Date();
+  document.getElementById('sensor-calib-at').value = now.toISOString().split('T')[0];
+  const nextYear = new Date();
+  nextYear.setFullYear(nextYear.getFullYear() + 1);
+  document.getElementById('sensor-valid-until').value = nextYear.toISOString().split('T')[0];
+
+  document.getElementById('btn-submit-sensor').textContent = 'Salvar Recalibração RBC';
+
+  populateSensorChambersSelect(s.chamber_id);
+}
+
+function closeSensorModal() {
+  const m = document.getElementById('modal-sensor');
+  if (m) m.classList.remove('active');
+  const f = document.getElementById('form-sensor');
+  if (f) f.reset();
+}
+
+async function submitSensor() {
+  const isEdit = document.getElementById('sensor-is-edit').value === '1';
+  const id = document.getElementById('sensor-id').value.trim().toUpperCase();
+  const chamberId = document.getElementById('sensor-chamber-id').value;
+  const sn = document.getElementById('sensor-sn').value.trim();
+  const pos = document.getElementById('sensor-pos').value.trim();
+  const cert = document.getElementById('sensor-cert').value.trim();
+  const lab = document.getElementById('sensor-lab').value.trim();
+  const calibAt = document.getElementById('sensor-calib-at').value;
+  const validUntil = document.getElementById('sensor-valid-until').value;
+
+  if (!id || !chamberId || !sn || !pos || !cert || !lab || !calibAt || !validUntil) {
+    alert('Por favor, preencha todos os campos obrigatórios do sensor metrológico.');
+    return;
+  }
+
+  const payload = {
+    id: id,
+    chamber_id: chamberId,
+    serial_number: sn,
+    thermal_position: pos,
+    cert_number: cert,
+    calibrated_by: lab,
+    calibrated_at: calibAt,
+    calib_valid_until: validUntil
+  };
+
+  const method = isEdit ? 'PUT' : 'POST';
+
+  try {
+    const res = await fetch('/api/pharma/sensors', {
+      method: method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert('Erro na operação metrológica: ' + (data.error || 'Erro desconhecido'));
+      return;
+    }
+
+    const actionText = isEdit ? 'recalibrado e atualizado' : 'cadastrado';
+    alert(`Sensor ${id} ${actionText} com sucesso no Parque Metrológico RBC!`);
+    closeSensorModal();
+    loadMetrology();
+    loadKPIs();
+    loadChambers(true);
+  } catch (e) {
+    console.error('Erro na requisição metrológica:', e);
+    alert('Erro de conexão ao salvar sensor metrológico.');
   }
 }
