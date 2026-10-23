@@ -323,14 +323,58 @@ async function loadChambers(renderDetail = true) {
   }
 }
 
-const SENSOR_PALETTE = [
-  '#38BDF8', '#34D399', '#F87171', '#FBBF24', '#A78BFA',
-  '#F472B6', '#4ADE80', '#FB923C', '#E879F9', '#2DD4BF',
-  '#60A5FA', '#FACC15', '#A3E635', '#C084FC', '#F43F5E',
-  '#06B6D4', '#10B981', '#818CF8', '#FB7185', '#22C55E',
-  '#EAB308', '#0EA5E9', '#D946EF', '#6366F1', '#14B8A6',
-  '#EC4899', '#84CC16', '#F97316', '#0284C7', '#8B5CF6'
-];
+const SENSOR_COLOR_MAP = {
+  // Câmara Fria A (CH-A: 11 Sensores - Cores com máxima separação perceptual)
+  'S01': '#38BDF8', // Sky Blue (Ciano Claro)
+  'S02': '#22C55E', // Green (Verde Folha)
+  'S03': '#EF4444', // Red (Vermelho Vivo)
+  'S04': '#FACC15', // Yellow (Amarelo Ouro)
+  'S05': '#A855F7', // Purple (Roxo Púrpura)
+  'S06': '#EC4899', // Pink (Rosa Pink)
+  'S07': '#84CC16', // Lime (Verde Limão / Chartreuse)
+  'S08': '#F97316', // Orange (Laranja Intenso)
+  'S09': '#6366F1', // Indigo (Azul Índigo)
+  'S10': '#E2E8F0', // Platinum (Branco Prateado Metrológico)
+  'S30': '#14B8A6', // Teal (Verde Turquesa Petróleo)
+
+  // Câmara Fria B (CH-B: 8 Sensores distintos)
+  'S11': '#00D2FF', // Electric Cyan
+  'S12': '#10B981', // Emerald Green
+  'S13': '#F43F5E', // Rose Crimson
+  'S14': '#FBBF24', // Warm Amber
+  'S15': '#C084FC', // Light Lavender
+  'S16': '#FB7185', // Salmon Rose
+  'S17': '#A3E635', // Neon Lime
+  'S18': '#FB923C', // Tangerine Orange
+
+  // Geladeira 01 (GEL-01: 4 Sensores)
+  'S19': '#06B6D4', // Deep Cyan
+  'S20': '#4ADE80', // Mint Lime
+  'S21': '#D946EF', // Vivid Magenta
+  'S22': '#EAB308', // Antique Gold
+
+  // Almoxarifado Central (ALM-01: 4 Sensores)
+  'S23': '#3B82F6', // Royal Blue
+  'S24': '#34D399', // Mint Seafoam
+  'S25': '#F87171', // Coral Pastel
+  'S26': '#818CF8', // Periwinkle Blue
+
+  // Freezer Científico Ultra-Frio (ULT-01: 2 Sensores)
+  'S27': '#0EA5E9', // Ice Blue
+  'S28': '#8B5CF6', // Deep Violet
+
+  // Câmara Fria C (CH-C: 1 Sensor)
+  'S29': '#2DD4BF'  // Bright Aqua
+};
+
+const SENSOR_PALETTE = Object.values(SENSOR_COLOR_MAP);
+
+function getSensorColor(sensorId, fallbackIndex = 0) {
+  if (sensorId && SENSOR_COLOR_MAP[sensorId]) {
+    return SENSOR_COLOR_MAP[sensorId];
+  }
+  return SENSOR_PALETTE[fallbackIndex % SENSOR_PALETTE.length];
+}
 
 async function selectChamber(chamberId, forceHighlight = true) {
   selectedChamberId = chamberId;
@@ -374,14 +418,14 @@ async function selectChamber(chamberId, forceHighlight = true) {
         const isHot = s.thermal_position.includes('Quente');
         const isCold = s.thermal_position.includes('Frio');
         const posColor = isHot ? '#F87171' : (isCold ? '#38BDF8' : '#94A3B8');
-        const sensorCol = SENSOR_PALETTE[idx % SENSOR_PALETTE.length];
+        const sensorCol = getSensorColor(s.id, idx);
 
         const card = document.createElement('div');
         card.className = 'sensor-item-card';
         card.style.borderLeft = `3px solid ${sensorCol}`;
         card.innerHTML = `
           <div>
-            <div class="sensor-item-id" style="display:flex; align-items:center; gap:6px;">
+            <div class="sensor-item-id" style="display:flex; align-items:center; gap:6px; color:${sensorCol};">
               <span style="width:7px; height:7px; border-radius:50%; background:${sensorCol}; display:inline-block;"></span>
               ${s.id} <span style="font-size:11px; color:#64748B;">(${s.serial_number})</span>
             </div>
@@ -522,7 +566,7 @@ function renderMultiSensorChart(sensors, currentChamber) {
   // 3. Desenho das curvas térmicas para CADA sensor
   const numPoints = 28;
   sensors.forEach((s, idx) => {
-    const col = SENSOR_PALETTE[idx % SENSOR_PALETTE.length];
+    const col = getSensorColor(s.id, idx);
     ctx.strokeStyle = col;
     ctx.lineWidth = 1.8;
     ctx.beginPath();
