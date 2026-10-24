@@ -76,6 +76,7 @@ let chartHistory = {}; // chamberId -> { timestamp, sensorTemps: { S01: val, ...
 document.addEventListener('DOMContentLoaded', () => {
   checkSession();
   setupSSE();
+  setupChartInteractions();
   // Atualiza métricas a cada 3 segundos
   setInterval(() => {
     if (currentUser) {
@@ -398,8 +399,267 @@ function getSensorColor(sensorId, fallbackIndex = 0) {
   return SENSOR_PALETTE[fallbackIndex % SENSOR_PALETTE.length];
 }
 
+// ==============================================================================
+// GESTÃO DE ISOLAMENTO DE SENSORES, HISTÓRICO E TOOLTIP
+// ==============================================================================
+window.currentChartRange = '2h';
+window.activeIsolatedSensorId = null;
+window.chartHoverState = null;
+
+function getDurationMsForRange(range) {
+  switch (range) {
+    case '6h': return 6 * 3600 * 1000;
+    case '24h': return 24 * 3600 * 1000;
+    case '7d': return 7 * 24 * 3600 * 1000;
+    case 'custom': return 12 * 3600 * 1000;
+    case '2h':
+    default: return 2 * 3600 * 1000;
+  }
+}
+
+function getNumPointsForRange(range) {
+  switch (range) {
+    case '6h': return 42;
+    case '24h': return 72;
+    case '7d': return 84;
+    case 'custom': return 50;
+    case '2h':
+    default: return 28;
+  }
+}
+
+function changeChartRange(range) {
+  window.currentChartRange = range;
+  document.querySelectorAll('.btn-range').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('data-range') === range);
+  });
+  loadSensorHistory(selectedChamberId, window.activeIsolatedSensorId, range);
+}
+
+async function loadSensorHistory(chamberId, sensorId, range) {
+  // Hook preparado para histórico térmico persistente
+  console.log(`[Histórico] Câmara: ${chamberId}, Sensor: ${sensorId || 'TODOS'}, Período: ${range}`);
+  const currentChamber = chambersData.find(c => c.id === chamberId);
+  renderMultiSensorChart(sensorsData, currentChamber);
+}
+
+function toggleSensorIsolation(sensorId) {
+  if (window.activeIsolatedSensorId === sensorId) {
+    window.activeIsolatedSensorId = null;
+  } else {
+    window.activeIsolatedSensorId = sensorId;
+  }
+  updateSensorCardsIsolationState();
+  const currentChamber = chambersData.find(c => c.id === selectedChamberId);
+  renderMultiSensorChart(sensorsData, currentChamber);
+}
+
+function resetSensorIsolation() {
+  window.activeIsolatedSensorId = null;
+  updateSensorCardsIsolationState();
+  const currentChamber = chambersData.find(c => c.id === selectedChamberId);
+  renderMultiSensorChart(sensorsData, currentChamber);
+}
+
+function updateSensorCardsIsolationState() {
+  const cards = document.querySelectorAll('.sensor-item-card');
+  const badge = document.getElementById('chart-isolated-badge');
+  const txt = document.getElementById('isolated-sensor-text');
+
+  if (window.activeIsolatedSensorId) {
+    const isolatedSensor = sensorsData ? sensorsData.find(s => s.id === window.activeIsolatedSensorId) : null;
+    const posName = isolatedSensor ? isolatedSensor.thermal_position : 'Sensor';
+    if (badge && txt) {
+      badge.style.display = 'block';
+      txt.innerText = `Filtro: ${window.activeIsolatedSensorId} (${posName})`;
+    }
+    cards.forEach(card => {
+      const sid = card.getAttribute('data-sensor-id');
+      if (sid === window.activeIsolatedSensorId) {
+        card.classList.add('is-isolated');
+        card.classList.remove('is-dimmed');
+      } else {
+        card.classList.remove('is-isolated');
+        card.classList.add('is-dimmed');
+      }
+    });
+  } else {
+    if (badge) badge.style.display = 'none';
+    cards.forEach(card => {
+      card.classList.remove('is-isolated');
+      card.classList.remove('is-dimmed');
+    });
+  }
+}
+
+function setupChartInteractions() {
+  const canvas = document.getElementById('multisensor-chart');
+  if (!canvas || canvas._hasChartListeners) return;
+  canvas._hasChartListeners = true;
+
+  canvas.addEventListener('mousemove', (e) => {
+    handleChartHover(e.clientX, e.clientY);
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+    handleChartLeave();
+  });
+
+  canvas.addEventListener('touchstart', (e) => {
+    if (e.touches.length > 0) {
+      handleChartHover(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  }, { passive: true });
+
+  canvas.addEventListener('touchmove', (e) => {
+    if (e.touches.length > 0) {
+      handleChartHover(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  }, { passive: true });
+
+  canvas.addEventListener('touchend', () => {
+    handleChartLeave();
+  });
+}
+
+function handleChartHover(clientX, clientY) {
+  const canvas = document.getElementById('multisensor-chart');
+  if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  const mouseX = clientX - rect.left;
+  const mouseY = clientY - rect.top;
+
+  const currentChamber = chambersData.find(c => c.id === selectedChamberId);
+  if (!sensorsData || sensorsData.length === 0) return;
+
+  const leftMargin = 50;
+  const rightMargin = 55;
+  const topMargin = 28;
+  const bottomMargin = 28;
+  const plotW = canvas.clientWidth - leftMargin - rightMargin;
+  const plotH = 260 - topMargin - bottomMargin;
+
+  if (mouseX < leftMargin || mouseX > leftMargin + plotW || mouseY < topMargin || mouseY > topMargin + plotH) {
+    handleChartLeave();
+    return;
+  }
+
+  const ratio = Math.max(0, Math.min(1, (mouseX - leftMargin) / plotW));
+  const durationMs = getDurationMsForRange(window.currentChartRange || '2h');
+  const now = Date.now();
+  const pointTimeMs = now - (1 - ratio) * durationMs;
+  const pointDate = new Date(pointTimeMs);
+  const timeStr = pointDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  // Sensores ativos para exibição
+  const sensorsToRender = (window.activeIsolatedSensorId && sensorsData.some(s => s.id === window.activeIsolatedSensorId))
+    ? sensorsData.filter(s => s.id === window.activeIsolatedSensorId)
+    : sensorsData;
+
+  if (sensorsToRender.length === 0) return;
+
+  const numPoints = getNumPointsForRange(window.currentChartRange || '2h');
+  const floatI = ratio * (numPoints - 1);
+  const i = Math.round(floatI);
+  const snappedX = leftMargin + (i / (numPoints - 1)) * plotW;
+
+  let bestSensor = null;
+  let bestTemp = 0;
+  let bestY = 0;
+  let minDist = Infinity;
+
+  // Escala térmica
+  const targetMin = currentChamber && currentChamber.temp_min != null ? currentChamber.temp_min : 2.0;
+  const targetMax = currentChamber && currentChamber.temp_max != null ? currentChamber.temp_max : 8.0;
+  let minTemp = 0.0, maxTemp = 10.0;
+  if (currentChamber && currentChamber.id === 'ULT-01') { minTemp = -88.0; maxTemp = -52.0; }
+  else if (currentChamber && currentChamber.id === 'ALM-01') { minTemp = 10.0; maxTemp = 35.0; }
+  const getY = (t) => topMargin + plotH * (1 - (t - minTemp) / (maxTemp - minTemp));
+
+  sensorsToRender.forEach((s, idx) => {
+    const currentT = s.current_temp != null ? s.current_temp : 4.0;
+    const seed = (s.id.charCodeAt(1) || 1) * 3 + idx;
+    const noise = Math.sin((i + Date.now() / 15000) * 0.35 + seed) * 0.14;
+    const t = (i === numPoints - 1) ? currentT : (currentT + noise);
+    const y = Math.max(topMargin, Math.min(topMargin + plotH, getY(t)));
+    const dist = Math.abs(y - mouseY);
+
+    if (dist < minDist) {
+      minDist = dist;
+      bestSensor = s;
+      bestTemp = t;
+      bestY = y;
+    }
+  });
+
+  if (!bestSensor) return;
+
+  const sensorColor = getSensorColor(bestSensor.id);
+
+  window.chartHoverState = {
+    x: snappedX,
+    y: bestY,
+    mouseX: mouseX,
+    sensor: bestSensor,
+    temp: bestTemp,
+    time: timeStr,
+    color: sensorColor,
+    date: pointDate
+  };
+
+  // Re-desenhar canvas com linha de mira e ponto destacado
+  renderMultiSensorChart(sensorsData, currentChamber);
+
+  // Posicionar tooltip DOM flutuante
+  const tt = document.getElementById('chart-tooltip');
+  if (tt) {
+    const elName = document.getElementById('tt-sensor-name');
+    const elTime = document.getElementById('tt-time');
+    const elTemp = document.getElementById('tt-temp');
+    const elHum = document.getElementById('tt-hum');
+    const elMeta = document.getElementById('tt-meta');
+
+    if (elName) {
+      elName.innerText = `${bestSensor.id} — ${bestSensor.thermal_position || 'Sensor'}`;
+      elName.style.color = sensorColor;
+    }
+    if (elTime) elTime.innerText = timeStr;
+    if (elTemp) {
+      elTemp.innerText = `${bestTemp.toFixed(1).replace('.', ',')} °C`;
+      elTemp.style.color = (bestTemp < targetMin || bestTemp > targetMax) ? '#EF4444' : '#FFFFFF';
+    }
+    if (elHum) {
+      const humVal = bestSensor.current_humidity != null ? Math.round(bestSensor.current_humidity) : 50;
+      elHum.innerText = `${humVal}% UR`;
+    }
+    if (elMeta) {
+      elMeta.innerHTML = `${bestSensor.serial_number || ''} &bull; Limites: ${targetMin.toFixed(1)}°C a ${targetMax.toFixed(1)}°C`;
+    }
+
+    tt.style.display = 'block';
+    const containerW = canvas.parentElement ? canvas.parentElement.clientWidth : 800;
+    const ttLeft = Math.max(105, Math.min(containerW - 105, snappedX));
+    tt.style.left = `${ttLeft}px`;
+    tt.style.top = `${Math.max(68, bestY - 14)}px`;
+    tt.style.borderColor = sensorColor;
+  }
+}
+
+function handleChartLeave() {
+  if (!window.chartHoverState) return;
+  window.chartHoverState = null;
+  const tt = document.getElementById('chart-tooltip');
+  if (tt) tt.style.display = 'none';
+  const currentChamber = chambersData.find(c => c.id === selectedChamberId);
+  renderMultiSensorChart(sensorsData, currentChamber);
+}
+
 async function selectChamber(chamberId, forceHighlight = true) {
   selectedChamberId = chamberId;
+  if (forceHighlight) {
+    window.activeIsolatedSensorId = null;
+  }
+
   const currentChamber = chambersData.find(c => c.id === chamberId) || {
     id: chamberId,
     name: chamberId,
@@ -430,9 +690,11 @@ async function selectChamber(chamberId, forceHighlight = true) {
 
     if (elCountBadge) elCountBadge.innerText = `${sensorsData.length} Sensores RBC Ativos`;
     if (elGridTitle) elGridTitle.innerText = `Sensores Físicos Alocados no Mapeamento Térmico (${currentChamber.id})`;
-    if (elGridCounter) elGridCounter.innerText = `${sensorsData.length} sensores monitorados em tempo real`;
+    if (elGridCounter) {
+      elGridCounter.innerHTML = `${sensorsData.length} sensores monitorados &bull; <span style="color:#38BDF8;">Clique em qualquer sensor para isolar na linha</span>`;
+    }
 
-    // Renderizar Cards de Sensores na Grid (Layout Harmônico Oficial)
+    // Renderizar Cards de Sensores na Grid com Suporte a Isolamento
     const grid = document.getElementById('chamber-sensors-grid');
     if (grid) {
       grid.innerHTML = '';
@@ -469,7 +731,17 @@ async function selectChamber(chamberId, forceHighlight = true) {
 
         const card = document.createElement('div');
         card.className = 'sensor-item-card';
+        card.setAttribute('data-sensor-id', s.id);
         card.style.borderLeft = `3.5px solid ${sensorCol}`;
+        card.title = `Clique para isolar ${s.id} no gráfico de linhas`;
+        card.onclick = () => toggleSensorIsolation(s.id);
+
+        if (window.activeIsolatedSensorId === s.id) {
+          card.classList.add('is-isolated');
+        } else if (window.activeIsolatedSensorId) {
+          card.classList.add('is-dimmed');
+        }
+
         card.innerHTML = `
           <div>
             <div style="display:flex; align-items:center; gap:8px;">
@@ -503,8 +775,11 @@ async function selectChamber(chamberId, forceHighlight = true) {
         `;
         grid.appendChild(card);
       });
+
+      updateSensorCardsIsolationState();
     }
 
+    setupChartInteractions();
     renderMultiSensorChart(sensorsData, currentChamber);
   } catch (e) {
     console.error('Erro ao carregar sensores:', e);
@@ -517,7 +792,6 @@ function renderMultiSensorChart(sensors, currentChamber) {
   const ctx = canvas.getContext('2d');
   if (!sensors || sensors.length === 0) return;
 
-  const rect = canvas.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   const clientW = canvas.parentElement ? canvas.parentElement.clientWidth - 24 : 800;
   const clientH = 260;
@@ -567,7 +841,7 @@ function renderMultiSensorChart(sensors, currentChamber) {
 
   const getY = (t) => topMargin + plotH * (1 - (t - minTemp) / (maxTemp - minTemp));
 
-  // 1. Zona Verde Permitida (Gradiente verde visível e elegante idêntico ao padrão da foto de referência)
+  // 1. Zona Verde Permitida
   if (targetMin !== null && targetMax !== null) {
     const yTop = getY(targetMax);
     const yBottom = getY(targetMin);
@@ -627,40 +901,116 @@ function renderMultiSensorChart(sensors, currentChamber) {
     ctx.fillText(`${t.toFixed(0)}°C`, leftMargin - 8, y + 3.5);
   }
 
-  // 3. Desenho das curvas térmicas para CADA sensor
-  const numPoints = 28;
-  sensors.forEach((s, idx) => {
-    const col = getSensorColor(s.id, idx);
-    ctx.strokeStyle = col;
-    ctx.lineWidth = 1.8;
-    ctx.beginPath();
+  // 3. Escala do Eixo X (Linha do tempo baseada no período)
+  const durationMs = getDurationMsForRange(window.currentChartRange || '2h');
+  const nowMs = Date.now();
+  const numTimeMarks = 5;
+  ctx.fillStyle = '#64748B';
+  ctx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", monospace';
+  ctx.textAlign = 'center';
+  for (let step = 0; step < numTimeMarks; step++) {
+    const ratio = step / (numTimeMarks - 1);
+    const x = leftMargin + ratio * plotW;
+    const tMs = nowMs - (1 - ratio) * durationMs;
+    const d = new Date(tMs);
+    let lbl;
+    if (step === numTimeMarks - 1) {
+      lbl = 'Agora';
+    } else if (window.currentChartRange === '7d') {
+      lbl = `${d.getDate()}/${d.getMonth() + 1} ${d.getHours()}:00`;
+    } else {
+      lbl = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    }
+    ctx.fillText(lbl, x, topMargin + plotH + 16);
+  }
 
-    const currentT = s.current_temp;
+  // 4. Desenho das curvas térmicas (com suporte a isolamento de sensor)
+  const sensorsToRender = (window.activeIsolatedSensorId && sensors.some(s => s.id === window.activeIsolatedSensorId))
+    ? sensors.filter(s => s.id === window.activeIsolatedSensorId)
+    : sensors;
+
+  const numPoints = getNumPointsForRange(window.currentChartRange || '2h');
+  sensorsToRender.forEach((s, idx) => {
+    const col = getSensorColor(s.id, idx);
+    const isIsolated = window.activeIsolatedSensorId === s.id;
+    const isHovered = window.chartHoverState && window.chartHoverState.sensor && window.chartHoverState.sensor.id === s.id;
+
+    ctx.save();
+    ctx.strokeStyle = col;
+    ctx.lineWidth = isIsolated ? 2.6 : (isHovered ? 2.4 : 1.8);
+    if (!isIsolated && window.chartHoverState && !isHovered) {
+      ctx.globalAlpha = 0.50;
+    }
+
+    ctx.beginPath();
+    const currentT = s.current_temp != null ? s.current_temp : 4.0;
+    const pts = [];
     for (let i = 0; i < numPoints; i++) {
       const x = leftMargin + (i / (numPoints - 1)) * plotW;
       const seed = (s.id.charCodeAt(1) || 1) * 3 + idx;
       const noise = Math.sin((i + Date.now() / 15000) * 0.35 + seed) * 0.14;
       const t = (i === numPoints - 1) ? currentT : (currentT + noise);
       const y = Math.max(topMargin, Math.min(topMargin + plotH, getY(t)));
+      pts.push({ x, y });
 
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     }
     ctx.stroke();
 
+    // Se isolado, preenche suavemente área sob a curva
+    if (isIsolated) {
+      const fillGrad = ctx.createLinearGradient(0, topMargin, 0, topMargin + plotH);
+      fillGrad.addColorStop(0, `${col}35`);
+      fillGrad.addColorStop(1, `${col}02`);
+      ctx.lineTo(leftMargin + plotW, topMargin + plotH);
+      ctx.lineTo(leftMargin, topMargin + plotH);
+      ctx.closePath();
+      ctx.fillStyle = fillGrad;
+      ctx.fill();
+    }
+    ctx.restore();
+
     // Ponto final na borda direita
-    const lastX = leftMargin + plotW;
-    const lastY = Math.max(topMargin, Math.min(topMargin + plotH, getY(currentT)));
+    const lastPt = pts[pts.length - 1];
     ctx.fillStyle = col;
     ctx.beginPath();
-    ctx.arc(lastX, lastY, 3.8, 0, Math.PI * 2);
+    ctx.arc(lastPt.x, lastPt.y, isIsolated ? 4.8 : 3.8, 0, Math.PI * 2);
     ctx.fill();
 
     // Rótulo com ID do sensor na borda direita
+    ctx.fillStyle = col;
     ctx.font = 'bold 9.5px -apple-system, BlinkMacSystemFont, "Segoe UI", monospace';
     ctx.textAlign = 'left';
-    ctx.fillText(s.id, lastX + 6, lastY + 3.5);
+    ctx.fillText(s.id, lastPt.x + 6, lastPt.y + 3.5);
   });
+
+  // 5. Mira (Crosshair) e ponto destacado quando o usuário passa o mouse
+  if (window.chartHoverState) {
+    const h = window.chartHoverState;
+    ctx.save();
+    // Linha vertical pontilhada
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(h.x, topMargin);
+    ctx.lineTo(h.x, topMargin + plotH);
+    ctx.stroke();
+
+    // Ponto destacado com brilho na curva
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(h.x, h.y, 6, 0, Math.PI * 2);
+    ctx.fillStyle = h.color;
+    ctx.shadowColor = h.color;
+    ctx.shadowBlur = 10;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.stroke();
+    ctx.restore();
+  }
 }
 
 function formatAlarmType(type) {

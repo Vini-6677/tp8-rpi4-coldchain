@@ -825,7 +825,12 @@
       gap: 14px;
     }
 
+    /* =========================================================================
+       MELHORIAS DE POLIMENTO: ISOLAMENTO DE SENSORES, HISTÓRICO E TOOLTIP
+       ========================================================================= */
     .sensor-item-card {
+      cursor: pointer;
+      position: relative;
       background: rgba(15, 23, 42, 0.7);
       border: 1px solid rgba(255, 255, 255, 0.07);
       border-radius: 8px;
@@ -834,14 +839,161 @@
       flex-direction: column;
       justify-content: space-between;
       min-height: 152px;
-      transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+      transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.2s ease, filter 0.2s ease;
       box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
     }
 
     .sensor-item-card:hover {
       transform: translateY(-2px);
-      border-color: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.25);
       box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+    }
+
+    .sensor-item-card.is-isolated {
+      border-color: #38BDF8 !important;
+      box-shadow: 0 0 18px rgba(56, 189, 248, 0.45), 0 6px 18px rgba(0, 0, 0, 0.4) !important;
+      transform: translateY(-2px);
+      opacity: 1 !important;
+      filter: none !important;
+    }
+
+    .sensor-item-card.is-isolated::before {
+      content: 'ISOLADO NO GRÁFICO';
+      position: absolute;
+      top: -10px;
+      right: 12px;
+      background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%);
+      color: #FFFFFF;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.6px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+      z-index: 2;
+    }
+
+    .sensor-item-card.is-dimmed {
+      opacity: 0.35;
+      filter: grayscale(40%);
+    }
+
+    .sensor-item-card.is-dimmed:hover {
+      opacity: 0.85;
+      filter: none;
+    }
+
+    .chart-range-group {
+      display: inline-flex;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      padding: 2px;
+      gap: 2px;
+    }
+
+    .btn-range {
+      background: transparent;
+      border: none;
+      color: #94A3B8;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn-range:hover {
+      color: #FFFFFF;
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .btn-range.active {
+      background: #0284C7;
+      color: #FFFFFF;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    .btn-reset-isolation {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      color: #38BDF8;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn-reset-isolation:hover {
+      background: rgba(56, 189, 248, 0.25);
+      color: #FFFFFF;
+    }
+
+    .chart-tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: rgba(15, 23, 42, 0.94);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1.5px solid #38BDF8;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: #F8FAFC;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7), 0 0 15px rgba(56, 189, 248, 0.25);
+      z-index: 100;
+      display: none;
+      min-width: 190px;
+      transform: translate(-50%, -115%);
+      transition: border-color 0.15s ease;
+    }
+
+    .chart-tooltip .tooltip-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      padding-bottom: 4px;
+    }
+
+    .chart-tooltip .tooltip-time {
+      font-family: monospace;
+      font-size: 11px;
+      color: #94A3B8;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+
+    .chart-tooltip .tooltip-sensor-name {
+      font-weight: 700;
+      color: #38BDF8;
+      font-size: 12px;
+    }
+
+    .chart-tooltip .tooltip-temp {
+      font-size: 20px;
+      font-weight: 800;
+      font-family: monospace;
+      color: #FFFFFF;
+      letter-spacing: -0.5px;
+    }
+
+    .chart-tooltip .tooltip-meta {
+      font-size: 10.5px;
+      color: #94A3B8;
+      border-top: 1px solid rgba(255, 255, 255, 0.07);
+      padding-top: 4px;
+      margin-top: 4px;
     }
 
     .sensor-pill-badge {
@@ -1553,23 +1705,52 @@
 
         <!-- Painel de Detalhe da Câmara Selecionada -->
         <div class="detail-panel">
-          <div class="panel-header-row" style="margin-bottom: 16px;">
-            <div class="panel-title">
+          <div class="panel-header-row" style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div class="panel-title" style="margin-bottom: 0;">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
               <span id="detail-chamber-title">Câmara Fria A — Mapa Térmico Multissensor</span>
             </div>
+
+            <!-- Controles do Gráfico: Isolamento de Sensor e Seleção de Período Histórico -->
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <div id="chart-isolated-badge" style="display: none;">
+                <button class="btn-reset-isolation" onclick="resetSensorIsolation()" title="Clique para voltar a exibir todos os sensores">
+                  <span id="isolated-sensor-text">Exibindo apenas S11</span>
+                  <span style="font-size: 13px; font-weight: bold; margin-left: 2px;">&times;</span>
+                </button>
+              </div>
+
+              <div class="chart-range-group" id="chart-range-selector">
+                <button class="btn-range active" data-range="2h" onclick="changeChartRange('2h')">2h (Tempo Real)</button>
+                <button class="btn-range" data-range="6h" onclick="changeChartRange('6h')">6h</button>
+                <button class="btn-range" data-range="24h" onclick="changeChartRange('24h')">24h</button>
+                <button class="btn-range" data-range="7d" onclick="changeChartRange('7d')">7 Dias</button>
+                <button class="btn-range" data-range="custom" onclick="changeChartRange('custom')">Personalizado</button>
+              </div>
+            </div>
           </div>
 
-          <!-- Gráfico Multissensor em Canvas -->
-          <div class="chart-container">
+          <!-- Gráfico Multissensor em Canvas com Tooltip de Hover -->
+          <div class="chart-container" style="position: relative;">
             <canvas id="multisensor-chart"></canvas>
+            <div id="chart-tooltip" class="chart-tooltip">
+              <div class="tooltip-header">
+                <span class="tooltip-sensor-name" id="tt-sensor-name">S11 — Ponto Mais Quente</span>
+                <span class="tooltip-time" id="tt-time">14:25:30</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 4px;">
+                <div class="tooltip-temp" id="tt-temp">4,5 °C</div>
+                <div style="font-size: 11px; color: #94A3B8;" id="tt-hum">52% UR</div>
+              </div>
+              <div class="tooltip-meta" id="tt-meta">SN-PT100-8811 &bull; Faixa: 2,0 °C a 8,0 °C</div>
+            </div>
           </div>
 
           <!-- Grid dos Sensores Metrológicos da Câmara -->
           <div style="margin-top: 18px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px;">
               <div style="font-size: 13px; font-weight: 700; color:#CBD5E1;" id="sensors-grid-title">Sensores Físicos Alocados no Mapeamento Térmico</div>
-              <span style="font-size:11px; color:#64748B;" id="sensors-grid-counter">11 sensores monitorados em tempo real</span>
+              <span style="font-size:11px; color:#64748B;" id="sensors-grid-counter">11 sensores monitorados &bull; <span style="color:#38BDF8;">Clique em qualquer sensor para isolar na linha</span></span>
             </div>
             <div class="sensors-grid" id="chamber-sensors-grid">
               <!-- Preenchido dinamicamente -->
@@ -2084,7 +2265,7 @@
   </div>
 
 
-  <script src="/static/app.js?v=clean_edge_v25"></script>
+  <script src="/static/app.js?v=sensor_focus_v26"></script>
 
   <!-- =========================================================================
        MODAL 5: CADASTRO DE MEDICAMENTO (CATÁLOGO ANVISA)
