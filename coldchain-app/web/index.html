@@ -1707,44 +1707,46 @@
            SEÇÃO 5: AUDITORIA ALCOA+ & LEDGER CRIPTOGRÁFICO
            ===================================================================== -->
       <section id="section-ledger" class="tab-section">
-        <div class="actions-bar">
-          <div style="display: flex; gap: 8px;">
-            <button class="btn-action-primary" onclick="verifyLedgerLive()">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
-              Auditar Integridade da Cadeia (15 ms)
+        <div class="actions-bar" style="margin-bottom: 18px;">
+          <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+            <button class="btn-action-primary" id="btn-verify-ledger" onclick="verifyLedgerLive()">
+              Auditar Integridade da Cadeia
             </button>
-            <button class="btn-action-primary" style="background:#1E293B; border:1px solid #334155;" onclick="exportLedgerJSON()">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <button class="btn-action-entry" onclick="downloadLedgerCSV()" title="Exportar trilha imutável completa do Ledger em CSV">
+              Exportar CSV (Auditoria)
+            </button>
+            <button class="btn-cancel" onclick="exportLedgerJSON()" title="Visualizar laudo técnico estruturado em JSON">
               Laudo JSON
             </button>
-            <button class="btn-action-primary" style="background:#1E293B; border:1px solid #334155;" onclick="downloadLedgerCSV()" title="Exportar trilha imutável completa do Ledger em CSV">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              Ledger CSV (Auditoria)
-            </button>
-            <button class="btn-action-primary" style="background:#1E293B; border:1px solid #334155;" onclick="createAnchorLive()">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <button class="btn-cancel" onclick="createAnchorLive()" title="Emitir carimbo de tempo RFC 3161">
               Emitir Âncora RFC 3161
             </button>
           </div>
         </div>
 
-        <div id="ledger-audit-box" class="alert-box" style="display:none; background:rgba(16, 185, 129, 0.15); border-color:rgba(16, 185, 129, 0.4); color:#6EE7B7;">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        <div id="ledger-audit-box" class="alert-box" style="display: none; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.4); color: #6EE7B7; padding: 12px 16px; border-radius: 8px; margin-bottom: 18px; font-size: 13px;">
           <div id="ledger-audit-msg">Auditoria concluída com sucesso.</div>
         </div>
 
+        <!-- Blocos do Ledger -->
         <div class="detail-panel" style="margin-bottom: 20px;">
-          <div class="panel-title" style="margin-bottom: 12px;">Blocos do Ledger Criptográfico (WORM / SHA-256 / ECDSA P-256)</div>
-          <div class="data-table-wrapper" style="max-height: 280px; overflow-y: auto;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
+            <div style="font-size: 14.5px; font-weight: 700; color: #E2E8F0; display: flex; align-items: center; gap: 8px;">
+              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #38BDF8;"></span>
+              Blocos do Ledger Criptográfico
+            </div>
+            <span class="badge-status" style="background: rgba(56, 189, 248, 0.12); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.3); font-weight: 600;">WORM • SHA-256 • ECDSA P-256</span>
+          </div>
+          <div class="data-table-wrapper" style="max-height: 320px; overflow-y: auto;">
             <table class="data-table">
               <thead>
                 <tr>
-                  <th style="width: 70px;">Seq #</th>
-                  <th style="width: 100px;">Tipo</th>
-                  <th>Hash Anterior (Prev)</th>
-                  <th>Payload Hash</th>
-                  <th>Assinatura ECDSA (64B)</th>
-                  <th>Horário</th>
+                  <th style="text-align: center; width: 85px;">Seq #</th>
+                  <th style="text-align: center; width: 95px;">Tipo</th>
+                  <th style="text-align: center; width: 190px;">Hash Anterior (Prev)</th>
+                  <th style="text-align: center; width: 190px;">Payload Hash</th>
+                  <th style="text-align: center;">Assinatura ECDSA (64B)</th>
+                  <th style="text-align: center; width: 190px;">Horário</th>
                 </tr>
               </thead>
               <tbody id="ledger-records-body">
@@ -1754,18 +1756,25 @@
           </div>
         </div>
 
+        <!-- Trilha de Auditoria -->
         <div class="detail-panel">
-          <div class="panel-title" style="margin-bottom: 12px;">Trilha de Auditoria do Sistema (WORM SQLite)</div>
-          <div class="data-table-wrapper" style="max-height: 280px; overflow-y: auto;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
+            <div style="font-size: 14.5px; font-weight: 700; color: #E2E8F0; display: flex; align-items: center; gap: 8px;">
+              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #34D399;"></span>
+              Trilha de Auditoria do Sistema
+            </div>
+            <span class="badge-status" style="background: rgba(52, 211, 153, 0.12); color: #34D399; border: 1px solid rgba(52, 211, 153, 0.3); font-weight: 600;">ALCOA+ • WORM SQLite</span>
+          </div>
+          <div class="data-table-wrapper" style="max-height: 320px; overflow-y: auto;">
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>Horário</th>
-                  <th>Usuário</th>
-                  <th>Perfil</th>
-                  <th>Ação</th>
-                  <th>Detalhes Periciais</th>
-                  <th>IP Origem</th>
+                  <th style="text-align: center; width: 180px;">Horário</th>
+                  <th style="text-align: center; width: 130px;">Usuário</th>
+                  <th style="text-align: center; width: 110px;">Perfil</th>
+                  <th style="text-align: center; width: 180px;">Ação</th>
+                  <th style="text-align: left;">Detalhes Periciais</th>
+                  <th style="text-align: center; width: 120px;">IP Origem</th>
                 </tr>
               </thead>
               <tbody id="audit-logs-body">
@@ -2186,7 +2195,7 @@
   </div>
 
 
-  <script src="/static/app.js?v=temp_format_v15"></script>
+  <script src="/static/app.js?v=ledger_harmonized_v16"></script>
 
   <!-- =========================================================================
        MODAL 5: CADASTRO DE MEDICAMENTO (CATÁLOGO ANVISA)

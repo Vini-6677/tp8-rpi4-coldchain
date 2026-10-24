@@ -964,21 +964,26 @@ async function loadLedger() {
       const tbodyL = document.getElementById('ledger-records-body');
       if (tbodyL) {
         tbodyL.innerHTML = '';
-        records.forEach(r => {
-          const prev = (r.prev_hash || '').substring(0, 16);
-          const cur = (r.current_hash || '').substring(0, 16);
-          const sig = (r.signature || '').substring(0, 24);
-          tbodyL.innerHTML += `
-            <tr>
-              <td><strong style="color:#60A5FA;">#${r.id}</strong></td>
-              <td><span class="badge-status liberado">${r.type_name || 'DATA'}</span></td>
-              <td><code style="font-size:10px; color:#94A3B8;">${prev}...</code></td>
-              <td><code style="font-size:10px; color:#6EE7B7;">${cur}...</code></td>
-              <td><code style="font-size:10px; color:#C4B5FD;">${sig}...</code></td>
-              <td style="font-size:11px; color:#64748B;">${r.created_at || ''}</td>
-            </tr>
-          `;
-        });
+        if (records.length === 0) {
+          tbodyL.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #94A3B8; padding: 22px; font-size: 13.5px;">Nenhum bloco registrado no ledger criptográfico.</td></tr>';
+        } else {
+          records.forEach(r => {
+            const prev = (r.prev_hash || '').substring(0, 16);
+            const cur = (r.current_hash || '').substring(0, 16);
+            const sig = (r.signature || '').substring(0, 24);
+            const isBoot = r.type_name === 'BOOT';
+            tbodyL.innerHTML += `
+              <tr>
+                <td style="text-align: center;"><strong style="color: #38BDF8; font-family: monospace; font-size: 13.5px;">#${r.id}</strong></td>
+                <td style="text-align: center;"><span class="badge-status ${isBoot ? 'quarentena' : 'liberado'}" style="font-size: 11.5px; padding: 3px 8px;">${r.type_name || 'DATA'}</span></td>
+                <td style="text-align: center;"><code style="font-size: 12px; color: #94A3B8; background: rgba(255,255,255,0.05); padding: 3px 8px; border-radius: 4px; font-family: monospace;">${prev}...</code></td>
+                <td style="text-align: center;"><code style="font-size: 12px; color: #6EE7B7; background: rgba(110,231,183,0.08); padding: 3px 8px; border-radius: 4px; font-family: monospace;">${cur}...</code></td>
+                <td style="text-align: center;"><code style="font-size: 12px; color: #C4B5FD; background: rgba(196,181,253,0.08); padding: 3px 8px; border-radius: 4px; font-family: monospace;">${sig}...</code></td>
+                <td style="text-align: center; font-size: 12px; color: #94A3B8; font-family: monospace;">${r.created_at || ''}</td>
+              </tr>
+            `;
+          });
+        }
       }
     }
 
@@ -988,19 +993,22 @@ async function loadLedger() {
       const logs = await resA.json();
       const tbodyA = document.getElementById('audit-logs-body');
       tbodyA.innerHTML = '';
-
-      logs.forEach(l => {
-        tbodyA.innerHTML += `
-          <tr>
-            <td style="font-size:11px; color:#CBD5E1;">${l.timestamp}</td>
-            <td><strong>${l.username}</strong></td>
-            <td><span class="tag-badge tag-blue">${l.role.toUpperCase()}</span></td>
-            <td><code style="color:#F59E0B;">${l.action}</code></td>
-            <td style="font-size:11.5px; color:#E2E8F0;">${l.details}</td>
-            <td style="font-size:11px; color:#64748B;">${l.ip_address}</td>
-          </tr>
-        `;
-      });
+      if (logs.length === 0) {
+        tbodyA.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #94A3B8; padding: 22px; font-size: 13.5px;">Nenhum registro de auditoria disponível.</td></tr>';
+      } else {
+        logs.forEach(l => {
+          tbodyA.innerHTML += `
+            <tr>
+              <td style="text-align: center; font-size: 12px; color: #CBD5E1; font-family: monospace;">${l.timestamp}</td>
+              <td style="text-align: center;"><strong style="color: #F1F5F9; font-size: 13.5px;">${l.username}</strong></td>
+              <td style="text-align: center;"><span class="badge-status liberado" style="font-size: 11px;">${l.role.toUpperCase()}</span></td>
+              <td style="text-align: center;"><code style="color: #F59E0B; background: rgba(245,158,11,0.08); padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 600;">${l.action}</code></td>
+              <td style="font-size: 13px; color: #E2E8F0; line-height: 1.45;">${l.details}</td>
+              <td style="text-align: center; font-size: 12px; color: #94A3B8; font-family: monospace;">${l.ip_address}</td>
+            </tr>
+          `;
+        });
+      }
     }
   } catch (e) {
     console.error('Erro ao carregar auditoria e ledger:', e);
@@ -1010,25 +1018,36 @@ async function loadLedger() {
 async function verifyLedgerLive() {
   const box = document.getElementById('ledger-audit-box');
   const msg = document.getElementById('ledger-audit-msg');
-  box.style.display = 'flex';
+  const btn = document.getElementById('btn-verify-ledger');
+  box.style.display = 'block';
   msg.innerText = 'Executando verificação pericial criptográfica (SHA-256 Chaining + ECDSA P-256)...';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = 'Auditando Cadeia...';
+  }
 
   try {
     const res = await fetch('/api/v1/ledger/verify');
     const data = await res.json();
     if (res.ok && data.valid) {
-      msg.innerHTML = `<strong>Laudo Pericial: 100% CONFORME!</strong> Todos os <strong>${data.total_records || data.total_blocks || data.checked_hashes || 0} blocos</strong> auditados em <strong>${(data.duration_ms || data.verification_time_ms || 15).toFixed(1)} ms</strong>. Zero adulterações ou quebras de hash detectadas. Assinatura P-256 íntegra.`;
-      box.style.background = 'rgba(16, 185, 129, 0.15)';
+      msg.innerHTML = `<strong>Laudo Pericial: 100% Conforme!</strong> Todos os <strong>${data.total_records || data.total_blocks || data.checked_hashes || 0} blocos</strong> auditados em <strong>${(data.duration_ms || data.verification_time_ms || 15).toFixed(1)} ms</strong>. Zero adulterações detectadas. Assinatura P-256 íntegra.`;
+      box.style.background = 'rgba(16, 185, 129, 0.12)';
       box.style.borderColor = 'rgba(16, 185, 129, 0.4)';
       box.style.color = '#6EE7B7';
     } else {
       msg.innerHTML = `<strong>FALHA DE INTEGRIDADE:</strong> ${data.error || 'Cadeia violada!'}`;
-      box.style.background = 'rgba(239, 68, 68, 0.15)';
+      box.style.background = 'rgba(239, 68, 68, 0.12)';
       box.style.borderColor = 'rgba(239, 68, 68, 0.4)';
       box.style.color = '#FCA5A5';
     }
+    loadLedger();
   } catch (e) {
     msg.innerText = 'Erro ao executar verificação do ledger.';
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = 'Auditar Integridade da Cadeia';
+    }
   }
 }
 
