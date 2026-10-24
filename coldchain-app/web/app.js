@@ -124,6 +124,16 @@ function showApp() {
     tabUsers.style.display = 'none';
   }
 
+  // Permissão para cadastro de câmaras/geladeiras (Gerente RT / Administrador)
+  const btnNewChamber = document.getElementById('btn-new-chamber');
+  if (btnNewChamber) {
+    if (currentUser.role === 'gerente' || currentUser.role === 'admin') {
+      btnNewChamber.style.display = 'inline-flex';
+    } else {
+      btnNewChamber.style.display = 'none';
+    }
+  }
+
   // Carrega dados iniciais
   loadKPIs();
   loadChambers();

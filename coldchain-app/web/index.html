@@ -1413,7 +1413,18 @@
            SEÇÃO 1: CÂMARAS & MODO TV
            ===================================================================== -->
       <section id="section-chambers" class="tab-section active">
-        <!-- Grid dos 3 Cards de Câmaras -->
+        <div class="actions-bar" style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
+          <div style="font-size: 15px; font-weight: 700; color: #FFFFFF; letter-spacing: -0.2px;">
+            Câmaras Frias e Geladeiras Qualificadas
+          </div>
+          <div>
+            <button class="btn-action-entry" id="btn-new-chamber" onclick="openNewChamberModal()" style="display: none;">
+              Nova Geladeira / Câmara
+            </button>
+          </div>
+        </div>
+
+        <!-- Grid dos Cards de Câmaras -->
         <div class="chambers-grid" id="chambers-cards-container">
           <!-- Carregado dinamicamente via JS -->
         </div>
@@ -2049,7 +2060,7 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=clean_center_v9"></script>
+  <script src="/static/app.js?v=new_chamber_v10"></script>
 
   <!-- =========================================================================
        MODAL 5: CADASTRO DE MEDICAMENTO (CATÁLOGO ANVISA)
