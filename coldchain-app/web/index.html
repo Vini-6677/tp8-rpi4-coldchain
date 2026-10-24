@@ -1711,6 +1711,13 @@
                 <button class="btn-range" data-range="24h" onclick="changeChartRange('24h')">24h</button>
                 <button class="btn-range" data-range="7d" onclick="changeChartRange('7d')">7 Dias</button>
               </div>
+
+              <button class="btn-action-decommission" id="btn-decommission-chamber" onclick="openDecommissionModal()" title="Descomissionamento ou baixa regulatória deste equipamento (21 CFR Part 11)" style="display: none; align-items: center; gap: 6px; padding: 6px 12px; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 6px; color: #FCA5A5; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                </svg>
+                <span>Descomissionar / Excluir</span>
+              </button>
             </div>
           </div>
 
@@ -2505,5 +2512,77 @@
   </div>
 
 
-  </body>
+    <!-- =========================================================================
+       MODAL 8: DESCOMISSIONAMENTO E BAIXA REGULATÓRIA DE CÂMARA / GELADEIRA
+       ========================================================================= -->
+  <div id="modal-decommission-chamber" class="modal-backdrop">
+    <div class="modal-box" style="max-width: 600px; border-color: rgba(239, 68, 68, 0.35);">
+      <div class="modal-header" style="border-bottom-color: rgba(239, 68, 68, 0.25);">
+        <div class="modal-title" style="color: #FCA5A5; display: flex; align-items: center; gap: 8px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+          </svg>
+          Descomissionamento de Equipamento Qualificado
+        </div>
+        <button class="btn-close-modal" onclick="closeDecommissionModal()">&times;</button>
+      </div>
+
+      <form id="form-decommission-chamber" onsubmit="event.preventDefault(); submitDecommissionChamber();">
+        <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; font-size: 12.5px; color: #CBD5E1; line-height: 1.5;">
+          <strong style="color: #F87171;">Controle Sanitário ANVISA RDC 430/2020 & FDA 21 CFR Part 11:</strong><br>
+          A baixa ou exclusão de câmara fria/geladeira exige registro formal de motivo técnico, parecer circunstanciado e autenticação do Responsável Técnico. O evento será registrado no Ledger Criptográfico.
+        </div>
+
+        <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; font-size: 12.5px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <div>Equipamento: <strong id="decom-chamber-name" style="color: #FFFFFF;">--</strong></div>
+          <div>Código ID: <span id="decom-chamber-id" class="chamber-id-badge" style="font-weight: bold;">--</span></div>
+          <div>Faixa Operacional: <span id="decom-chamber-range" style="color: #93C5FD;">--</span></div>
+          <div>Lotes Ativos: <span id="decom-chamber-lots" style="color: #10B981;">--</span></div>
+          <div style="grid-column: span 2;">Sensores Alocados: <span id="decom-chamber-sensors" style="color: #CBD5E1;">--</span></div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Motivo Técnico do Descomissionamento</label>
+          <select id="decom-reason" class="form-control" required>
+            <option value="Substituição por Novo Equipamento Qualificado">Substituição por Novo Equipamento Qualificado</option>
+            <option value="Fim de Vida Útil / Inviabilidade Mecânica do Compressor">Fim de Vida Útil / Inviabilidade Mecânica do Compressor</option>
+            <option value="Transferência de Ativo para Outra Filial / Unidade">Transferência de Ativo para Outra Filial / Unidade</option>
+            <option value="Desativação de Linha / Encerramento de Operação">Desativação de Linha / Encerramento de Operação</option>
+            <option value="Outro Motivo Técnico Documentado">Outro Motivo Técnico Documentado</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Parecer Técnico / Justificativa Circunstanciada (Obrigatório)</label>
+          <textarea id="decom-justification" class="form-control" rows="3" placeholder="Descreva os laudos de engenharia clínica, número de O.S. ou plano de transferência de carga..." required style="font-size: 13px;"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Destino dos Sensores Metrológicos Vinculados</label>
+          <select id="decom-sensor-action" class="form-control">
+            <option value="recolher" selected>Recolher sensores para bancada de calibração RBC (manter histórico)</option>
+            <option value="descartar">Descartar / sucatear sensores junto ao equipamento</option>
+          </select>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px;">
+          <div class="form-group">
+            <label class="form-label">Responsável Técnico (Autenticado)</label>
+            <input type="text" id="decom-resp-name" class="form-control" readonly style="opacity: 0.8; background: #0B1120;">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Assinatura Eletrônica (Senha do Usuário)</label>
+            <input type="password" id="decom-password" class="form-control" placeholder="Digite sua senha" required>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
+          <button type="button" class="btn-cancel" onclick="closeDecommissionModal()">Cancelar</button>
+          <button type="submit" class="btn-primary" id="btn-submit-decom" style="background: #EF4444; border-color: #DC2626;">Confirmar Baixa do Equipamento</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+</body>
 </html>

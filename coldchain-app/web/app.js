@@ -138,6 +138,15 @@ function showApp() {
     }
   }
 
+  const btnDecomChamber = document.getElementById('btn-decommission-chamber');
+  if (btnDecomChamber) {
+    if (currentUser.role === 'gerente' || currentUser.role === 'admin') {
+      btnDecomChamber.style.display = 'inline-flex';
+    } else {
+      btnDecomChamber.style.display = 'none';
+    }
+  }
+
   // Permissão para simulação de excursão (Gerente RT / Administrador)
   const btnSimulateExc = document.getElementById('btn-simulate-excursion');
   if (btnSimulateExc) {
@@ -569,12 +578,8 @@ function handleChartHover(clientX, clientY) {
   let bestY = 0;
   let minDist = Infinity;
 
-  // Escala térmica
-  const targetMin = currentChamber && currentChamber.temp_min != null ? currentChamber.temp_min : 2.0;
-  const targetMax = currentChamber && currentChamber.temp_max != null ? currentChamber.temp_max : 8.0;
-  let minTemp = 0.0, maxTemp = 10.0;
-  if (currentChamber && currentChamber.id === 'ULT-01') { minTemp = -88.0; maxTemp = -52.0; }
-  else if (currentChamber && currentChamber.id === 'ALM-01') { minTemp = 10.0; maxTemp = 35.0; }
+  // Escala térmica universal sincronizada
+  const { minTemp, maxTemp } = getChartThermalScale(currentChamber, sensorsData);
   const getY = (t) => topMargin + plotH * (1 - (t - minTemp) / (maxTemp - minTemp));
 
   sensorsToRender.forEach((s, idx) => {
@@ -993,6 +998,44 @@ async function selectChamber(chamberId, forceHighlight = true) {
   }
 }
 
+
+function getChartThermalScale(currentChamber, sensors) {
+  const targetMin = currentChamber && currentChamber.temp_min != null ? currentChamber.temp_min : 2.0;
+  const targetMax = currentChamber && currentChamber.temp_max != null ? currentChamber.temp_max : 8.0;
+
+  let tLow = targetMin;
+  let tHigh = targetMax;
+  if (sensors && sensors.length > 0) {
+    sensors.forEach(s => {
+      const v = s.current_temp != null ? s.current_temp : targetMin;
+      if (v < tLow) tLow = v;
+      if (v > tHigh) tHigh = v;
+    });
+  }
+
+  const span = Math.max(tHigh - tLow, 4.0);
+  const padding = Math.max(span * 0.25, 2.0);
+  const rawMin = tLow - padding;
+  const rawMax = tHigh + padding;
+  const diff = rawMax - rawMin;
+
+  let gridStep = 2.0;
+  if (diff <= 16) {
+    gridStep = 2.0;
+  } else if (diff <= 40) {
+    gridStep = 5.0;
+  } else if (diff <= 80) {
+    gridStep = 10.0;
+  } else {
+    gridStep = 20.0;
+  }
+
+  const minTemp = Math.floor(rawMin / gridStep) * gridStep;
+  const maxTemp = Math.ceil(rawMax / gridStep) * gridStep;
+
+  return { targetMin, targetMax, minTemp, maxTemp, gridStep };
+}
+
 function renderMultiSensorChart(sensors, currentChamber) {
   const canvas = document.getElementById('multisensor-chart');
   if (!canvas) return;
@@ -1019,25 +1062,8 @@ function renderMultiSensorChart(sensors, currentChamber) {
   // Limpa canvas
   ctx.clearRect(0, 0, W, H);
 
-  // Determinar limites de escala dinamicamente
-  let minTemp, maxTemp, targetMin, targetMax, gridStep;
-
-  targetMin = currentChamber && currentChamber.temp_min != null ? currentChamber.temp_min : 2.0;
-  targetMax = currentChamber && currentChamber.temp_max != null ? currentChamber.temp_max : 8.0;
-
-  if (currentChamber && currentChamber.id === 'ULT-01') {
-    minTemp = -88.0;
-    maxTemp = -52.0;
-    gridStep = 5.0;
-  } else if (currentChamber && currentChamber.id === 'ALM-01') {
-    minTemp = 10.0;
-    maxTemp = 35.0;
-    gridStep = 5.0;
-  } else {
-    minTemp = 0.0;
-    maxTemp = 10.0;
-    gridStep = 2.0;
-  }
+  // Determinar limites de escala dinamicamente e com precisão universal
+  const { targetMin, targetMax, minTemp, maxTemp, gridStep } = getChartThermalScale(currentChamber, sensors);
 
   const leftMargin = 50;
   const rightMargin = 55;
@@ -2616,4 +2642,101 @@ async function openTraceModal(lotNumber) {
 function closeTraceModal() {
   const m = document.getElementById('modal-trace');
   if (m) m.classList.remove('active');
+}
+
+// ==============================================================================
+// DESCOMISSIONAMENTO E BAIXA REGULATÓRIA DE CÂMARAS (ANVISA RDC 430 & 21 CFR 11)
+// ==============================================================================
+function openDecommissionModal() {
+  const currentChamber = chambersData ? chambersData.find(c => c.id === selectedChamberId) : null;
+  if (!currentChamber) {
+    alert('Nenhuma câmara selecionada para descomissionamento.');
+    return;
+  }
+
+  const m = document.getElementById('modal-decommission-chamber');
+  if (!m) return;
+
+  const elName = document.getElementById('decom-chamber-name');
+  const elId = document.getElementById('decom-chamber-id');
+  const elRange = document.getElementById('decom-chamber-range');
+  const elLots = document.getElementById('decom-chamber-lots');
+  const elSensors = document.getElementById('decom-chamber-sensors');
+
+  if (elName) elName.innerText = currentChamber.name;
+  if (elId) elId.innerText = currentChamber.id;
+  if (elRange) elRange.innerText = `${currentChamber.temp_min.toFixed(1).replace('.', ',')} °C a ${currentChamber.temp_max.toFixed(1).replace('.', ',')} °C`;
+  if (elLots) elLots.innerText = `${currentChamber.quarantined_lots_count || 0} lotes ativos`;
+  if (elSensors) elSensors.innerText = `${sensorsData ? sensorsData.length : currentChamber.sensor_count} sensores vinculados`;
+
+  const sigName = document.getElementById('decom-resp-name');
+  if (sigName) {
+    sigName.value = currentUser ? `${currentUser.name} (${currentUser.role.toUpperCase()})` : 'Farmacêutico RT';
+  }
+
+  m.classList.add('active');
+}
+
+function closeDecommissionModal() {
+  const m = document.getElementById('modal-decommission-chamber');
+  if (m) m.classList.remove('active');
+  const f = document.getElementById('form-decommission-chamber');
+  if (f) f.reset();
+}
+
+async function submitDecommissionChamber() {
+  const reason = document.getElementById('decom-reason').value;
+  const just = document.getElementById('decom-justification').value.trim();
+  const sensorAction = document.getElementById('decom-sensor-action').value;
+  const pwd = document.getElementById('decom-password').value;
+
+  if (!just) {
+    alert('Preencha o parecer técnico com a justificativa de descomissionamento.');
+    return;
+  }
+  if (!pwd) {
+    alert('Digite sua senha para autenticar a assinatura digital (21 CFR Part 11).');
+    return;
+  }
+
+  const btn = document.getElementById('btn-submit-decom');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = 'Processando Baixa no Ledger...';
+  }
+
+  try {
+    const res = await fetch('/api/pharma/chambers', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chamber_id: selectedChamberId,
+        reason: reason,
+        justification: just,
+        sensor_action: sensorAction,
+        password: pwd
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      alert('Falha no descomissionamento: ' + (data.error || 'Erro na validação regulatória.'));
+      return;
+    }
+
+    alert(data.message || 'Equipamento descomissionado com sucesso!');
+    closeDecommissionModal();
+
+    // Redireciona a visualização para a Câmara padrão
+    selectedChamberId = 'CH-A';
+    await loadChambers(true);
+  } catch (e) {
+    console.error('Erro ao descomissionar câmara:', e);
+    alert('Erro de comunicação ao efetuar baixa do equipamento.');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = 'Confirmar Baixa do Equipamento';
+    }
+  }
 }

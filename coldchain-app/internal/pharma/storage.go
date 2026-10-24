@@ -1614,3 +1614,54 @@ func seedQualityData(db *sql.DB) error {
 
 	return nil
 }
+
+// DecommissionChamber valida travas de segurança regulatórias e remove o equipamento do inventário ativo.
+func DecommissionChamber(db *sql.DB, chamberID, reason, justification, signatureName, sensorAction string) error {
+	if chamberID == "" {
+		return fmt.Errorf("id da câmara é obrigatório")
+	}
+
+	// 1. Verifica se a câmara existe
+	var chName string
+	if err := db.QueryRow("SELECT name FROM chambers WHERE id = ?", chamberID).Scan(&chName); err != nil {
+		return fmt.Errorf("câmara '%s' não encontrada", chamberID)
+	}
+
+	// 2. Trava de Segurança Regulatória: Não permite exclusão se houver lotes de medicamentos ativos!
+	var activeLots int
+	_ = db.QueryRow("SELECT COUNT(*) FROM lots WHERE chamber_id = ? AND status != 'descartado'", chamberID).Scan(&activeLots)
+	if activeLots > 0 {
+		return fmt.Errorf("não é possível descomissionar a câmara '%s': existem %d lotes de medicamentos ativos armazenados nela. Transfira os lotes antes de efetuar a baixa", chName, activeLots)
+	}
+
+	// 3. Trava de Segurança Regulatória: Não permite exclusão se houver alarmes operacionais ativos pendentes
+	var activeAlarms int
+	_ = db.QueryRow("SELECT COUNT(*) FROM alarms WHERE chamber_id = ? AND status = 'ativo'", chamberID).Scan(&activeAlarms)
+	if activeAlarms > 0 {
+		return fmt.Errorf("não é possível descomissionar a câmara '%s': existem %d alarmes críticos ativos pendentes de resolução", chName, activeAlarms)
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 4. Trata os sensores vinculados
+	if sensorAction == "descartar" {
+		_, _ = tx.Exec("DELETE FROM sensors WHERE chamber_id = ?", chamberID)
+	} else {
+		_, _ = tx.Exec("UPDATE sensors SET chamber_id = NULL, thermal_position = 'Bancada Metrológica / Avulso' WHERE chamber_id = ?", chamberID)
+	}
+
+	// 5. Remove histórico de qualificação associado
+	_, _ = tx.Exec("DELETE FROM chamber_qualifications WHERE chamber_id = ?", chamberID)
+
+	// 6. Remove a câmara da tabela de equipamentos
+	_, err = tx.Exec("DELETE FROM chambers WHERE id = ?", chamberID)
+	if err != nil {
+		return fmt.Errorf("erro ao excluir câmara: %w", err)
+	}
+
+	return tx.Commit()
+}

@@ -725,3 +725,43 @@ func TestPharmaQualityDossierPersistence(t *testing.T) {
 		t.Errorf("treinamentos não persistidos corretamente: Lucas=%v, Marcos=%v", foundLucas, foundMarcos)
 	}
 }
+
+func TestPharmaDecommissionChamber(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// 1. Tentar descomissionar câmara com lotes ativos (CH-A) deve falhar (trava regulatória)
+	err := DecommissionChamber(db, "CH-A", "Fim de vida útil", "Equipamento antigo", "Dra. Mariana", "descartar")
+	if err == nil {
+		t.Errorf("esperava erro ao tentar descomissionar câmara CH-A com lotes ativos, mas obteve sucesso")
+	}
+
+	// 2. Criar câmara temporária sem lotes
+	tempCh := Chamber{
+		ID:                   "TEMP-TEST",
+		Name:                 "Câmara de Teste Descarte",
+		Type:                 "refrigerado",
+		TempMin:              2.0,
+		TempMax:              8.0,
+		AlarmDelayMin:        5,
+		QualStatus:           "Qualificado",
+		QualValidUntil:       "2028-01-01",
+	}
+	_, err = RegisterChamber(db, tempCh)
+	if err != nil {
+		t.Fatalf("erro ao criar câmara de teste: %v", err)
+	}
+
+	// 3. Descomissionar câmara vazia deve passar
+	err = DecommissionChamber(db, "TEMP-TEST", "Substituição", "Laudo pericial aprovado", "Dra. Mariana", "descartar")
+	if err != nil {
+		t.Fatalf("erro ao descomissionar câmara vazia: %v", err)
+	}
+
+	// 4. Confirma que a câmara foi removida
+	var count int
+	_ = db.QueryRow("SELECT COUNT(*) FROM chambers WHERE id = 'TEMP-TEST'").Scan(&count)
+	if count != 0 {
+		t.Errorf("esperava 0 câmaras com ID TEMP-TEST após descomissionamento, obteve %d", count)
+	}
+}

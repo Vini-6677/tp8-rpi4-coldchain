@@ -1097,6 +1097,71 @@ func (a *App) routes() http.Handler {
 			return
 		}
 
+		if r.Method == http.MethodDelete {
+			sess, ok := a.getSession(r)
+			if !ok || (sess.Role != "gerente" && sess.Role != "admin") {
+				w.WriteHeader(http.StatusForbidden)
+				json.NewEncoder(w).Encode(map[string]any{"error": "Descomissionamento restrito a Gerente ou Administrador."})
+				return
+			}
+
+			var req struct {
+				ChamberID     string `json:"chamber_id"`
+				Reason        string `json:"reason"`
+				Justification string `json:"justification"`
+				SensorAction  string `json:"sensor_action"`
+				Password      string `json:"password"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				req.ChamberID = r.URL.Query().Get("id")
+			}
+
+			if req.ChamberID == "" {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]any{"error": "ID da câmara é obrigatório."})
+				return
+			}
+
+			if req.Password != "" {
+				var storedHash, salt string
+				if err := a.db.QueryRow("SELECT password_hash, salt FROM users WHERE username = ?", sess.Username).Scan(&storedHash, &salt); err == nil {
+					if hashPassword(req.Password, salt) != storedHash {
+						w.WriteHeader(http.StatusUnauthorized)
+						json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: senha incorreta."})
+						return
+					}
+				}
+			}
+
+			if err := pharma.DecommissionChamber(a.db, req.ChamberID, req.Reason, req.Justification, sess.Name, req.SensorAction); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+				return
+			}
+
+			ip := getClientIP(r)
+			a.logAudit(sess.Username, sess.Role, "DESCOMISSIONAMENTO_CAMARA", fmt.Sprintf("Equipamento '%s' descomissionado por %s. Motivo: %s. Parecer: %s", req.ChamberID, sess.Name, req.Reason, req.Justification), ip)
+
+			if a.ledger != nil {
+				ledgerData, _ := json.Marshal(map[string]any{
+					"event":         "CHAMBER_DECOMMISSION",
+					"chamber_id":    req.ChamberID,
+					"reason":        req.Reason,
+					"justification": req.Justification,
+					"responsible":   sess.Name,
+					"role":          sess.Role,
+					"timestamp":     time.Now().Format(time.RFC3339),
+				})
+				_, _ = a.ledger.AppendData("DECOMMISSION-"+req.ChamberID, uint64(time.Now().Unix()), ledgerData, ledger.ClockTrusted)
+			}
+
+			json.NewEncoder(w).Encode(map[string]any{
+				"status":  "ok",
+				"message": fmt.Sprintf("Equipamento '%s' descomissionado e registrado no ledger com sucesso.", req.ChamberID),
+			})
+			return
+		}
+
 		list, err := pharma.GetChambers(a.db)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
