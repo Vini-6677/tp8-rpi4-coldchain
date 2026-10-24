@@ -1104,12 +1104,12 @@ async function loadLedger() {
             const dateFormatted = formatBrasiliaDateTime(r.created_at);
             tbodyL.innerHTML += `
               <tr>
-                <td style="text-align: center;"><strong style="color: #38BDF8; font-family: monospace; font-size: 13.5px;">#${r.id}</strong></td>
-                <td style="text-align: center;"><span class="badge-status" style="font-size: 11px; padding: 4px 9px; font-weight: 700; white-space: nowrap; ${typeInfo.style}">${typeInfo.label}</span></td>
-                <td style="text-align: center;"><code style="font-size: 12px; color: #94A3B8; background: rgba(255,255,255,0.05); padding: 3px 8px; border-radius: 4px; font-family: monospace;">${prev}...</code></td>
-                <td style="text-align: center;"><code style="font-size: 12px; color: #6EE7B7; background: rgba(110,231,183,0.08); padding: 3px 8px; border-radius: 4px; font-family: monospace;">${cur}...</code></td>
-                <td style="text-align: center;"><code style="font-size: 12px; color: #C4B5FD; background: rgba(196,181,253,0.08); padding: 3px 8px; border-radius: 4px; font-family: monospace;">${sig}...</code></td>
-                <td style="text-align: center; font-size: 12px; color: #CBD5E1; font-family: monospace;">${dateFormatted}</td>
+                <td style="text-align: center; white-space: nowrap;"><strong style="color: #38BDF8; font-family: monospace; font-size: 13.5px;">#${r.id}</strong></td>
+                <td style="text-align: center; white-space: nowrap;"><span class="badge-status" style="font-size: 11px; padding: 4px 9px; font-weight: 700; white-space: nowrap; ${typeInfo.style}">${typeInfo.label}</span></td>
+                <td style="text-align: center; white-space: nowrap;"><code style="font-size: 12px; color: #94A3B8; background: rgba(255,255,255,0.05); padding: 4px 10px; border-radius: 4px; font-family: monospace;">${prev}...</code></td>
+                <td style="text-align: center; white-space: nowrap;"><code style="font-size: 12px; color: #6EE7B7; background: rgba(110,231,183,0.08); padding: 3px 8px; border-radius: 4px; font-family: monospace;">${cur}...</code></td>
+                <td style="text-align: center; white-space: nowrap;"><code style="font-size: 12px; color: #C4B5FD; background: rgba(196,181,253,0.08); padding: 3px 8px; border-radius: 4px; font-family: monospace;">${sig}...</code></td>
+                <td style="text-align: center; font-size: 12px; color: #CBD5E1; font-family: monospace; white-space: nowrap;">${dateFormatted}</td>
               </tr>
             `;
           });
@@ -1131,12 +1131,12 @@ async function loadLedger() {
           const actionBadge = getAuditActionBadge(l.action);
           tbodyA.innerHTML += `
             <tr>
-              <td style="text-align: center; font-size: 12px; color: #CBD5E1; font-family: monospace;">${dateFormatted}</td>
-              <td style="text-align: center;"><strong style="color: #F1F5F9; font-size: 13.5px;">${l.username}</strong></td>
-              <td style="text-align: center;"><span class="badge-status liberado" style="font-size: 11px;">${l.role.toUpperCase()}</span></td>
-              <td style="text-align: center;">${actionBadge}</td>
-              <td style="font-size: 13px; color: #E2E8F0; line-height: 1.45;">${l.details}</td>
-              <td style="text-align: center; font-size: 12px; color: #94A3B8; font-family: monospace;">${l.ip_address}</td>
+              <td style="text-align: center; font-size: 12px; color: #CBD5E1; font-family: monospace; white-space: nowrap;">${dateFormatted}</td>
+              <td style="text-align: center; white-space: nowrap;"><strong style="color: #F1F5F9; font-size: 13.5px;">${l.username}</strong></td>
+              <td style="text-align: center; white-space: nowrap;"><span class="badge-status liberado" style="font-size: 11px;">${l.role.toUpperCase()}</span></td>
+              <td style="text-align: center; white-space: nowrap;">${actionBadge}</td>
+              <td style="font-size: 13px; color: #E2E8F0; line-height: 1.45; word-break: break-word;">${l.details}</td>
+              <td style="text-align: center; font-size: 12px; color: #94A3B8; font-family: monospace; white-space: nowrap;">${l.ip_address}</td>
             </tr>
           `;
         });
