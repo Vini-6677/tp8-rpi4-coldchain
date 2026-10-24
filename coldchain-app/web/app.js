@@ -797,6 +797,36 @@ async function submitResolveAlarm() {
   }
 }
 
+function formatExcursionInvestigationStatus(status) {
+  switch (status) {
+    case 'em_investigacao':
+      return {
+        label: 'Em Investigação',
+        style: 'background: rgba(245, 158, 11, 0.14); color: #FBBF24; border: 1px solid rgba(245, 158, 11, 0.35); text-transform: none;'
+      };
+    case 'fabricante_consultado':
+      return {
+        label: 'Fabricante Consultado',
+        style: 'background: rgba(56, 189, 248, 0.14); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); text-transform: none;'
+      };
+    case 'liberado':
+      return {
+        label: 'Liberado',
+        style: 'background: rgba(52, 211, 153, 0.14); color: #34D399; border: 1px solid rgba(52, 211, 153, 0.35); text-transform: none;'
+      };
+    case 'descartado':
+      return {
+        label: 'Descartado / Reprovado',
+        style: 'background: rgba(239, 68, 68, 0.14); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.35); text-transform: none;'
+      };
+    default:
+      return {
+        label: status ? status.replace(/_/g, ' ') : 'Pendente',
+        style: 'background: rgba(148, 163, 184, 0.14); color: #CBD5E1; border: 1px solid rgba(148, 163, 184, 0.3); text-transform: none;'
+      };
+  }
+}
+
 async function loadExcursions() {
   try {
     const res = await fetch('/api/pharma/excursions');
@@ -831,6 +861,7 @@ async function loadExcursions() {
       } else {
         lotsBadge = `<span class="badge-status quarentena" style="font-size: 12px; padding: 4px 10px;">${e.quarantined_lots_count} lotes em análise</span>`;
       }
+      const statusInfo = formatExcursionInvestigationStatus(e.status);
       tbody.innerHTML += `
         <tr>
           <td style="text-align: center;"><strong style="color: #38BDF8; font-family: monospace; font-size: 13px;">${e.code}</strong></td>
@@ -839,7 +870,7 @@ async function loadExcursions() {
           <td style="text-align: center;"><strong style="color: #EF4444; font-family: monospace; font-size: 14px;">${e.peak_temp.toFixed(1)}ºC</strong></td>
           <td style="text-align: center; color: #CBD5E1; font-family: monospace; font-size: 13.5px; font-weight: 700;">${e.accumulated_degree_minutes.toFixed(1)}ºC.min</td>
           <td style="text-align: center;">${lotsBadge}</td>
-          <td style="text-align: center;"><span class="badge-status ${isDone ? 'liberado' : 'alerta'}" style="font-size: 12px; padding: 4px 10px;">${e.status.toUpperCase()}</span></td>
+          <td style="text-align: center;"><span class="badge-status" style="font-size: 11.5px; padding: 4px 10px; font-weight: 700; white-space: nowrap; ${statusInfo.style}">${statusInfo.label}</span></td>
           <td style="text-align: center;">
             ${!isDone ? `
               <button class="btn-action-primary" style="padding: 6px 14px; font-size: 12px; margin: 0 auto; display: inline-flex;" onclick="openDecisionModal(${e.id}, '${e.code}', '${cleanChamber.replace(/'/g, "\\'")}', ${e.peak_temp})">

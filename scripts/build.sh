@@ -21,6 +21,9 @@ BUILDROOT_VERSION=${BUILDROOT_VERSION:-"2024.02.1"}
 # Resolução dinâmica e autônoma do diretório do Buildroot (Portabilidade Total)
 if [ -n "$BUILDROOT_DIR" ] && [ -d "$BUILDROOT_DIR" ]; then
   echo "[+] Usando Buildroot configurado em: $BUILDROOT_DIR"
+elif [ -d "$HOME/buildroot-2026.05.1" ]; then
+  BUILDROOT_DIR="$HOME/buildroot-2026.05.1"
+  echo "[+] Usando Buildroot do host em: $BUILDROOT_DIR"
 elif [ -d "/home/vini/buildroot-2026.05.1" ]; then
   BUILDROOT_DIR="/home/vini/buildroot-2026.05.1"
   echo "[+] Usando Buildroot do host em: $BUILDROOT_DIR"
