@@ -579,7 +579,7 @@ function handleChartHover(clientX, clientY) {
   let minDist = Infinity;
 
   // Escala térmica universal sincronizada
-  const { minTemp, maxTemp } = getChartThermalScale(currentChamber, sensorsData);
+  const { minTemp, maxTemp, targetMin, targetMax } = getChartThermalScale(currentChamber, sensorsData);
   const getY = (t) => topMargin + plotH * (1 - (t - minTemp) / (maxTemp - minTemp));
 
   sensorsToRender.forEach((s, idx) => {
@@ -619,35 +619,43 @@ function handleChartHover(clientX, clientY) {
   // Posicionar tooltip DOM flutuante
   const tt = document.getElementById('chart-tooltip');
   if (tt) {
-    const elName = document.getElementById('tt-sensor-name');
-    const elTime = document.getElementById('tt-time');
-    const elTemp = document.getElementById('tt-temp');
-    const elHum = document.getElementById('tt-hum');
-    const elMeta = document.getElementById('tt-meta');
+    try {
+      const elName = document.getElementById('tt-sensor-name');
+      const elTime = document.getElementById('tt-time');
+      const elTemp = document.getElementById('tt-temp');
+      const elHum = document.getElementById('tt-hum');
+      const elMeta = document.getElementById('tt-meta');
 
-    if (elName) {
-      elName.innerText = `${bestSensor.id} — ${bestSensor.thermal_position || 'Sensor'}`;
-      elName.style.color = sensorColor;
-    }
-    if (elTime) elTime.innerText = timeStr;
-    if (elTemp) {
-      elTemp.innerText = `${bestTemp.toFixed(1).replace('.', ',')} °C`;
-      elTemp.style.color = (bestTemp < targetMin || bestTemp > targetMax) ? '#EF4444' : '#FFFFFF';
-    }
-    if (elHum) {
-      const humVal = bestSensor.current_humidity != null ? Math.round(bestSensor.current_humidity) : 50;
-      elHum.innerText = `${humVal}% UR`;
-    }
-    if (elMeta) {
-      elMeta.innerHTML = `${bestSensor.serial_number || ''} &bull; Limites: ${targetMin.toFixed(1)}°C a ${targetMax.toFixed(1)}°C`;
-    }
+      if (elName) {
+        elName.innerText = `${bestSensor.id} — ${bestSensor.thermal_position || 'Sensor'}`;
+        elName.style.color = sensorColor;
+      }
+      if (elTime) elTime.innerText = timeStr;
+      if (elTemp) {
+        elTemp.innerText = `${bestTemp.toFixed(1).replace('.', ',')} °C`;
+        const isOutOfLimits = (targetMin != null && targetMax != null) && (bestTemp < targetMin || bestTemp > targetMax);
+        elTemp.style.color = isOutOfLimits ? '#EF4444' : '#FFFFFF';
+      }
+      if (elHum) {
+        const humVal = bestSensor.current_humidity != null ? Math.round(bestSensor.current_humidity) : 50;
+        elHum.innerText = `${humVal}% UR`;
+      }
+      if (elMeta) {
+        const rangeText = (targetMin != null && targetMax != null)
+          ? `Faixa: ${targetMin.toFixed(1).replace('.', ',')} °C a ${targetMax.toFixed(1).replace('.', ',')} °C`
+          : '';
+        elMeta.innerHTML = `${bestSensor.serial_number || ''}${rangeText ? ' &bull; ' + rangeText : ''}`;
+      }
 
-    tt.style.display = 'block';
-    const containerW = canvas.parentElement ? canvas.parentElement.clientWidth : 800;
-    const ttLeft = Math.max(105, Math.min(containerW - 105, snappedX));
-    tt.style.left = `${ttLeft}px`;
-    tt.style.top = `${Math.max(68, bestY - 14)}px`;
-    tt.style.borderColor = sensorColor;
+      tt.style.display = 'block';
+      const containerW = canvas.parentElement ? canvas.parentElement.clientWidth : 800;
+      const ttLeft = Math.max(105, Math.min(containerW - 105, snappedX));
+      tt.style.left = `${ttLeft}px`;
+      tt.style.top = `${Math.max(68, bestY - 14)}px`;
+      tt.style.borderColor = sensorColor;
+    } catch (err) {
+      console.error('Erro ao renderizar tooltip flutuante:', err);
+    }
   }
 }
 
