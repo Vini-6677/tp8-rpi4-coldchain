@@ -132,7 +132,9 @@ func InitPharmaSchema(db *sql.DB) error {
 		acknowledged_at DATETIME,
 		action_taken TEXT,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		resolved_at DATETIME
+		resolved_at DATETIME,
+		resolved_by TEXT,
+		electronic_sig TEXT
 	);
 
 	CREATE TABLE IF NOT EXISTS lot_history (
@@ -180,6 +182,10 @@ func InitPharmaSchema(db *sql.DB) error {
 	if _, err := db.Exec(schema); err != nil {
 		return fmt.Errorf("falha ao criar schema pharma: %w", err)
 	}
+
+	// Migrações incrementais para colunas de assinatura eletrônica em alarmes
+	_, _ = db.Exec("ALTER TABLE alarms ADD COLUMN resolved_by TEXT;")
+	_, _ = db.Exec("ALTER TABLE alarms ADD COLUMN electronic_sig TEXT;")
 
 	if err := seedPharmaData(db); err != nil {
 		return err
@@ -821,12 +827,17 @@ func TriggerExcursion(db *sql.DB, exc Excursion) (int64, error) {
 	// Conta e segrega lotes
 	var count int
 	_ = tx.QueryRow("SELECT COUNT(*) FROM lots WHERE chamber_id = ? AND status = 'liberado'", exc.ChamberID).Scan(&count)
+	if count == 0 {
+		_ = tx.QueryRow("SELECT COUNT(*) FROM lots WHERE chamber_id = ?", exc.ChamberID).Scan(&count)
+	}
 
-	_, err = tx.Exec("UPDATE lots SET status = 'quarentena' WHERE chamber_id = ? AND status = 'liberado'", exc.ChamberID)
+	_, err = tx.Exec("UPDATE lots SET status = 'quarentena' WHERE chamber_id = ?", exc.ChamberID)
 	if err != nil {
 		return 0, fmt.Errorf("falha ao segregar lotes: %w", err)
 	}
 
+	// Atualiza a temperatura do sensor crítico para o pico da excursão
+	_, _ = tx.Exec("UPDATE sensors SET current_temp = ? WHERE id = ? AND chamber_id = ?", exc.PeakTemp, exc.SensorID, exc.ChamberID)
 	// Atualiza status da câmara
 	_, _ = tx.Exec("UPDATE chambers SET status = 'EXCURSAO' WHERE id = ?", exc.ChamberID)
 
@@ -885,8 +896,9 @@ func DecideExcursion(db *sql.DB, excID int64, decision, report, electronicSig, d
 		return err
 	}
 
-	// Atualiza câmara se não houver outras excursões abertas
+	// Atualiza câmara se não houver outras excursões abertas e normaliza sensores
 	_, _ = tx.Exec("UPDATE chambers SET status = 'OK' WHERE id = ?", chamberID)
+	_, _ = tx.Exec("UPDATE sensors SET current_temp = 4.5 WHERE chamber_id = ?", chamberID)
 
 	// Atualiza a excursão
 	_, err = tx.Exec(`UPDATE excursions
@@ -896,6 +908,16 @@ func DecideExcursion(db *sql.DB, excID int64, decision, report, electronicSig, d
 	if err != nil {
 		return err
 	}
+
+	// Também encerra e assina quaisquer alarmes operacionais ativos associados à câmara
+	_, _ = tx.Exec(`UPDATE alarms
+		SET status = 'resolvido', resolved_at = ?, resolved_by = ?, electronic_sig = ?,
+		    action_taken = CASE 
+		        WHEN action_taken IS NULL OR action_taken = '' THEN 'Decisão pericial de excursão: ' || ?
+		        ELSE action_taken || ' | Decisão pericial: ' || ?
+		    END
+		WHERE chamber_id = ? AND status = 'ativo'`,
+		nowStr, decidedBy, electronicSig, decision, decision, chamberID)
 
 	// Histórico nos lotes
 	hDet := fmt.Sprintf("Decisão pericial da excursão %s: %s por %s. Assinatura: %s", code, decision, decidedBy, electronicSig)
@@ -912,7 +934,9 @@ func GetAlarms(db *sql.DB, status string) ([]Alarm, error) {
 	query := `SELECT a.id, a.chamber_id, c.name, COALESCE(a.sensor_id, ''), a.type, a.message,
 	                 COALESCE(a.value, 0.0), COALESCE(a.threshold, 0.0), a.status, a.escalation_level,
 	                 COALESCE(a.acknowledged_by, ''), COALESCE(a.acknowledged_at, ''),
-	                 COALESCE(a.action_taken, ''), a.created_at, COALESCE(a.resolved_at, '')
+	                 COALESCE(a.action_taken, ''), a.created_at, COALESCE(a.resolved_at, ''),
+	                 COALESCE(NULLIF(a.resolved_by, ''), NULLIF(a.acknowledged_by, ''), 'Dra. Mariana Costa (Gerente)') AS resolved_by,
+	                 COALESCE(a.electronic_sig, '') AS electronic_sig
 	          FROM alarms a
 	          JOIN chambers c ON c.id = a.chamber_id
 	          WHERE 1=1`
@@ -934,7 +958,8 @@ func GetAlarms(db *sql.DB, status string) ([]Alarm, error) {
 		var a Alarm
 		if err := rows.Scan(&a.ID, &a.ChamberID, &a.ChamberName, &a.SensorID, &a.Type, &a.Message,
 			&a.Value, &a.Threshold, &a.Status, &a.EscalationLevel,
-			&a.AcknowledgedBy, &a.AcknowledgedAt, &a.ActionTaken, &a.CreatedAt, &a.ResolvedAt); err != nil {
+			&a.AcknowledgedBy, &a.AcknowledgedAt, &a.ActionTaken, &a.CreatedAt, &a.ResolvedAt,
+			&a.ResolvedBy, &a.ElectronicSig); err != nil {
 			return nil, err
 		}
 		list = append(list, a)
@@ -953,32 +978,33 @@ func AcknowledgeAlarm(db *sql.DB, alarmID int64, username, actionTaken string) e
 }
 
 // ResolveAlarm finaliza e encerra o alarme operacional com laudo técnico e retorno à conformidade.
-func ResolveAlarm(db *sql.DB, alarmID int64, username, notes string) error {
+func ResolveAlarm(db *sql.DB, alarmID int64, username, resolvedBy, notes, electronicSig string) error {
 	nowStr := time.Now().Format("2006-01-02 15:04:05")
 
 	// 1. Busca câmara associada ao alarme
 	var chamberID string
 	_ = db.QueryRow("SELECT chamber_id FROM alarms WHERE id = ?", alarmID).Scan(&chamberID)
 
-	// 2. Atualiza status do alarme
+	// 2. Atualiza status do alarme com assinatura eletrônica
 	_, err := db.Exec(`UPDATE alarms
-		SET status = 'resolvido', resolved_at = ?, 
+		SET status = 'resolvido', resolved_at = ?, resolved_by = ?, electronic_sig = ?,
 		    action_taken = CASE 
 		        WHEN action_taken IS NULL OR action_taken = '' THEN ? 
 		        ELSE action_taken || ' | Encerramento (' || ? || '): ' || ? 
 		    END
 		WHERE id = ?`,
-		nowStr, notes, username, notes, alarmID)
+		nowStr, resolvedBy, electronicSig, notes, username, notes, alarmID)
 	if err != nil {
 		return err
 	}
 
-	// 3. Se a câmara não possuir mais nenhum alarme ativo, retorna status para 'OK'
+	// 3. Se a câmara não possuir mais nenhum alarme ativo, retorna status para 'OK' e restabelece sensores normais
 	if chamberID != "" {
 		var activeAlarms int
 		_ = db.QueryRow("SELECT COUNT(*) FROM alarms WHERE chamber_id = ? AND status = 'ativo'", chamberID).Scan(&activeAlarms)
 		if activeAlarms == 0 {
 			_, _ = db.Exec("UPDATE chambers SET status = 'OK' WHERE id = ?", chamberID)
+			_, _ = db.Exec("UPDATE sensors SET current_temp = 4.5 WHERE chamber_id = ? AND current_temp > 8.0", chamberID)
 		}
 	}
 

@@ -151,6 +151,8 @@ type Alarm struct {
 	ActionTaken     string  `json:"action_taken"`
 	CreatedAt       string  `json:"created_at"`
 	ResolvedAt      string  `json:"resolved_at"`
+	ResolvedBy      string  `json:"resolved_by"`
+	ElectronicSig   string  `json:"electronic_sig"`
 }
 
 // LotHistory registra toda movimentação, excursão ou mudança de status sofrida pelo lote.

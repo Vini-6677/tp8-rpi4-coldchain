@@ -2170,7 +2170,7 @@
   <div id="modal-resolve-alarm" class="modal-backdrop">
     <div class="modal-box">
       <div class="modal-header">
-        <div class="modal-title">Encerramento e Laudo de Alarme</div>
+        <div class="modal-title">Encerramento e Laudo de Alarme (21 CFR Part 11)</div>
         <button class="btn-close-modal" onclick="closeResolveAlarmModal()">&times;</button>
       </div>
 
@@ -2186,16 +2186,21 @@
           <textarea id="resolve-alarm-notes" class="form-control" rows="3" placeholder="ex: Temperatura normalizada em 4.5ºC, porta inspecionada, vedação conferida e parâmetros restabelecidos em conformidade." required style="font-size: 13.5px;"></textarea>
         </div>
 
+        <div class="form-group" style="margin-top: 14px;">
+          <label class="form-label">Assinatura Eletrônica (21 CFR Part 11 / Token de Segurança)</label>
+          <input type="password" id="resolve-alarm-signature" class="form-control" placeholder="Digite sua senha para assinar eletronicamente" required style="font-size: 13.5px;">
+        </div>
+
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
           <button type="button" class="btn-cancel" onclick="closeResolveAlarmModal()">Cancelar</button>
-          <button type="submit" class="btn-primary" id="btn-submit-resolve-alarm">Encerrar Alarme</button>
+          <button type="submit" class="btn-primary" id="btn-submit-resolve-alarm">Firmar Laudo e Encerrar Alarme</button>
         </div>
       </form>
     </div>
   </div>
 
 
-  <script src="/static/app.js?v=table_aligned_v19"></script>
+  <script src="/static/app.js?v=alarm_sig_v21"></script>
 
   <!-- =========================================================================
        MODAL 5: CADASTRO DE MEDICAMENTO (CATÁLOGO ANVISA)

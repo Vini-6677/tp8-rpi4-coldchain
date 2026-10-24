@@ -94,7 +94,7 @@ func TestPharmaKPIsAndQualityDossier(t *testing.T) {
 	if err != nil {
 		t.Fatalf("erro ao reconhecer alarme: %v", err)
 	}
-	err = ResolveAlarm(db, 1, "Farmacêutica RT", "Temperatura restabelecida com normalidade")
+	err = ResolveAlarm(db, 1, "Farmacêutica RT", "Dra. Mariana Vasconcelos", "Temperatura restabelecida com normalidade", "SIG-TEST-123")
 	if err != nil {
 		t.Fatalf("erro ao resolver alarme: %v", err)
 	}

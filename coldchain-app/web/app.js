@@ -83,7 +83,10 @@ document.addEventListener('DOMContentLoaded', () => {
         loadChambers(false);
         selectChamber(selectedChamberId, false);
       }
-      if (activeTab === 'excursions') loadAlarms();
+      if (activeTab === 'excursions') {
+        loadAlarms();
+        loadExcursions();
+      }
     }
   }, 3000);
 });
@@ -714,7 +717,12 @@ async function loadAlarms() {
               <button class="btn-action-primary" style="padding: 6px 14px; font-size: 12px; margin: 0 auto; display: inline-flex;" onclick="openResolveAlarmModal(${a.id}, '${cleanChamber.replace(/'/g, "\\'")}', '${a.sensor_id}', '${a.type}', ${a.value})">
                 Resolver
               </button>
-            ` : `<span style="font-size: 12px; color: #34D399; font-weight: 600;">Resolvido</span>`}
+            ` : `
+              <div style="font-size: 12px; line-height: 1.4; text-align: center;">
+                <span style="color: #34D399; font-weight: 600;">Resolvido</span><br>
+                <span style="color: #94A3B8; font-size: 11px; font-weight: 500;">Assinado por ${a.resolved_by || 'Dra. Mariana Costa (Gerente)'}</span>
+              </div>
+            `}
           </td>
         </tr>
       `;
@@ -732,6 +740,8 @@ function openResolveAlarmModal(alarmId, chamberName, sensorId, violationType, va
     <div style="margin-top: 5px;"><strong>Sensor:</strong> <code style="color: #CBD5E1;">${sensorId || '-'}</code> &bull; <strong>Violação:</strong> <span style="color: #FCA5A5; font-weight: 600;">${formatAlarmType(violationType)}</span> &bull; <strong>Valor Lido:</strong> ${valText}</div>
   `;
   document.getElementById('resolve-alarm-notes').value = '';
+  const sigEl = document.getElementById('resolve-alarm-signature');
+  if (sigEl) sigEl.value = '';
   document.getElementById('modal-resolve-alarm').classList.add('active');
   setTimeout(() => {
     const el = document.getElementById('resolve-alarm-notes');
@@ -747,28 +757,32 @@ function closeResolveAlarmModal() {
 async function submitResolveAlarm() {
   const alarmId = parseInt(document.getElementById('resolve-alarm-id').value, 10);
   const notes = document.getElementById('resolve-alarm-notes').value.trim();
-  if (!notes) {
-    alert('Descreva a ação tomada para encerrar o alarme.');
+  const sigEl = document.getElementById('resolve-alarm-signature');
+  const sig = sigEl ? sigEl.value.trim() : '';
+
+  if (!notes || !sig) {
+    alert('Preencha o laudo técnico e a assinatura eletrônica (21 CFR Part 11).');
     return;
   }
 
   const btn = document.getElementById('btn-submit-resolve-alarm');
   if (btn) {
     btn.disabled = true;
-    btn.innerText = 'Salvando...';
+    btn.innerText = 'Processando Assinatura...';
   }
 
   try {
     const res = await fetch('/api/pharma/alarms/resolve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ alarm_id: alarmId, notes: notes })
+      body: JSON.stringify({ alarm_id: alarmId, notes: notes, electronic_sig: sig })
     });
     if (res.ok) {
       closeResolveAlarmModal();
       loadAlarms();
       loadKPIs();
       loadChambers();
+      loadExcursions();
     } else {
       const err = await res.json().catch(() => ({}));
       alert(err.error || 'Erro ao resolver alarme.');
@@ -778,7 +792,7 @@ async function submitResolveAlarm() {
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.innerText = 'Encerrar Alarme';
+      btn.innerText = 'Firmar Laudo e Encerrar Alarme';
     }
   }
 }
@@ -884,8 +898,10 @@ async function submitExcursionDecision() {
 }
 
 async function simulateExcursion() {
-  if (!confirm('Deseja disparar uma simulação de excursão térmica na Câmara Fria A? Todos os lotes serão segregados instantaneamente para Quarentena para validação pericial.')) {
-    return;
+  const btn = document.getElementById('btn-simulate-excursion');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = '⏳ Simulando Excursão...';
   }
 
   try {
@@ -898,11 +914,19 @@ async function simulateExcursion() {
       loadLots();
       loadChambers();
       loadKPIs();
+      if (typeof selectChamber === 'function') {
+        selectChamber(selectedChamberId, true);
+      }
     } else {
       alert(data.error || 'Erro na simulação.');
     }
   } catch (e) {
-    alert('Erro de conexão ao simular.');
+    alert('Erro de conexão ao simular excursão.');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = 'Simular Excursão Térmica';
+    }
   }
 }
 

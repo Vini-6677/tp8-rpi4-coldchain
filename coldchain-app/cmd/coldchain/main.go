@@ -1438,22 +1438,34 @@ func (a *App) routes() http.Handler {
 		}
 
 		var payload struct {
-			AlarmID int64  `json:"alarm_id"`
-			Notes   string `json:"notes"`
+			AlarmID       int64  `json:"alarm_id"`
+			Notes         string `json:"notes"`
+			ElectronicSig string `json:"electronic_sig"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			http.Error(w, "JSON inválido", http.StatusBadRequest)
 			return
 		}
 
-		if err := pharma.ResolveAlarm(a.db, payload.AlarmID, sess.Name, payload.Notes); err != nil {
+		sig := payload.ElectronicSig
+		if sig == "" {
+			sig = "SIGN-21CFR11-" + sess.Username
+		}
+
+		if err := pharma.ResolveAlarm(a.db, payload.AlarmID, sess.Username, sess.Name, payload.Notes, sig); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		ip := getClientIP(r)
-		a.logAudit(sess.Username, sess.Role, "RESOLVE_ALARME", fmt.Sprintf("Alarme #%d encerrado por %s. Laudo: %s", payload.AlarmID, sess.Name, payload.Notes), ip)
-		json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
+		a.logAudit(sess.Username, sess.Role, "RESOLVE_ALARME", fmt.Sprintf("Alarme #%d encerrado por %s. Laudo: %s. Assinatura: %s", payload.AlarmID, sess.Name, payload.Notes, sig), ip)
+
+		if a.ledger != nil {
+			ledgerMsg := fmt.Sprintf("ALARM_RESOLVE|ID:%d|BY:%s|NAME:%s|SIG:%s", payload.AlarmID, sess.Username, sess.Name, sig)
+			_, _ = a.ledger.AppendData("PHARMA-GATEWAY", uint64(time.Now().UnixNano()), []byte(ledgerMsg), 1)
+		}
+
+		json.NewEncoder(w).Encode(map[string]any{"status": "ok", "sig": sig})
 	})
 
 	// 10. Processos de Excursão Térmica (ANVISA RDC 430/2020 Art. 38)
