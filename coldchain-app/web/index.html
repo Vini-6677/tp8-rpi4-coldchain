@@ -1168,6 +1168,65 @@
       cursor: pointer;
     }
 
+    .btn-cancel {
+      background: rgba(15, 23, 42, 0.65);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      color: #94A3B8;
+      padding: 9px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      user-select: none;
+    }
+
+    .btn-cancel:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.35);
+      color: #F8FAFC;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    .btn-cancel:active {
+      transform: translateY(0);
+      box-shadow: none;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #2563EB, #1D4ED8);
+      border: 1px solid rgba(59, 130, 246, 0.5);
+      color: #FFFFFF;
+      padding: 9px 22px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+      user-select: none;
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #1D4ED8, #1E40AF);
+      border-color: rgba(96, 165, 250, 0.8);
+      color: #FFFFFF;
+      box-shadow: 0 6px 18px rgba(37, 99, 235, 0.5);
+      transform: translateY(-1px);
+    }
+
+    .btn-primary:active {
+      transform: translateY(0);
+      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
+    }
+
     .alert-box {
       background: rgba(239, 68, 68, 0.12);
       border: 1px solid rgba(239, 68, 68, 0.3);
@@ -1938,7 +1997,7 @@
         </div>
 
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
-          <button type="button" class="btn-logout" style="color:#94A3B8; border-color:#334155; background:transparent;" onclick="closeEntryModal()">Cancelar</button>
+          <button type="button" class="btn-cancel" onclick="closeEntryModal()">Cancelar</button>
           <button type="submit" class="btn-action-primary">Registrar Recebimento na Doca</button>
         </div>
       </form>
@@ -1995,7 +2054,7 @@
         </div>
 
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
-          <button type="button" class="btn-logout" style="color:#94A3B8; border-color:#334155; background:transparent;" onclick="closeExitModal()">Cancelar</button>
+          <button type="button" class="btn-cancel" onclick="closeExitModal()">Cancelar</button>
           <button type="submit" class="btn-action-dispensation">Confirmar Saída (Por Validade)</button>
         </div>
       </form>
@@ -2053,14 +2112,14 @@
         </div>
 
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
-          <button type="button" class="btn-logout" style="color:#94A3B8; border-color:#334155; background:transparent;" onclick="closeDecisionModal()">Cancelar</button>
+          <button type="button" class="btn-cancel" onclick="closeDecisionModal()">Cancelar</button>
           <button type="submit" class="btn-action-primary">Firmar Parecer e Concluir Decisão</button>
         </div>
       </form>
     </div>
   </div>
 
-  <script src="/static/app.js?v=new_chamber_v10"></script>
+  <script src="/static/app.js?v=modal_buttons_v12"></script>
 
   <!-- =========================================================================
        MODAL 5: CADASTRO DE MEDICAMENTO (CATÁLOGO ANVISA)
@@ -2195,7 +2254,7 @@
 
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 1rem;">
           <button type="button" class="btn-cancel" onclick="closeNewChamberModal()">Cancelar</button>
-          <button type="submit" class="btn-primary">Cadastrar Equipamento</button>
+          <button type="submit" class="btn-primary" id="btn-submit-chamber">Adicionar Geladeira</button>
         </div>
       </form>
     </div>
