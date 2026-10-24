@@ -2648,26 +2648,22 @@ function closeTraceModal() {
 // DESCOMISSIONAMENTO E BAIXA REGULATÓRIA DE CÂMARAS (ANVISA RDC 430 & 21 CFR 11)
 // ==============================================================================
 function openDecommissionModal() {
-  const currentChamber = chambersData ? chambersData.find(c => c.id === selectedChamberId) : null;
-  if (!currentChamber) {
-    alert('Nenhuma câmara selecionada para descomissionamento.');
+  if (!chambersData || chambersData.length === 0) {
+    alert('Nenhuma câmara disponível no sistema.');
     return;
   }
 
   const m = document.getElementById('modal-decommission-chamber');
   if (!m) return;
 
-  const elName = document.getElementById('decom-chamber-name');
-  const elId = document.getElementById('decom-chamber-id');
-  const elRange = document.getElementById('decom-chamber-range');
-  const elLots = document.getElementById('decom-chamber-lots');
-  const elSensors = document.getElementById('decom-chamber-sensors');
+  const select = document.getElementById('decom-chamber-select');
+  if (select) {
+    select.innerHTML = chambersData.map(c => 
+      `<option value="${c.id}" ${c.id === selectedChamberId ? 'selected' : ''}>${c.name} (${c.id})</option>`
+    ).join('');
+  }
 
-  if (elName) elName.innerText = currentChamber.name;
-  if (elId) elId.innerText = currentChamber.id;
-  if (elRange) elRange.innerText = `${currentChamber.temp_min.toFixed(1).replace('.', ',')} °C a ${currentChamber.temp_max.toFixed(1).replace('.', ',')} °C`;
-  if (elLots) elLots.innerText = `${currentChamber.quarantined_lots_count || 0} lotes ativos`;
-  if (elSensors) elSensors.innerText = `${sensorsData ? sensorsData.length : currentChamber.sensor_count} sensores vinculados`;
+  updateDecomChamberDetails(selectedChamberId || chambersData[0].id);
 
   const sigName = document.getElementById('decom-resp-name');
   if (sigName) {
@@ -2675,6 +2671,29 @@ function openDecommissionModal() {
   }
 
   m.classList.add('active');
+}
+
+function onDecomChamberSelectChange() {
+  const select = document.getElementById('decom-chamber-select');
+  if (!select) return;
+  updateDecomChamberDetails(select.value);
+}
+
+function updateDecomChamberDetails(chamberId) {
+  const c = chambersData ? chambersData.find(item => item.id === chamberId) : null;
+  if (!c) return;
+
+  const elName = document.getElementById('decom-chamber-name');
+  const elId = document.getElementById('decom-chamber-id');
+  const elRange = document.getElementById('decom-chamber-range');
+  const elLots = document.getElementById('decom-chamber-lots');
+  const elSensors = document.getElementById('decom-chamber-sensors');
+
+  if (elName) elName.innerText = c.name;
+  if (elId) elId.innerText = c.id;
+  if (elRange) elRange.innerText = `${c.temp_min.toFixed(1).replace('.', ',')} °C a ${c.temp_max.toFixed(1).replace('.', ',')} °C`;
+  if (elLots) elLots.innerText = `${c.quarantined_lots_count || 0} lotes ativos`;
+  if (elSensors) elSensors.innerText = `${c.sensor_count || 0} sensores vinculados`;
 }
 
 function closeDecommissionModal() {
@@ -2685,11 +2704,17 @@ function closeDecommissionModal() {
 }
 
 async function submitDecommissionChamber() {
+  const select = document.getElementById('decom-chamber-select');
+  const targetChamberId = select ? select.value : selectedChamberId;
   const reason = document.getElementById('decom-reason').value;
   const just = document.getElementById('decom-justification').value.trim();
   const sensorAction = document.getElementById('decom-sensor-action').value;
   const pwd = document.getElementById('decom-password').value;
 
+  if (!targetChamberId) {
+    alert('Selecione uma câmara para descomissionar.');
+    return;
+  }
   if (!just) {
     alert('Preencha o parecer técnico com a justificativa de descomissionamento.');
     return;
@@ -2702,7 +2727,7 @@ async function submitDecommissionChamber() {
   const btn = document.getElementById('btn-submit-decom');
   if (btn) {
     btn.disabled = true;
-    btn.innerText = 'Processando Baixa no Ledger...';
+    btn.innerText = 'Processando Descomissionamento no Ledger...';
   }
 
   try {
@@ -2710,7 +2735,7 @@ async function submitDecommissionChamber() {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        chamber_id: selectedChamberId,
+        chamber_id: targetChamberId,
         reason: reason,
         justification: just,
         sensor_action: sensorAction,
@@ -2720,23 +2745,24 @@ async function submitDecommissionChamber() {
 
     const data = await res.json();
     if (!res.ok) {
-      alert('Falha no descomissionamento: ' + (data.error || 'Erro na validação regulatória.'));
+      alert(`Falha no descomissionamento: ${data.error || 'Erro na validação regulatória.'}`);
       return;
     }
 
     alert(data.message || 'Equipamento descomissionado com sucesso!');
     closeDecommissionModal();
 
-    // Redireciona a visualização para a Câmara padrão
-    selectedChamberId = 'CH-A';
     await loadChambers(true);
-  } catch (e) {
-    console.error('Erro ao descomissionar câmara:', e);
+    if (chambersData && chambersData.length > 0) {
+      selectChamber(chambersData[0].id);
+    }
+  } catch (err) {
+    console.error('Erro ao descomissionar câmara:', err);
     alert('Erro de comunicação ao efetuar baixa do equipamento.');
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.innerText = 'Confirmar Baixa do Equipamento';
+      btn.innerText = 'Confirmar Descomissionamento';
     }
   }
 }
