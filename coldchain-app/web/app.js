@@ -1392,16 +1392,17 @@ async function loadQualityDossier() {
     if (popsTbody && dossier.pops) {
       popsTbody.innerHTML = dossier.pops.map(p => `
         <tr>
-          <td><strong style="color:#38bdf8">${p.code}</strong></td>
-          <td>${p.title}</td>
-          <td><span class="tag-badge tag-blue">${p.version}</span></td>
-          <td>${p.last_review}</td>
-          <td>${p.next_review}</td>
-          <td>${p.responsible}</td>
-          <td><span class="tag-badge tag-green">${p.status}</span></td>
-          <td style="display:flex; gap:6px;">
-            <button class="btn-table-action" onclick="alert('Exibindo documento oficial auditado:\n' + '${p.code} - ${p.title}\nVersão: ${p.version}\nResponsável: ${p.responsible}\nStatus: 100% VIGENTE')">Visualizar</button>
-            <button class="btn-action-secondary" style="padding:2px 8px; font-size:11px;" onclick="openEditPOPModal('${p.code}')">Revisar</button>
+          <td style="text-align: center; white-space: nowrap;"><strong style="color: #38BDF8; font-family: monospace; font-size: 13px;">${p.code}</strong></td>
+          <td style="font-weight: 600; color: #F1F5F9; font-size: 13px; line-height: 1.4;">${p.title}</td>
+          <td style="text-align: center; white-space: nowrap;"><span class="tag-badge tag-blue" style="font-size: 11px; font-weight: 700;">${p.version}</span></td>
+          <td style="text-align: center; font-family: monospace; font-size: 12px; color: #CBD5E1; white-space: nowrap;">${p.last_review}</td>
+          <td style="text-align: center; font-family: monospace; font-size: 12px; color: #38BDF8; font-weight: 600; white-space: nowrap;">${p.next_review}</td>
+          <td style="text-align: center; font-size: 12.5px; color: #E2E8F0; white-space: nowrap;">${p.responsible}</td>
+          <td style="text-align: center; white-space: nowrap;">
+            <div style="display: inline-flex; gap: 6px; justify-content: center;">
+              <button class="btn-action-primary" style="padding: 4px 10px; font-size: 11px;" onclick="openViewPOPModal('${p.code}', '${p.title.replace(/'/g, "\\'")}', '${p.version}', '${p.responsible}', '${p.last_review}', '${p.next_review}')">Visualizar</button>
+              <button class="btn-action-secondary" style="padding: 4px 9px; font-size: 11px;" onclick="openEditPOPModal('${p.code}')">Revisar</button>
+            </div>
           </td>
         </tr>
       `).join('');
@@ -1409,45 +1410,54 @@ async function loadQualityDossier() {
 
     // 2. Qualificações DQ/IQ/OQ/PQ
     const qualsTbody = document.getElementById('quality-quals-tbody');
-    if (qualsTbody) {
-      qualsTbody.innerHTML = dossier.qualifications.map(q => `
-        <tr>
-          <td><strong style="color:#38bdf8">${q.chamber_id}</strong></td>
-          <td><strong>${q.chamber_name}</strong></td>
-          <td><span class="tag-badge tag-purple">${q.stage}</span></td>
-          <td>${q.report_number}</td>
-          <td>${q.executed_by}</td>
-          <td><span style="color:#52d68a; font-weight:600;">${q.thermal_autonomy}</span></td>
-          <td>${q.valid_until}</td>
-          <td><span class="tag-badge tag-green">${q.status}</span></td>
-        </tr>
-      `).join('');
+    if (qualsTbody && dossier.qualifications) {
+      qualsTbody.innerHTML = dossier.qualifications.map(q => {
+        const cleanChamber = q.chamber_name.replace(/\s*\(RDC[^\)]*\)/gi, '');
+        return `
+          <tr>
+            <td style="text-align: center; white-space: nowrap;"><strong style="color: #38BDF8; font-family: monospace; font-size: 13.5px;">${q.chamber_id}</strong></td>
+            <td style="font-weight: 600; color: #F1F5F9; font-size: 13px; line-height: 1.35;">${cleanChamber}</td>
+            <td style="text-align: center; white-space: nowrap;"><span class="tag-badge tag-purple" style="font-size: 11px; font-weight: 700;">${q.stage}</span></td>
+            <td style="text-align: center; white-space: nowrap;"><code style="font-size: 12px; color: #CBD5E1; background: rgba(255,255,255,0.06); padding: 3px 8px; border-radius: 4px; font-family: monospace;">${q.report_number}</code></td>
+            <td style="font-size: 12.5px; color: #CBD5E1;">${q.executed_by}</td>
+            <td style="text-align: center; white-space: nowrap;"><span style="color: #34D399; font-weight: 700; font-size: 12.5px;">${q.thermal_autonomy}</span></td>
+            <td style="text-align: center; font-family: monospace; font-size: 12px; color: #94A3B8; white-space: nowrap;">${q.valid_until}</td>
+          </tr>
+        `;
+      }).join('');
     }
 
     // 3. Treinamentos da Equipe
     const trainsTbody = document.getElementById('quality-trainings-tbody');
-    if (trainsTbody) {
-      trainsTbody.innerHTML = dossier.trainings.map(t => `
-        <tr>
-          <td><strong>${t.employee_name}</strong></td>
-          <td>${t.role}</td>
-          <td><span style="color:#93c5fd; font-size:0.75rem;">${t.pop_code}</span></td>
-          <td><span style="color:#52d68a; font-weight:700;">${t.score_pct}%</span></td>
-          <td><span class="tag-badge tag-green">${t.status}</span></td>
-        </tr>
-      `).join('');
+    if (trainsTbody && dossier.trainings) {
+      trainsTbody.innerHTML = dossier.trainings.map(t => {
+        const popsBadges = t.pop_code.split(',').map(c => `<span class="tag-badge tag-blue" style="font-size: 10.5px; padding: 2px 6px; margin: 1px;">${c.trim()}</span>`).join('');
+        return `
+          <tr>
+            <td style="font-weight: 600; color: #F1F5F9; font-size: 13px;">${t.employee_name}</td>
+            <td style="font-size: 12.5px; color: #94A3B8;">${t.role}</td>
+            <td style="text-align: center; line-height: 1.6;">${popsBadges}</td>
+            <td style="text-align: center; white-space: nowrap;">
+              <span style="color: #34D399; font-weight: 700; font-size: 13px;">${t.score_pct}%</span>
+              <span class="tag-badge tag-green" style="font-size: 10px; padding: 2px 6px; margin-left: 4px;">APTO</span>
+            </td>
+          </tr>
+        `;
+      }).join('');
     }
 
     // 4. Checklist Autoinspeção RDC 430
     const checkContainer = document.getElementById('quality-checklist-container');
-    if (checkContainer) {
-      checkContainer.innerHTML = dossier.checklist_items.map((item, idx) => `
-        <div class="checklist-row">
-          <div>
-            <div style="font-weight:600; color:#ffffff; margin-bottom:0.15rem;">${item.item}</div>
-            <div style="font-size:0.72rem; color:var(--text-muted);">${item.requirement} • <em style="color:#93c5fd;">Evidência: ${item.evidence}</em></div>
+    if (checkContainer && dossier.checklist_items) {
+      checkContainer.innerHTML = dossier.checklist_items.map(item => `
+        <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 8px; padding: 12px 14px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; gap: 14px; transition: all 0.2s ease;">
+          <div style="flex: 1;">
+            <div style="font-weight: 700; color: #F1F5F9; font-size: 13px; margin-bottom: 3px;">${item.item}</div>
+            <div style="font-size: 12px; color: #94A3B8; line-height: 1.4;">
+              ${item.requirement} &bull; <span style="color: #38BDF8; font-family: monospace; font-size: 11.5px;">Evidência: ${item.evidence}</span>
+            </div>
           </div>
-          <span class="tag-badge tag-green" style="flex-shrink:0;">100% Conforme</span>
+          <span class="tag-badge tag-green" style="font-size: 11px; padding: 4px 9px; font-weight: 700; white-space: nowrap; flex-shrink: 0;">100% Conforme</span>
         </div>
       `).join('');
     }
@@ -1455,6 +1465,36 @@ async function loadQualityDossier() {
     console.error('Erro ao carregar dossiê da qualidade:', e);
   }
 }
+
+function openViewPOPModal(code, title, version, resp, lastRev, nextRev) {
+  const m = document.getElementById('modal-view-pop');
+  if (!m) return;
+  document.getElementById('view-pop-modal-title').innerText = `${code} — ${title}`;
+  document.getElementById('view-pop-modal-body').innerHTML = `
+    <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 14px; margin-bottom: 14px;">
+      <div style="display: flex; gap: 10px; margin-bottom: 8px;">
+        <span class="tag-badge tag-blue">${version}</span>
+        <span class="tag-badge tag-green">Status: 100% VIGENTE</span>
+        <span class="tag-badge tag-purple">ANVISA BPDA</span>
+      </div>
+      <div><strong>Responsável Técnico:</strong> <span style="color: #38BDF8;">${resp}</span></div>
+      <div style="margin-top: 4px;"><strong>Última Revisão:</strong> <code style="color: #CBD5E1;">${lastRev}</code> &bull; <strong>Próxima Revisão:</strong> <code style="color: #38BDF8;">${nextRev}</code></div>
+    </div>
+    <div style="font-size: 13px; color: #E2E8F0; line-height: 1.55;">
+      <p style="margin-bottom: 8px;"><strong>Objetivo e Escopo Operacional:</strong><br>
+      Padronizar e normatizar todas as rotinas críticas de cadeia fria para garantia da integridade biológica e farmacológica dos produtos termolábeis em conformidade com as RDC 430/2020 e RDC 197/2017 da ANVISA.</p>
+      <p style="margin-bottom: 0;"><strong>Trilha de Validação e Assinatura:</strong><br>
+      Documento digital assinado eletronicamente sob diretrizes da FDA 21 CFR Part 11 e arquivado de forma imutável no Ledger Criptográfico SHA-256 do Gateway ColdChain.</p>
+    </div>
+  `;
+  m.classList.add('active');
+}
+
+function closeViewPOPModal() {
+  const m = document.getElementById('modal-view-pop');
+  if (m) m.classList.remove('active');
+}
+
 
 
 function downloadDossierPDF() {
