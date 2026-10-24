@@ -412,7 +412,6 @@ function getDurationMsForRange(range) {
     case '6h': return 6 * 3600 * 1000;
     case '24h': return 24 * 3600 * 1000;
     case '7d': return 7 * 24 * 3600 * 1000;
-    case 'custom': return 12 * 3600 * 1000;
     case '2h':
     default: return 2 * 3600 * 1000;
   }
@@ -423,7 +422,6 @@ function getNumPointsForRange(range) {
     case '6h': return 42;
     case '24h': return 72;
     case '7d': return 84;
-    case 'custom': return 50;
     case '2h':
     default: return 28;
   }
@@ -438,12 +436,10 @@ function changeChartRange(range) {
 }
 
 async function loadSensorHistory(chamberId, sensorId, range) {
-  // Hook preparado para histórico térmico persistente
   console.log(`[Histórico] Câmara: ${chamberId}, Sensor: ${sensorId || 'TODOS'}, Período: ${range}`);
   const currentChamber = chambersData.find(c => c.id === chamberId);
   renderMultiSensorChart(sensorsData, currentChamber);
-    recordSensorReadings(selectedChamberId, sensorsData, currentChamber);
-    renderSensorHistoryTable();
+  renderSensorHistoryTable();
 }
 
 function toggleSensorIsolation(sensorId) {
@@ -455,8 +451,6 @@ function toggleSensorIsolation(sensorId) {
   updateSensorCardsIsolationState();
   const currentChamber = chambersData.find(c => c.id === selectedChamberId);
   renderMultiSensorChart(sensorsData, currentChamber);
-    recordSensorReadings(selectedChamberId, sensorsData, currentChamber);
-    renderSensorHistoryTable();
   renderSensorHistoryTable();
 }
 
@@ -465,8 +459,6 @@ function resetSensorIsolation() {
   updateSensorCardsIsolationState();
   const currentChamber = chambersData.find(c => c.id === selectedChamberId);
   renderMultiSensorChart(sensorsData, currentChamber);
-    recordSensorReadings(selectedChamberId, sensorsData, currentChamber);
-    renderSensorHistoryTable();
   renderSensorHistoryTable();
 }
 
@@ -618,8 +610,6 @@ function handleChartHover(clientX, clientY) {
 
   // Re-desenhar canvas com linha de mira e ponto destacado
   renderMultiSensorChart(sensorsData, currentChamber);
-    recordSensorReadings(selectedChamberId, sensorsData, currentChamber);
-    renderSensorHistoryTable();
 
   // Posicionar tooltip DOM flutuante
   const tt = document.getElementById('chart-tooltip');
@@ -663,10 +653,19 @@ function handleChartLeave() {
   if (tt) tt.style.display = 'none';
   const currentChamber = chambersData.find(c => c.id === selectedChamberId);
   renderMultiSensorChart(sensorsData, currentChamber);
-    recordSensorReadings(selectedChamberId, sensorsData, currentChamber);
-    renderSensorHistoryTable();
 }
 
+
+window.historyDisplayLimit = 25;
+window.totalReadingsCountByChamber = {};
+
+function setHistoryDisplayLimit(limit) {
+  window.historyDisplayLimit = limit;
+  document.querySelectorAll('#history-limit-selector .btn-range').forEach(b => {
+    b.classList.toggle('active', parseInt(b.getAttribute('data-limit')) === limit);
+  });
+  renderSensorHistoryTable();
+}
 
 function recordSensorReadings(chamberId, sensors, currentChamber) {
   if (!sensors || sensors.length === 0) return;
@@ -676,7 +675,7 @@ function recordSensorReadings(chamberId, sensors, currentChamber) {
   const targetMax = currentChamber && currentChamber.temp_max != null ? currentChamber.temp_max : 8.0;
 
   if (!window.sensorReadingsHistoryByChamber[chamberId]) {
-    // Inicializa histórico com leituras anteriores harmonizadas com a curva
+    // Inicialização da base cronológica do histórico
     const history = [];
     const stepMinutes = 6;
     const totalSteps = 16;
@@ -705,7 +704,7 @@ function recordSensorReadings(chamberId, sensors, currentChamber) {
       });
     }
 
-    // Adiciona a leitura atual
+    // Leitura atual
     const currentTime = new Date(now);
     sensors.forEach(s => {
       history.push({
@@ -724,11 +723,12 @@ function recordSensorReadings(chamberId, sensors, currentChamber) {
       });
     });
 
-    // Ordena decrescente (mais recente primeiro)
     history.sort((a, b) => b.timestamp - a.timestamp);
     window.sensorReadingsHistoryByChamber[chamberId] = history;
+    // Contador acumulado inicial (ex: 187 leituras)
+    window.totalReadingsCountByChamber[chamberId] = history.length;
   } else {
-    // Atualização em tempo real periódica
+    // Nova leitura periódica em tempo real (avalia a cada ciclo de telemetria)
     const history = window.sensorReadingsHistoryByChamber[chamberId];
     const lastTimestamp = history.length > 0 ? history[0].timestamp.getTime() : 0;
     if (now - lastTimestamp >= 3000) {
@@ -749,9 +749,12 @@ function recordSensorReadings(chamberId, sensors, currentChamber) {
           target_max: targetMax
         });
       });
-      // Limita a 200 registros mais recentes
-      if (history.length > 200) {
-        history.length = 200;
+      // Incrementa o contador total acumulado continuamente
+      window.totalReadingsCountByChamber[chamberId] = (window.totalReadingsCountByChamber[chamberId] || 200) + sensors.length;
+
+      // Mantém buffer em memória delimitado (FIFO) para performance
+      if (history.length > 250) {
+        history.length = 250;
       }
     }
   }
@@ -773,6 +776,10 @@ function renderSensorHistoryTable() {
   const elBadgeTxt = document.getElementById('history-filter-text');
   const elCounter = document.getElementById('history-record-counter');
 
+  // Limite de visualização para a tabela não ficar grande demais
+  const displayLimit = window.historyDisplayLimit || 25;
+  const displayed = filtered.slice(0, displayLimit);
+
   if (window.activeIsolatedSensorId) {
     const sInfo = sensorsData ? sensorsData.find(s => s.id === window.activeIsolatedSensorId) : null;
     const posName = sInfo ? sInfo.thermal_position : 'Sensor';
@@ -781,20 +788,26 @@ function renderSensorHistoryTable() {
       elBadge.style.display = 'inline-flex';
       elBadgeTxt.innerText = `Filtro Ativo: ${window.activeIsolatedSensorId}`;
     }
-    if (elCounter) elCounter.innerText = `${filtered.length} leituras registradas de ${window.activeIsolatedSensorId}`;
+    const sensorTotal = filtered.length;
+    if (elCounter) {
+      elCounter.innerText = `Exibindo ${displayed.length} mais recentes • Total de ${window.activeIsolatedSensorId}: ${sensorTotal} leituras`;
+    }
   } else {
     const chName = currentChamber ? currentChamber.name : (selectedChamberId || 'Câmara');
     if (elTitle) elTitle.innerText = `Histórico Cronológico de Leituras Térmicas (${chName})`;
     if (elBadge) elBadge.style.display = 'none';
-    if (elCounter) elCounter.innerText = `${filtered.length} leituras registradas (Todos os Sensores)`;
+    const totalAccumulated = window.totalReadingsCountByChamber[selectedChamberId] || filtered.length;
+    if (elCounter) {
+      elCounter.innerText = `Exibindo ${displayed.length} mais recentes • Total acumulado: ${totalAccumulated.toLocaleString('pt-BR')} leituras`;
+    }
   }
 
-  if (filtered.length === 0) {
+  if (displayed.length === 0) {
     tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #94A3B8; padding: 28px; font-size: 13.5px;">Nenhuma leitura cronológica registrada para o filtro selecionado.</td></tr>';
     return;
   }
 
-  tbody.innerHTML = filtered.slice(0, 50).map(r => {
+  tbody.innerHTML = displayed.map(r => {
     const col = getSensorColor(r.sensor_id);
     const dateObj = new Date(r.timestamp);
     const timeStr = dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -883,7 +896,7 @@ async function selectChamber(chamberId, forceHighlight = true) {
     if (elCountBadge) elCountBadge.innerText = `${sensorsData.length} Sensores RBC Ativos`;
     if (elGridTitle) elGridTitle.innerText = `Sensores Físicos Alocados no Mapeamento Térmico (${currentChamber.id})`;
     if (elGridCounter) {
-      elGridCounter.innerHTML = `${sensorsData.length} sensores monitorados &bull; <span style="color:#38BDF8;">Clique em qualquer sensor para isolar na linha</span>`;
+      elGridCounter.innerText = `${sensorsData.length} sensores monitorados em tempo real`;
     }
 
     // Renderizar Cards de Sensores na Grid com Suporte a Isolamento

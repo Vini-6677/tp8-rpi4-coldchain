@@ -857,22 +857,7 @@
       filter: none !important;
     }
 
-    .sensor-item-card.is-isolated::before {
-      content: 'ISOLADO NO GRÁFICO';
-      position: absolute;
-      top: -10px;
-      right: 12px;
-      background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%);
-      color: #FFFFFF;
-      font-size: 9px;
-      font-weight: 800;
-      letter-spacing: 0.6px;
-      padding: 2px 8px;
-      border-radius: 10px;
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
-      z-index: 2;
-    }
+    
 
     .sensor-item-card.is-dimmed {
       opacity: 0.35;
@@ -1725,7 +1710,6 @@
                 <button class="btn-range" data-range="6h" onclick="changeChartRange('6h')">6h</button>
                 <button class="btn-range" data-range="24h" onclick="changeChartRange('24h')">24h</button>
                 <button class="btn-range" data-range="7d" onclick="changeChartRange('7d')">7 Dias</button>
-                <button class="btn-range" data-range="custom" onclick="changeChartRange('custom')">Personalizado</button>
               </div>
             </div>
           </div>
@@ -1750,7 +1734,7 @@
           <div style="margin-top: 18px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px;">
               <div style="font-size: 13px; font-weight: 700; color:#CBD5E1;" id="sensors-grid-title">Sensores Físicos Alocados no Mapeamento Térmico</div>
-              <span style="font-size:11px; color:#64748B;" id="sensors-grid-counter">11 sensores monitorados &bull; <span style="color:#38BDF8;">Clique em qualquer sensor para isolar na linha</span></span>
+              <span style="font-size:11px; color:#64748B;" id="sensors-grid-counter">11 sensores monitorados em tempo real</span>
             </div>
             <div class="sensors-grid" id="chamber-sensors-grid">
               <!-- Preenchido dinamicamente -->
@@ -1765,11 +1749,20 @@
               <span id="history-panel-title">Histórico Cronológico de Leituras dos Sensores</span>
             </div>
 
-            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
               <div id="history-filter-badge" style="display: none;">
                 <span class="tag-badge tag-blue" id="history-filter-text">Sensor: S01</span>
               </div>
-              <span style="font-size: 11px; color: #94A3B8;" id="history-record-counter">Carregando leituras...</span>
+              <div class="chart-range-group" id="history-limit-selector" style="font-size: 11px;">
+                <span style="color: #64748B; padding: 4px 6px; font-weight: 600;">Exibir:</span>
+                <button class="btn-range active" data-limit="25" onclick="setHistoryDisplayLimit(25)">25</button>
+                <button class="btn-range" data-limit="50" onclick="setHistoryDisplayLimit(50)">50</button>
+                <button class="btn-range" data-limit="100" onclick="setHistoryDisplayLimit(100)">100</button>
+              </div>
+              <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: #94A3B8;">
+                <span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #10B981; box-shadow: 0 0 8px #10B981;"></span>
+                <span id="history-record-counter">Carregando leituras...</span>
+              </div>
             </div>
           </div>
 
@@ -2302,7 +2295,7 @@
   </div>
 
 
-  <script src="/static/app.js?v=history_table_v27"></script>
+  <script src="/static/app.js?v=clean_history_v28"></script>
 
   <!-- =========================================================================
        MODAL 5: CADASTRO DE MEDICAMENTO (CATÁLOGO ANVISA)
