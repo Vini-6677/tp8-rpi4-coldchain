@@ -305,11 +305,11 @@ async function loadChambers(renderDetail = true) {
         <div class="chamber-stats-card">
           <div class="chamber-stat-cell">
             <div class="chamber-stat-label">Mín. 24 h</div>
-            <div class="chamber-stat-val" style="color:#93C5FD;">${c.min_temp_24h.toFixed(1).replace('.', ',')}°</div>
+            <div class="chamber-stat-val" style="color:${c.min_temp_24h < c.temp_min ? '#EF4444' : '#93C5FD'};" title="Temperatura mínima registrada nas últimas 24 horas">${c.min_temp_24h.toFixed(1).replace('.', ',')}°</div>
           </div>
           <div class="chamber-stat-cell">
             <div class="chamber-stat-label">Máx. 24 h</div>
-            <div class="chamber-stat-val" style="color:${c.max_temp_24h > c.temp_max ? '#EF4444' : '#FFFFFF'};">${c.max_temp_24h.toFixed(1).replace('.', ',')}°</div>
+            <div class="chamber-stat-val" style="color:${c.max_temp_24h > c.temp_max ? '#EF4444' : '#FFFFFF'};" title="Temperatura máxima registrada nas últimas 24 horas">${c.max_temp_24h.toFixed(1).replace('.', ',')}°</div>
           </div>
           <div class="chamber-stat-cell">
             <div class="chamber-stat-label">Sensores</div>
