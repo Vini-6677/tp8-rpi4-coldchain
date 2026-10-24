@@ -134,6 +134,16 @@ function showApp() {
     }
   }
 
+  // Permissão para simulação de excursão (Gerente RT / Administrador)
+  const btnSimulateExc = document.getElementById('btn-simulate-excursion');
+  if (btnSimulateExc) {
+    if (currentUser.role === 'gerente' || currentUser.role === 'admin') {
+      btnSimulateExc.style.display = 'inline-flex';
+    } else {
+      btnSimulateExc.style.display = 'none';
+    }
+  }
+
   // Carrega dados iniciais
   loadKPIs();
   loadChambers();
@@ -651,6 +661,67 @@ function renderMultiSensorChart(sensors, currentChamber) {
   });
 }
 
+function formatAlarmType(type) {
+  switch (type) {
+    case 'temperatura_alta': return 'Temp. Alta (Excursão)';
+    case 'temperatura_baixa': return 'Temp. Baixa (Sub-resfriamento)';
+    case 'sensor_offline': return 'Sensor Sem Sinal / Offline';
+    case 'falha_energia': return 'Falha na Rede Elétrica';
+    case 'porta_aberta': return 'Porta Aberta Prolongada';
+    case 'bateria_baixa': return 'Bateria Crítica';
+    default: return type ? type.replace(/_/g, ' ') : 'Alarme Operacional';
+  }
+}
+
+async function loadAlarms() {
+  try {
+    const res = await fetch('/api/pharma/alarms');
+    if (!res.ok) return;
+    const list = await res.json();
+
+    const tbody = document.getElementById('alarms-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    const countBadge = document.getElementById('alarms-count-badge');
+    const activeAlarms = list.filter(a => a.status === 'ativo');
+    if (countBadge) {
+      countBadge.innerText = `${activeAlarms.length} ativo${activeAlarms.length !== 1 ? 's' : ''}`;
+      countBadge.style.color = activeAlarms.length > 0 ? '#F59E0B' : '#94A3B8';
+      countBadge.style.borderColor = activeAlarms.length > 0 ? 'rgba(245, 158, 11, 0.4)' : 'rgba(255, 255, 255, 0.1)';
+      countBadge.style.background = activeAlarms.length > 0 ? 'rgba(245, 158, 11, 0.12)' : 'rgba(255, 255, 255, 0.05)';
+    }
+
+    if (list.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #94A3B8; padding: 22px; font-size: 13px; font-weight: 500;">Nenhum alarme operacional ativo no momento. Todos os parâmetros operam em conformidade.</td></tr>';
+      return;
+    }
+
+    list.forEach(a => {
+      const isResolved = a.status === 'resolvido';
+      tbody.innerHTML += `
+        <tr>
+          <td style="text-align: center;"><strong style="color: #38BDF8;">${a.chamber_name || a.chamber_id}</strong></td>
+          <td style="text-align: center;"><code style="color: #CBD5E1; background: rgba(255,255,255,0.06); padding: 2px 7px; border-radius: 4px; font-size: 11px;">${a.sensor_id || '-'}</code></td>
+          <td style="text-align: center;"><span style="color: ${isResolved ? '#94A3B8' : '#FCA5A5'}; font-size: 12px; font-weight: 600;">${formatAlarmType(a.type)}</span></td>
+          <td style="color: #E2E8F0; font-size: 12.5px;">${a.message}</td>
+          <td style="text-align: center;"><strong style="color: ${a.value > a.threshold ? '#EF4444' : '#38BDF8'}; font-family: monospace; font-size: 13px;">${a.value > 0 ? a.value.toFixed(1) + ' °C' : '-'}</strong></td>
+          <td style="text-align: center;"><span class="badge-status ${isResolved ? 'liberado' : 'quarentena'}">${a.status.toUpperCase()}</span></td>
+          <td style="text-align: center;">
+            ${!isResolved ? `
+              <button class="btn-action-primary" style="padding: 5px 12px; font-size: 11px; margin: 0 auto; display: inline-flex;" onclick="promptResolveAlarm(${a.id})">
+                Resolver
+              </button>
+            ` : `<span style="font-size: 11px; color: #34D399; font-weight: 600;">Resolvido</span>`}
+          </td>
+        </tr>
+      `;
+    });
+  } catch (e) {
+    console.error('Erro ao carregar alarmes:', e);
+  }
+}
+
 async function promptResolveAlarm(alarmId) {
   const notes = prompt('Descreva o laudo de encerramento do alarme (ex: temperatura normalizada em 4.5°C, porta inspecionada e fechada):');
   if (!notes) return;
@@ -665,6 +736,7 @@ async function promptResolveAlarm(alarmId) {
       alert('Alarme encerrado e resolvido com sucesso!');
       loadAlarms();
       loadKPIs();
+      loadChambers();
     } else {
       alert('Erro ao resolver alarme.');
     }
@@ -683,8 +755,16 @@ async function loadExcursions() {
     if (!tbody) return;
     tbody.innerHTML = '';
 
+    const countBadge = document.getElementById('excursions-count-badge');
+    if (countBadge) {
+      countBadge.innerText = `${list.length} registro${list.length !== 1 ? 's' : ''}`;
+      countBadge.style.color = list.length > 0 ? '#EF4444' : '#94A3B8';
+      countBadge.style.borderColor = list.length > 0 ? 'rgba(239, 68, 68, 0.4)' : 'rgba(255, 255, 255, 0.1)';
+      countBadge.style.background = list.length > 0 ? 'rgba(239, 68, 68, 0.12)' : 'rgba(255, 255, 255, 0.05)';
+    }
+
     if (list.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#64748B; padding:16px;">Nenhum processo de excursão aberto.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #94A3B8; padding: 22px; font-size: 13px; font-weight: 500;">Nenhum processo de excursão registrado. Câmaras operando dentro da faixa térmica qualificada.</td></tr>';
       return;
     }
 
@@ -692,19 +772,19 @@ async function loadExcursions() {
       const isDone = e.status === 'liberado' || e.status === 'descartado';
       tbody.innerHTML += `
         <tr>
-          <td><strong style="color:#60A5FA;">${e.code}</strong></td>
-          <td>${e.chamber_name}</td>
-          <td><span style="font-size:11px; color:#CBD5E1;">${e.start_time}<br>${e.end_time || 'Em andamento'}</span></td>
-          <td><strong style="color:#EF4444;">${e.peak_temp.toFixed(1)} °C</strong></td>
-          <td>${e.accumulated_degree_minutes.toFixed(1)} °C·min</td>
-          <td><span class="badge-status quarentena">${e.quarantined_lots_count} lotes segregados</span></td>
-          <td><span class="badge-status ${isDone ? 'liberado' : 'alerta'}">${e.status.toUpperCase()}</span></td>
-          <td style="text-align:right;">
+          <td style="text-align: center;"><strong style="color: #38BDF8; font-family: monospace;">${e.code}</strong></td>
+          <td style="text-align: center; font-weight: 600; color: #F1F5F9;">${e.chamber_name}</td>
+          <td style="text-align: center;"><span style="font-size: 11px; color: #94A3B8;">${e.start_time}<br>${e.end_time || 'Em andamento'}</span></td>
+          <td style="text-align: center;"><strong style="color: #EF4444; font-family: monospace; font-size: 13px;">${e.peak_temp.toFixed(1)} °C</strong></td>
+          <td style="text-align: center; color: #CBD5E1; font-family: monospace;">${e.accumulated_degree_minutes.toFixed(1)} °C·min</td>
+          <td style="text-align: center;"><span class="badge-status quarentena">${e.quarantined_lots_count} lotes segregados</span></td>
+          <td style="text-align: center;"><span class="badge-status ${isDone ? 'liberado' : 'alerta'}">${e.status.toUpperCase()}</span></td>
+          <td style="text-align: center;">
             ${!isDone ? `
-              <button class="btn-action-primary" style="padding:4px 8px; font-size:11px;" onclick="openDecisionModal(${e.id}, '${e.code}', '${e.chamber_name}', ${e.peak_temp})">
+              <button class="btn-action-primary" style="padding: 5px 12px; font-size: 11px; margin: 0 auto; display: inline-flex;" onclick="openDecisionModal(${e.id}, '${e.code}', '${e.chamber_name}', ${e.peak_temp})">
                 Parecer / Decisão
               </button>
-            ` : `<span style="font-size:11px; color:#10B981;">Decisão: ${e.final_decision.toUpperCase()}<br>Assinado por ${e.decided_by}</span>`}
+            ` : `<span style="font-size: 11px; color: #34D399; font-weight: 600;">Decisão: ${e.final_decision.toUpperCase()}<br><span style="color: #94A3B8; font-size: 10px;">Assinado por ${e.decided_by}</span></span>`}
           </td>
         </tr>
       `;
@@ -765,7 +845,7 @@ async function submitExcursionDecision() {
 }
 
 async function simulateExcursion() {
-  if (!confirm('Deseja disparar uma simulação de excursão térmica na Câmara Fria A? Todos os lotes serão segregados instantaneamente para Quarentena para validação regulatória.')) {
+  if (!confirm('Deseja disparar uma simulação de excursão térmica na Câmara Fria A? Todos os lotes serão segregados instantaneamente para Quarentena para validação pericial.')) {
     return;
   }
 
@@ -773,11 +853,12 @@ async function simulateExcursion() {
     const res = await fetch('/api/pharma/excursions/simulate?chamber=CH-A', { method: 'POST' });
     const data = await res.json();
     if (res.ok) {
-      alert(data.message);
+      alert(data.message || 'Excursão térmica simulada com sucesso! Lotes alocados em Quarentena.');
       loadExcursions();
       loadAlarms();
       loadLots();
       loadChambers();
+      loadKPIs();
     } else {
       alert(data.error || 'Erro na simulação.');
     }
