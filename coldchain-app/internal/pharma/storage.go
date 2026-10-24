@@ -462,6 +462,30 @@ func GetChambers(db *sql.DB) ([]Chamber, error) {
 		); err != nil {
 			return nil, err
 		}
+
+		// Reavaliação dinâmica da conformidade operacional em tempo real:
+		// 1. Se NÃO há alarmes operacionais ativos para a câmara:
+		if c.OpenAlarmsCount == 0 {
+			// Se a temperatura média atual está dentro da faixa qualificada [TempMin, TempMax]
+			if c.AvgTemp >= c.TempMin && c.AvgTemp <= c.TempMax {
+				if c.Status != "OK" {
+					c.Status = "OK"
+					_, _ = db.Exec("UPDATE chambers SET status = 'OK' WHERE id = ?", c.ID)
+				}
+			} else if c.AvgTemp > c.TempMax || c.AvgTemp < c.TempMin {
+				c.Status = "EXCURSAO"
+			}
+		} else {
+			// 2. Se HÁ alarmes operacionais ativos, verifica a gravidade:
+			var hasThermalAlarm int
+			_ = db.QueryRow("SELECT COUNT(*) FROM alarms WHERE chamber_id = ? AND status = 'ativo' AND type IN ('temperatura_alta', 'temperatura_baixa')", c.ID).Scan(&hasThermalAlarm)
+			if hasThermalAlarm > 0 {
+				c.Status = "EXCURSAO"
+			} else {
+				c.Status = "ALERTA"
+			}
+		}
+
 		list = append(list, c)
 	}
 	return list, nil
@@ -931,6 +955,12 @@ func AcknowledgeAlarm(db *sql.DB, alarmID int64, username, actionTaken string) e
 // ResolveAlarm finaliza e encerra o alarme operacional com laudo técnico e retorno à conformidade.
 func ResolveAlarm(db *sql.DB, alarmID int64, username, notes string) error {
 	nowStr := time.Now().Format("2006-01-02 15:04:05")
+
+	// 1. Busca câmara associada ao alarme
+	var chamberID string
+	_ = db.QueryRow("SELECT chamber_id FROM alarms WHERE id = ?", alarmID).Scan(&chamberID)
+
+	// 2. Atualiza status do alarme
 	_, err := db.Exec(`UPDATE alarms
 		SET status = 'resolvido', resolved_at = ?, 
 		    action_taken = CASE 
@@ -939,7 +969,20 @@ func ResolveAlarm(db *sql.DB, alarmID int64, username, notes string) error {
 		    END
 		WHERE id = ?`,
 		nowStr, notes, username, notes, alarmID)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// 3. Se a câmara não possuir mais nenhum alarme ativo, retorna status para 'OK'
+	if chamberID != "" {
+		var activeAlarms int
+		_ = db.QueryRow("SELECT COUNT(*) FROM alarms WHERE chamber_id = ? AND status = 'ativo'", chamberID).Scan(&activeAlarms)
+		if activeAlarms == 0 {
+			_, _ = db.Exec("UPDATE chambers SET status = 'OK' WHERE id = ?", chamberID)
+		}
+	}
+
+	return nil
 }
 
 // GetPharmaKPIs calcula os indicadores regulatórios matemáticos exigidos pela ANVISA (RDC 430/2020 e Artigo HageLab 2025).
