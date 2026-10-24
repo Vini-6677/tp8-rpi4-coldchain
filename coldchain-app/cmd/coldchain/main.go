@@ -1559,7 +1559,7 @@ func (a *App) routes() http.Handler {
 			MinTemp:                  4.2,
 			AccumulatedDegreeMinutes: 38.0,
 			Cause:                    "Simulação controlada de queda de energia e transição para nobreak",
-			TechnicalReport:          "Alerta sanitário emitido automaticamente. Todos os lotes foram segregados para Quarentena conforme RDC 430/2020.",
+			TechnicalReport:          "Alerta sanitário emitido automaticamente. Todos os lotes foram colocados em análise conforme RDC 430/2020.",
 		}
 
 		excID, err := pharma.TriggerExcursion(a.db, exc)
@@ -1569,13 +1569,13 @@ func (a *App) routes() http.Handler {
 		}
 
 		ip := getClientIP(r)
-		a.logAudit(sess.Username, sess.Role, "SIMULACAO_EXCURSAO", fmt.Sprintf("Simulação da excursão %s disparada na câmara %s. Lotes segregados em Quarentena.", excCode, chID), ip)
+		a.logAudit(sess.Username, sess.Role, "SIMULACAO_EXCURSAO", fmt.Sprintf("Simulação da excursão %s disparada na câmara %s. Lotes colocados em análise.", excCode, chID), ip)
 
 		json.NewEncoder(w).Encode(map[string]any{
 			"status":       "ok",
 			"excursion_id": excID,
 			"code":         excCode,
-			"message":      fmt.Sprintf("Excursão %s gerada. Lotes da câmara %s segregados para Quarentena.", excCode, chID),
+			"message":      fmt.Sprintf("Excursão %s gerada. Lotes da câmara %s colocados em análise.", excCode, chID),
 		})
 	})
 	// 13. Indicadores de Performance (KPIs) ANVISA RDC 430/2020

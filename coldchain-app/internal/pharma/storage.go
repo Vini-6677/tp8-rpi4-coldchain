@@ -851,7 +851,7 @@ func TriggerExcursion(db *sql.DB, exc Excursion) (int64, error) {
 	excID, _ := res.LastInsertId()
 
 	// Cria alarme
-	alMsg := fmt.Sprintf("EXCURSÃO TÉRMICA DETECTADA: Câmara %s pico de %.1f°C. %d lotes segregados em Quarentena.", exc.ChamberID, exc.PeakTemp, count)
+	alMsg := fmt.Sprintf("EXCURSÃO TÉRMICA DETECTADA: Câmara %s pico de %.1f°C. %d lotes colocados em análise.", exc.ChamberID, exc.PeakTemp, count)
 	_, _ = tx.Exec(`INSERT INTO alarms (chamber_id, sensor_id, type, message, value, threshold, status, escalation_level)
 		VALUES (?, ?, 'temperatura_alta', ?, ?, 8.0, 'ativo', 3)`,
 		exc.ChamberID, exc.SensorID, alMsg, exc.PeakTemp)

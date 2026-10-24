@@ -823,6 +823,14 @@ async function loadExcursions() {
     list.forEach(e => {
       const isDone = e.status === 'liberado' || e.status === 'descartado';
       const cleanChamber = (e.chamber_name || e.chamber_id).replace(/\s*\(RDC[^\)]*\)/gi, '');
+      let lotsBadge = '';
+      if (e.status === 'liberado') {
+        lotsBadge = `<span class="badge-status liberado" style="font-size: 12px; padding: 4px 10px;">${e.quarantined_lots_count} lotes liberados</span>`;
+      } else if (e.status === 'descartado') {
+        lotsBadge = `<span class="badge-status" style="font-size: 12px; padding: 4px 10px; background: rgba(239, 68, 68, 0.15); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.4);">${e.quarantined_lots_count} lotes reprovados</span>`;
+      } else {
+        lotsBadge = `<span class="badge-status quarentena" style="font-size: 12px; padding: 4px 10px;">${e.quarantined_lots_count} lotes em análise</span>`;
+      }
       tbody.innerHTML += `
         <tr>
           <td style="text-align: center;"><strong style="color: #38BDF8; font-family: monospace; font-size: 13px;">${e.code}</strong></td>
@@ -830,7 +838,7 @@ async function loadExcursions() {
           <td style="text-align: center;"><span style="font-size: 12px; color: #CBD5E1; line-height: 1.45;">${formatBrasiliaDateTime(e.start_time)}<br>${e.end_time ? formatBrasiliaDateTime(e.end_time) : '<span style="color:#F59E0B; font-weight:600;">Em andamento</span>'}</span></td>
           <td style="text-align: center;"><strong style="color: #EF4444; font-family: monospace; font-size: 14px;">${e.peak_temp.toFixed(1)}ºC</strong></td>
           <td style="text-align: center; color: #CBD5E1; font-family: monospace; font-size: 13.5px; font-weight: 700;">${e.accumulated_degree_minutes.toFixed(1)}ºC.min</td>
-          <td style="text-align: center;"><span class="badge-status quarentena" style="font-size: 12px; padding: 4px 10px;">${e.quarantined_lots_count} lotes segregados</span></td>
+          <td style="text-align: center;">${lotsBadge}</td>
           <td style="text-align: center;"><span class="badge-status ${isDone ? 'liberado' : 'alerta'}" style="font-size: 12px; padding: 4px 10px;">${e.status.toUpperCase()}</span></td>
           <td style="text-align: center;">
             ${!isDone ? `
@@ -851,7 +859,7 @@ function openDecisionModal(id, code, chName, peak) {
   document.getElementById('dec-exc-id').value = id;
   document.getElementById('dec-exc-summary').innerHTML = `
     <strong>Processo:</strong> ${code} na <strong>${chName}</strong>.<br>
-    Pico registrado: <strong style="color:#EF4444;">${peak.toFixed(1)}ºC</strong>. Todos os lotes foram segregados preventivamente em Quarentena.
+    Pico registrado: <strong style="color:#EF4444;">${peak.toFixed(1)}ºC</strong>. Todos os lotes foram colocados preventivamente em análise.
   `;
   document.getElementById('modal-excursion-decision').classList.add('active');
 }
@@ -908,7 +916,7 @@ async function simulateExcursion() {
     const res = await fetch('/api/pharma/excursions/simulate?chamber=CH-A', { method: 'POST' });
     const data = await res.json();
     if (res.ok) {
-      alert(data.message || 'Excursão térmica simulada com sucesso! Lotes alocados em Quarentena.');
+      alert(data.message || 'Excursão térmica simulada com sucesso! Lotes alocados em análise.');
       loadExcursions();
       loadAlarms();
       loadLots();
