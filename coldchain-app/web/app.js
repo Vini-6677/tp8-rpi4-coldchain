@@ -122,13 +122,26 @@ function showApp() {
 
   // Permissões de abas por perfil (RBAC)
   const tabUsers = document.getElementById('tab-btn-users');
-  if (currentUser.role === 'admin') {
-    tabUsers.style.display = 'flex';
+  const tabMetrology = document.getElementById('tab-btn-metrology');
+  const tabLedger = document.getElementById('tab-btn-ledger');
+
+  if (currentUser.role === 'enfermeiro') {
+    // Enfermeiros não visualizam Metrologia, Auditoria nem Usuários
+    if (tabMetrology) tabMetrology.style.display = 'none';
+    if (tabLedger) tabLedger.style.display = 'none';
+    if (tabUsers) tabUsers.style.display = 'none';
+  } else if (currentUser.role === 'admin') {
+    if (tabMetrology) tabMetrology.style.display = 'flex';
+    if (tabLedger) tabLedger.style.display = 'flex';
+    if (tabUsers) tabUsers.style.display = 'flex';
   } else {
-    tabUsers.style.display = 'none';
+    // Gerente, Técnico, etc.
+    if (tabMetrology) tabMetrology.style.display = 'flex';
+    if (tabLedger) tabLedger.style.display = 'flex';
+    if (tabUsers) tabUsers.style.display = 'none';
   }
 
-  // Permissão para cadastro de câmaras/geladeiras (Gerente RT / Administrador)
+  // Permissão para cadastro e exclusão/descomissionamento de câmaras (Invisível para enfermeiro)
   const btnNewChamber = document.getElementById('btn-new-chamber');
   if (btnNewChamber) {
     if (currentUser.role === 'gerente' || currentUser.role === 'admin') {
@@ -147,15 +160,21 @@ function showApp() {
     }
   }
 
-  // Permissão para simulação de excursão (Gerente RT / Administrador)
+  // Permissão para simulação de excursão (Liberado para Enfermeiro, Gerente e Administrador)
   const btnSimulateExc = document.getElementById('btn-simulate-excursion');
   if (btnSimulateExc) {
-    if (currentUser.role === 'gerente' || currentUser.role === 'admin') {
+    if (currentUser.role === 'gerente' || currentUser.role === 'admin' || currentUser.role === 'enfermeiro') {
       btnSimulateExc.style.display = 'inline-flex';
     } else {
       btnSimulateExc.style.display = 'none';
     }
   }
+
+  // Se o enfermeiro estiver em uma aba restrita, redireciona para o Painel Sinótico
+  if (currentUser.role === 'enfermeiro' && (activeTab === 'metrology' || activeTab === 'ledger' || activeTab === 'users')) {
+    activeTab = 'chambers';
+  }
+  switchTab(activeTab || 'chambers');
 
   // Carrega dados iniciais
   loadKPIs();
@@ -164,7 +183,9 @@ function showApp() {
   loadLots();
   loadAlarms();
   loadExcursions();
-  loadMetrology();
+  if (currentUser.role !== 'enfermeiro') {
+    loadMetrology();
+  }
 }
 
 function fillLogin(u, p) {
@@ -213,6 +234,12 @@ async function handleLogout() {
 // NAVEGAÇÃO ENTRE ABAS
 // -----------------------------------------------------------------------------
 function switchTab(tabId) {
+  // Guarda de acesso: Enfermeiro tem acesso restrito (apenas Sinótico, Estoque e Alarmes)
+  if (currentUser && currentUser.role === 'enfermeiro') {
+    if (tabId === 'metrology' || tabId === 'ledger' || tabId === 'users') {
+      tabId = 'chambers';
+    }
+  }
   activeTab = tabId;
 
   document.querySelectorAll('.nav-tab-btn').forEach(btn => btn.classList.remove('active'));

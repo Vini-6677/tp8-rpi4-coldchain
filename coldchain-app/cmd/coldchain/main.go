@@ -1255,7 +1255,7 @@ func (a *App) routes() http.Handler {
 
 		if r.Method == http.MethodPost {
 			sess, ok := a.getSession(r)
-			if !ok || (sess.Role != "gerente" && sess.Role != "admin") {
+			if !ok || (sess.Role != "gerente" && sess.Role != "admin" && sess.Role != "enfermeiro") {
 				w.WriteHeader(http.StatusForbidden)
 				json.NewEncoder(w).Encode(map[string]any{"error": "Cadastro de medicamentos restrito a Farmacêutico RT / Gerente / Administrador."})
 				return
@@ -1324,7 +1324,7 @@ func (a *App) routes() http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		sess, ok := a.getSession(r)
-		if !ok || (sess.Role != "tecnico" && sess.Role != "gerente" && sess.Role != "admin") {
+		if !ok || (sess.Role != "tecnico" && sess.Role != "gerente" && sess.Role != "admin" && sess.Role != "enfermeiro") {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]any{"error": "Acesso restrito ao Técnico, Gerente ou Administrador."})
 			return
@@ -1552,7 +1552,7 @@ func (a *App) routes() http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		sess, ok := a.getSession(r)
-		if !ok || (sess.Role != "gerente" && sess.Role != "admin") {
+		if !ok || (sess.Role != "gerente" && sess.Role != "admin" && sess.Role != "enfermeiro") {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]any{"error": "Decisão pericial de excursão restrita ao Farmacêutico RT / Gerente / Administrador."})
 			return
