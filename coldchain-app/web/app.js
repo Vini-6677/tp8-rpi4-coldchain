@@ -700,7 +700,7 @@ async function loadAlarms() {
     list.forEach(a => {
       const isResolved = a.status === 'resolvido';
       const cleanChamber = (a.chamber_name || a.chamber_id).replace(/\s*\(RDC[^\)]*\)/gi, '');
-      const valStr = a.value > 0 ? `${a.value.toFixed(1)} ºC` : '-';
+      const valStr = a.value > 0 ? `${a.value.toFixed(1)}ºC` : '-';
       tbody.innerHTML += `
         <tr>
           <td style="text-align: center;"><strong style="color: #38BDF8; font-size: 13.5px;">${cleanChamber}</strong></td>
@@ -726,7 +726,7 @@ async function loadAlarms() {
 
 function openResolveAlarmModal(alarmId, chamberName, sensorId, violationType, value) {
   document.getElementById('resolve-alarm-id').value = alarmId;
-  const valText = value > 0 ? `<strong style="color: #EF4444; font-family: monospace; font-size: 14px;">${value.toFixed(1)} ºC</strong>` : '-';
+  const valText = value > 0 ? `<strong style="color: #EF4444; font-family: monospace; font-size: 14px;">${value.toFixed(1)}ºC</strong>` : '-';
   document.getElementById('resolve-alarm-summary').innerHTML = `
     <div><strong>Câmara:</strong> <span style="color: #38BDF8; font-weight: 600;">${chamberName}</span></div>
     <div style="margin-top: 5px;"><strong>Sensor:</strong> <code style="color: #CBD5E1;">${sensorId || '-'}</code> &bull; <strong>Violação:</strong> <span style="color: #FCA5A5; font-weight: 600;">${formatAlarmType(violationType)}</span> &bull; <strong>Valor Lido:</strong> ${valText}</div>
@@ -814,8 +814,8 @@ async function loadExcursions() {
           <td style="text-align: center;"><strong style="color: #38BDF8; font-family: monospace; font-size: 13px;">${e.code}</strong></td>
           <td style="text-align: center; font-weight: 600; color: #F1F5F9; font-size: 13.5px;">${cleanChamber}</td>
           <td style="text-align: center;"><span style="font-size: 12px; color: #94A3B8; line-height: 1.45;">${e.start_time}<br>${e.end_time || 'Em andamento'}</span></td>
-          <td style="text-align: center;"><strong style="color: #EF4444; font-family: monospace; font-size: 14px;">${e.peak_temp.toFixed(1)} ºC</strong></td>
-          <td style="text-align: center; color: #CBD5E1; font-family: monospace; font-size: 13.5px; font-weight: 700;">${e.accumulated_degree_minutes.toFixed(1)} ºC .min</td>
+          <td style="text-align: center;"><strong style="color: #EF4444; font-family: monospace; font-size: 14px;">${e.peak_temp.toFixed(1)}ºC</strong></td>
+          <td style="text-align: center; color: #CBD5E1; font-family: monospace; font-size: 13.5px; font-weight: 700;">${e.accumulated_degree_minutes.toFixed(1)}ºC.min</td>
           <td style="text-align: center;"><span class="badge-status quarentena" style="font-size: 12px; padding: 4px 10px;">${e.quarantined_lots_count} lotes segregados</span></td>
           <td style="text-align: center;"><span class="badge-status ${isDone ? 'liberado' : 'alerta'}" style="font-size: 12px; padding: 4px 10px;">${e.status.toUpperCase()}</span></td>
           <td style="text-align: center;">
@@ -837,7 +837,7 @@ function openDecisionModal(id, code, chName, peak) {
   document.getElementById('dec-exc-id').value = id;
   document.getElementById('dec-exc-summary').innerHTML = `
     <strong>Processo:</strong> ${code} na <strong>${chName}</strong>.<br>
-    Pico registrado: <strong style="color:#EF4444;">${peak.toFixed(1)} °C</strong>. Todos os lotes foram segregados preventivamente em Quarentena.
+    Pico registrado: <strong style="color:#EF4444;">${peak.toFixed(1)}ºC</strong>. Todos os lotes foram segregados preventivamente em Quarentena.
   `;
   document.getElementById('modal-excursion-decision').classList.add('active');
 }
