@@ -1937,23 +1937,23 @@
            SEÇÃO 4: METROLOGIA RBC & QUALIFICAÇÃO
            ===================================================================== -->
       <section id="section-metrology" class="tab-section">
-        <div class="detail-panel" style="margin-bottom: 20px;">
-          <div class="panel-title" style="margin-bottom: 12px;">Qualificação Térmica de Equipamentos (ANVISA RDC 430/2020)</div>
-          <div style="font-size: 13px; color: #94A3B8; line-height: 1.5; margin-bottom: 14px;">
-            Conforme exigido pelas normas regulatórias, todas as câmaras frias e geladeiras possuem protocolos documentados de 
-            <strong>Qualificação de Instalação (QI)</strong>, <strong>Qualificação de Operação (QO)</strong> e <strong>Qualificação de Desempenho (QD)</strong>, 
-            com mapeamento de pontos críticos (pontos mais quentes e mais frios) e grupo gerador com nobreak redundante de 4 horas de autonomia.
-          </div>
-        </div>
-
         <div class="detail-panel">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
-          <div class="panel-title" style="margin-bottom: 0;">Parque Metrológico de Sensores Calibrados RBC</div>
-          <button class="btn-action-secondary" id="btn-new-sensor" onclick="openNewSensorModal()">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-            Novo Sensor / Certificado RBC
-          </button>
-        </div>
+            <div class="panel-title" style="margin-bottom: 0;">Parque Metrológico de Sensores Calibrados RBC</div>
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <label for="filter-metrology-chamber" style="font-size: 12px; color: #94A3B8; font-weight: 500; white-space: nowrap;">Geladeira / Câmara:</label>
+                <select id="filter-metrology-chamber" class="form-control" style="width: 250px; padding: 7px 12px; font-size: 12.5px; font-weight: 600;" onchange="filterMetrologySensors()">
+                  <option value="all">Todas as Geladeiras / Câmaras</option>
+                  <!-- Preenchido dinamicamente via JS -->
+                </select>
+              </div>
+              <button class="btn-action-secondary" id="btn-new-sensor" onclick="openNewSensorModal()">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                Novo Sensor / Certificado RBC
+              </button>
+            </div>
+          </div>
           <div class="data-table-wrapper">
             <table class="data-table">
               <thead>
@@ -1966,6 +1966,7 @@
                   <th>Laboratório Acreditado</th>
                   <th>Validade Calibração</th>
                   <th>Status</th>
+                  <th style="text-align: right;">Ações</th>
                 </tr>
               </thead>
               <tbody id="metrology-table-body">

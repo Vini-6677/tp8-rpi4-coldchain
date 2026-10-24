@@ -1569,39 +1569,84 @@ async function loadMetrology() {
     const list = await res.json();
     window.allMetrologySensors = list;
 
-    const tbody = document.getElementById('metrology-table-body');
-    if (!tbody) return;
-    tbody.innerHTML = '';
-
-    list.forEach(s => {
-      let badgeClass = 'liberado';
-      if (s.status.includes('Vencido')) {
-        badgeClass = 'reprovado';
-      } else if (s.status.includes('Atenção') || s.status.includes('Vencendo')) {
-        badgeClass = 'quarentena';
-      }
-
-      tbody.innerHTML += `
-        <tr>
-          <td><code style="color:#60A5FA; font-weight:700;">${s.id}</code></td>
-          <td><strong>${s.chamber_id}</strong></td>
-          <td>${s.serial_number}</td>
-          <td>${s.thermal_position}</td>
-          <td><strong style="color:#C4B5FD;">${s.cert_number}</strong></td>
-          <td>${s.calibrated_by}</td>
-          <td><span style="color:#6EE7B7;">${s.calib_valid_until}</span></td>
-          <td><span class="badge-status ${badgeClass}">${s.status}</span></td>
-          <td style="text-align: right;">
-            <button class="btn-action-secondary" style="padding: 3px 8px; font-size: 11px;" onclick="openEditSensorModal('${s.id}')">
-              Recalibrar / Editar
-            </button>
-          </td>
-        </tr>
-      `;
-    });
+    populateMetrologyChamberFilter();
+    filterMetrologySensors();
   } catch (e) {
     console.error('Erro ao carregar metrologia:', e);
   }
+}
+
+function populateMetrologyChamberFilter() {
+  const select = document.getElementById('filter-metrology-chamber');
+  if (!select) return;
+
+  const currentVal = select.value || 'all';
+  let optionsHtml = '<option value="all">Todas as Geladeiras / Câmaras</option>';
+
+  if (chambersData && chambersData.length > 0) {
+    chambersData.forEach(c => {
+      optionsHtml += `<option value="${c.id}">${c.name} (${c.id})</option>`;
+    });
+  }
+
+  select.innerHTML = optionsHtml;
+  select.value = currentVal;
+}
+
+function filterMetrologySensors() {
+  const select = document.getElementById('filter-metrology-chamber');
+  const selectedChamber = select ? select.value : 'all';
+  const sensors = window.allMetrologySensors || [];
+
+  const filtered = (selectedChamber === 'all')
+    ? sensors
+    : sensors.filter(s => s.chamber_id === selectedChamber);
+
+  renderMetrologyTable(filtered);
+}
+
+function renderMetrologyTable(list) {
+  const tbody = document.getElementById('metrology-table-body');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  if (!list || list.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="9" style="text-align: center; color: #94A3B8; padding: 24px; font-size: 13px;">
+          Nenhum sensor metrológico vinculado a esta geladeira/câmara.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  list.forEach(s => {
+    let badgeClass = 'liberado';
+    if (s.status.includes('Vencido')) {
+      badgeClass = 'reprovado';
+    } else if (s.status.includes('Atenção') || s.status.includes('Vencendo')) {
+      badgeClass = 'quarentena';
+    }
+
+    tbody.innerHTML += `
+      <tr>
+        <td><code style="color:#60A5FA; font-weight:700;">${s.id}</code></td>
+        <td><strong>${s.chamber_id}</strong></td>
+        <td>${s.serial_number}</td>
+        <td>${s.thermal_position}</td>
+        <td><strong style="color:#C4B5FD;">${s.cert_number}</strong></td>
+        <td>${s.calibrated_by}</td>
+        <td><span style="color:#6EE7B7;">${s.calib_valid_until}</span></td>
+        <td><span class="badge-status ${badgeClass}">${s.status}</span></td>
+        <td style="text-align: right;">
+          <button class="btn-action-secondary" style="padding: 3px 8px; font-size: 11px;" onclick="openEditSensorModal('${s.id}')">
+            Recalibrar / Editar
+          </button>
+        </td>
+      </tr>
+    `;
+  });
 }
 
 
