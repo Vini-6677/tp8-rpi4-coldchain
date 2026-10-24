@@ -1094,48 +1094,50 @@
     .data-table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 12.5px;
+      font-size: 13.5px;
       text-align: left;
     }
 
     .data-table th {
       background: #0D162C;
       color: #94A3B8;
-      font-size: 11px;
+      font-size: 12px;
       text-transform: uppercase;
       font-weight: 700;
-      letter-spacing: 0.5px;
-      padding: 12px 14px;
+      letter-spacing: 0.6px;
+      padding: 14px 16px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     }
 
     .data-table td {
-      padding: 12px 14px;
+      padding: 14px 16px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.04);
       color: #E2E8F0;
+      font-size: 13.5px;
+      vertical-align: middle;
     }
 
     .data-table tr:hover td {
-      background: rgba(255, 255, 255, 0.02);
+      background: rgba(255, 255, 255, 0.025);
     }
 
     .badge-fefo-rank {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 24px;
-      height: 24px;
+      width: 26px;
+      height: 26px;
       border-radius: 50%;
       background: var(--fefo-accent);
       color: #fff;
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 800;
     }
 
     .badge-status {
-      font-size: 10.5px;
+      font-size: 11.5px;
       font-weight: 700;
-      padding: 3px 8px;
+      padding: 4px 10px;
       border-radius: 6px;
       text-transform: uppercase;
       letter-spacing: 0.4px;
@@ -2153,7 +2155,38 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=excursions_v13"></script>
+  <!-- =========================================================================
+       MODAL: LAUDO DE ENCERRAMENTO E RESOLUÇÃO DE ALARME OPERACIONAL
+       ========================================================================= -->
+  <div id="modal-resolve-alarm" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Encerramento e Laudo de Alarme</div>
+        <button class="btn-close-modal" onclick="closeResolveAlarmModal()">&times;</button>
+      </div>
+
+      <form id="form-resolve-alarm" onsubmit="event.preventDefault(); submitResolveAlarm();">
+        <input type="hidden" id="resolve-alarm-id">
+
+        <div id="resolve-alarm-summary" style="font-size: 13px; color: #CBD5E1; background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255, 255, 255, 0.08); padding: 12px 14px; border-radius: 8px; margin-bottom: 16px; line-height: 1.5;">
+          Resumo do alarme...
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Laudo Técnico de Encerramento e Ação Tomada</label>
+          <textarea id="resolve-alarm-notes" class="form-control" rows="3" placeholder="ex: Temperatura normalizada em 4.5 ºC, porta inspecionada, vedação conferida e parâmetros restabelecidos em conformidade." required style="font-size: 13.5px;"></textarea>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
+          <button type="button" class="btn-cancel" onclick="closeResolveAlarmModal()">Cancelar</button>
+          <button type="submit" class="btn-primary" id="btn-submit-resolve-alarm">Encerrar Alarme</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <script src="/static/app.js?v=resolve_modal_v14"></script>
 
   <!-- =========================================================================
        MODAL 5: CADASTRO DE MEDICAMENTO (CATÁLOGO ANVISA)

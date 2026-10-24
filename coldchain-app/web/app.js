@@ -693,26 +693,28 @@ async function loadAlarms() {
     }
 
     if (list.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #94A3B8; padding: 22px; font-size: 13px; font-weight: 500;">Nenhum alarme operacional ativo no momento. Todos os parâmetros operam em conformidade.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #94A3B8; padding: 24px; font-size: 14px; font-weight: 500;">Nenhum alarme operacional ativo no momento. Todos os parâmetros operam em conformidade.</td></tr>';
       return;
     }
 
     list.forEach(a => {
       const isResolved = a.status === 'resolvido';
+      const cleanChamber = (a.chamber_name || a.chamber_id).replace(/\s*\(RDC[^\)]*\)/gi, '');
+      const valStr = a.value > 0 ? `${a.value.toFixed(1)} ºC` : '-';
       tbody.innerHTML += `
         <tr>
-          <td style="text-align: center;"><strong style="color: #38BDF8;">${a.chamber_name || a.chamber_id}</strong></td>
-          <td style="text-align: center;"><code style="color: #CBD5E1; background: rgba(255,255,255,0.06); padding: 2px 7px; border-radius: 4px; font-size: 11px;">${a.sensor_id || '-'}</code></td>
-          <td style="text-align: center;"><span style="color: ${isResolved ? '#94A3B8' : '#FCA5A5'}; font-size: 12px; font-weight: 600;">${formatAlarmType(a.type)}</span></td>
-          <td style="color: #E2E8F0; font-size: 12.5px;">${a.message}</td>
-          <td style="text-align: center;"><strong style="color: ${a.value > a.threshold ? '#EF4444' : '#38BDF8'}; font-family: monospace; font-size: 13px;">${a.value > 0 ? a.value.toFixed(1) + ' °C' : '-'}</strong></td>
+          <td style="text-align: center;"><strong style="color: #38BDF8; font-size: 13.5px;">${cleanChamber}</strong></td>
+          <td style="text-align: center;"><code style="color: #CBD5E1; background: rgba(255,255,255,0.06); padding: 3px 8px; border-radius: 4px; font-size: 12px;">${a.sensor_id || '-'}</code></td>
+          <td style="text-align: center;"><span style="color: ${isResolved ? '#94A3B8' : '#FCA5A5'}; font-size: 13px; font-weight: 600;">${formatAlarmType(a.type)}</span></td>
+          <td style="color: #E2E8F0; font-size: 13px; line-height: 1.45;">${a.message}</td>
+          <td style="text-align: center;"><strong style="color: ${a.value > a.threshold ? '#EF4444' : '#38BDF8'}; font-family: monospace; font-size: 14px;">${valStr}</strong></td>
           <td style="text-align: center;"><span class="badge-status ${isResolved ? 'liberado' : 'quarentena'}">${a.status.toUpperCase()}</span></td>
           <td style="text-align: center;">
             ${!isResolved ? `
-              <button class="btn-action-primary" style="padding: 5px 12px; font-size: 11px; margin: 0 auto; display: inline-flex;" onclick="promptResolveAlarm(${a.id})">
+              <button class="btn-action-primary" style="padding: 6px 14px; font-size: 12px; margin: 0 auto; display: inline-flex;" onclick="openResolveAlarmModal(${a.id}, '${cleanChamber.replace(/'/g, "\\'")}', '${a.sensor_id}', '${a.type}', ${a.value})">
                 Resolver
               </button>
-            ` : `<span style="font-size: 11px; color: #34D399; font-weight: 600;">Resolvido</span>`}
+            ` : `<span style="font-size: 12px; color: #34D399; font-weight: 600;">Resolvido</span>`}
           </td>
         </tr>
       `;
@@ -722,9 +724,39 @@ async function loadAlarms() {
   }
 }
 
-async function promptResolveAlarm(alarmId) {
-  const notes = prompt('Descreva o laudo de encerramento do alarme (ex: temperatura normalizada em 4.5°C, porta inspecionada e fechada):');
-  if (!notes) return;
+function openResolveAlarmModal(alarmId, chamberName, sensorId, violationType, value) {
+  document.getElementById('resolve-alarm-id').value = alarmId;
+  const valText = value > 0 ? `<strong style="color: #EF4444; font-family: monospace; font-size: 14px;">${value.toFixed(1)} ºC</strong>` : '-';
+  document.getElementById('resolve-alarm-summary').innerHTML = `
+    <div><strong>Câmara:</strong> <span style="color: #38BDF8; font-weight: 600;">${chamberName}</span></div>
+    <div style="margin-top: 5px;"><strong>Sensor:</strong> <code style="color: #CBD5E1;">${sensorId || '-'}</code> &bull; <strong>Violação:</strong> <span style="color: #FCA5A5; font-weight: 600;">${formatAlarmType(violationType)}</span> &bull; <strong>Valor Lido:</strong> ${valText}</div>
+  `;
+  document.getElementById('resolve-alarm-notes').value = '';
+  document.getElementById('modal-resolve-alarm').classList.add('active');
+  setTimeout(() => {
+    const el = document.getElementById('resolve-alarm-notes');
+    if (el) el.focus();
+  }, 100);
+}
+
+function closeResolveAlarmModal() {
+  const modal = document.getElementById('modal-resolve-alarm');
+  if (modal) modal.classList.remove('active');
+}
+
+async function submitResolveAlarm() {
+  const alarmId = parseInt(document.getElementById('resolve-alarm-id').value, 10);
+  const notes = document.getElementById('resolve-alarm-notes').value.trim();
+  if (!notes) {
+    alert('Descreva a ação tomada para encerrar o alarme.');
+    return;
+  }
+
+  const btn = document.getElementById('btn-submit-resolve-alarm');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = 'Salvando...';
+  }
 
   try {
     const res = await fetch('/api/pharma/alarms/resolve', {
@@ -733,15 +765,21 @@ async function promptResolveAlarm(alarmId) {
       body: JSON.stringify({ alarm_id: alarmId, notes: notes })
     });
     if (res.ok) {
-      alert('Alarme encerrado e resolvido com sucesso!');
+      closeResolveAlarmModal();
       loadAlarms();
       loadKPIs();
       loadChambers();
     } else {
-      alert('Erro ao resolver alarme.');
+      const err = await res.json().catch(() => ({}));
+      alert(err.error || 'Erro ao resolver alarme.');
     }
   } catch (e) {
     alert('Erro de conexão ao resolver alarme.');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = 'Encerrar Alarme';
+    }
   }
 }
 
@@ -764,27 +802,28 @@ async function loadExcursions() {
     }
 
     if (list.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #94A3B8; padding: 22px; font-size: 13px; font-weight: 500;">Nenhum processo de excursão registrado. Câmaras operando dentro da faixa térmica qualificada.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #94A3B8; padding: 24px; font-size: 14px; font-weight: 500;">Nenhum processo de excursão registrado. Câmaras operando dentro da faixa térmica qualificada.</td></tr>';
       return;
     }
 
     list.forEach(e => {
       const isDone = e.status === 'liberado' || e.status === 'descartado';
+      const cleanChamber = (e.chamber_name || e.chamber_id).replace(/\s*\(RDC[^\)]*\)/gi, '');
       tbody.innerHTML += `
         <tr>
-          <td style="text-align: center;"><strong style="color: #38BDF8; font-family: monospace;">${e.code}</strong></td>
-          <td style="text-align: center; font-weight: 600; color: #F1F5F9;">${e.chamber_name}</td>
-          <td style="text-align: center;"><span style="font-size: 11px; color: #94A3B8;">${e.start_time}<br>${e.end_time || 'Em andamento'}</span></td>
-          <td style="text-align: center;"><strong style="color: #EF4444; font-family: monospace; font-size: 13px;">${e.peak_temp.toFixed(1)} °C</strong></td>
-          <td style="text-align: center; color: #CBD5E1; font-family: monospace;">${e.accumulated_degree_minutes.toFixed(1)} °C·min</td>
-          <td style="text-align: center;"><span class="badge-status quarentena">${e.quarantined_lots_count} lotes segregados</span></td>
-          <td style="text-align: center;"><span class="badge-status ${isDone ? 'liberado' : 'alerta'}">${e.status.toUpperCase()}</span></td>
+          <td style="text-align: center;"><strong style="color: #38BDF8; font-family: monospace; font-size: 13px;">${e.code}</strong></td>
+          <td style="text-align: center; font-weight: 600; color: #F1F5F9; font-size: 13.5px;">${cleanChamber}</td>
+          <td style="text-align: center;"><span style="font-size: 12px; color: #94A3B8; line-height: 1.45;">${e.start_time}<br>${e.end_time || 'Em andamento'}</span></td>
+          <td style="text-align: center;"><strong style="color: #EF4444; font-family: monospace; font-size: 14px;">${e.peak_temp.toFixed(1)} ºC</strong></td>
+          <td style="text-align: center; color: #CBD5E1; font-family: monospace; font-size: 13.5px; font-weight: 700;">${e.accumulated_degree_minutes.toFixed(1)} ºC .min</td>
+          <td style="text-align: center;"><span class="badge-status quarentena" style="font-size: 12px; padding: 4px 10px;">${e.quarantined_lots_count} lotes segregados</span></td>
+          <td style="text-align: center;"><span class="badge-status ${isDone ? 'liberado' : 'alerta'}" style="font-size: 12px; padding: 4px 10px;">${e.status.toUpperCase()}</span></td>
           <td style="text-align: center;">
             ${!isDone ? `
-              <button class="btn-action-primary" style="padding: 5px 12px; font-size: 11px; margin: 0 auto; display: inline-flex;" onclick="openDecisionModal(${e.id}, '${e.code}', '${e.chamber_name}', ${e.peak_temp})">
+              <button class="btn-action-primary" style="padding: 6px 14px; font-size: 12px; margin: 0 auto; display: inline-flex;" onclick="openDecisionModal(${e.id}, '${e.code}', '${cleanChamber.replace(/'/g, "\\'")}', ${e.peak_temp})">
                 Parecer / Decisão
               </button>
-            ` : `<span style="font-size: 11px; color: #34D399; font-weight: 600;">Decisão: ${e.final_decision.toUpperCase()}<br><span style="color: #94A3B8; font-size: 10px;">Assinado por ${e.decided_by}</span></span>`}
+            ` : `<span style="font-size: 12px; color: #34D399; font-weight: 600;">Decisão: ${e.final_decision.toUpperCase()}<br><span style="color: #94A3B8; font-size: 11px;">Assinado por ${e.decided_by}</span></span>`}
           </td>
         </tr>
       `;
