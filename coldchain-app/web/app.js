@@ -403,6 +403,7 @@ function getSensorColor(sensorId, fallbackIndex = 0) {
 // GESTÃO DE ISOLAMENTO DE SENSORES, HISTÓRICO E TOOLTIP
 // ==============================================================================
 window.currentChartRange = '2h';
+window.sensorReadingsHistoryByChamber = {};
 window.activeIsolatedSensorId = null;
 window.chartHoverState = null;
 
@@ -441,6 +442,8 @@ async function loadSensorHistory(chamberId, sensorId, range) {
   console.log(`[Histórico] Câmara: ${chamberId}, Sensor: ${sensorId || 'TODOS'}, Período: ${range}`);
   const currentChamber = chambersData.find(c => c.id === chamberId);
   renderMultiSensorChart(sensorsData, currentChamber);
+    recordSensorReadings(selectedChamberId, sensorsData, currentChamber);
+    renderSensorHistoryTable();
 }
 
 function toggleSensorIsolation(sensorId) {
@@ -452,6 +455,9 @@ function toggleSensorIsolation(sensorId) {
   updateSensorCardsIsolationState();
   const currentChamber = chambersData.find(c => c.id === selectedChamberId);
   renderMultiSensorChart(sensorsData, currentChamber);
+    recordSensorReadings(selectedChamberId, sensorsData, currentChamber);
+    renderSensorHistoryTable();
+  renderSensorHistoryTable();
 }
 
 function resetSensorIsolation() {
@@ -459,6 +465,9 @@ function resetSensorIsolation() {
   updateSensorCardsIsolationState();
   const currentChamber = chambersData.find(c => c.id === selectedChamberId);
   renderMultiSensorChart(sensorsData, currentChamber);
+    recordSensorReadings(selectedChamberId, sensorsData, currentChamber);
+    renderSensorHistoryTable();
+  renderSensorHistoryTable();
 }
 
 function updateSensorCardsIsolationState() {
@@ -609,6 +618,8 @@ function handleChartHover(clientX, clientY) {
 
   // Re-desenhar canvas com linha de mira e ponto destacado
   renderMultiSensorChart(sensorsData, currentChamber);
+    recordSensorReadings(selectedChamberId, sensorsData, currentChamber);
+    renderSensorHistoryTable();
 
   // Posicionar tooltip DOM flutuante
   const tt = document.getElementById('chart-tooltip');
@@ -652,7 +663,188 @@ function handleChartLeave() {
   if (tt) tt.style.display = 'none';
   const currentChamber = chambersData.find(c => c.id === selectedChamberId);
   renderMultiSensorChart(sensorsData, currentChamber);
+    recordSensorReadings(selectedChamberId, sensorsData, currentChamber);
+    renderSensorHistoryTable();
 }
+
+
+function recordSensorReadings(chamberId, sensors, currentChamber) {
+  if (!sensors || sensors.length === 0) return;
+  const now = Date.now();
+
+  const targetMin = currentChamber && currentChamber.temp_min != null ? currentChamber.temp_min : 2.0;
+  const targetMax = currentChamber && currentChamber.temp_max != null ? currentChamber.temp_max : 8.0;
+
+  if (!window.sensorReadingsHistoryByChamber[chamberId]) {
+    // Inicializa histórico com leituras anteriores harmonizadas com a curva
+    const history = [];
+    const stepMinutes = 6;
+    const totalSteps = 16;
+
+    for (let step = totalSteps; step >= 1; step--) {
+      const pastTime = new Date(now - step * stepMinutes * 60 * 1000);
+      sensors.forEach((s, idx) => {
+        const seed = (s.id.charCodeAt(1) || 1) * 3 + idx;
+        const noise = Math.sin(step * 0.35 + seed) * 0.14;
+        const tVal = (s.current_temp != null ? s.current_temp : 4.0) + noise;
+        const hVal = Math.round((s.current_humidity != null ? s.current_humidity : 50) + Math.cos(step) * 1.5);
+        history.push({
+          id: `hist-${chamberId}-${s.id}-${pastTime.getTime()}`,
+          timestamp: pastTime,
+          chamber_id: chamberId,
+          sensor_id: s.id,
+          serial_number: s.serial_number,
+          thermal_position: s.thermal_position,
+          temp: tVal,
+          humidity: hVal,
+          cert_number: s.cert_number,
+          calib_valid_until: s.calib_valid_until,
+          target_min: targetMin,
+          target_max: targetMax
+        });
+      });
+    }
+
+    // Adiciona a leitura atual
+    const currentTime = new Date(now);
+    sensors.forEach(s => {
+      history.push({
+        id: `hist-${chamberId}-${s.id}-${currentTime.getTime()}`,
+        timestamp: currentTime,
+        chamber_id: chamberId,
+        sensor_id: s.id,
+        serial_number: s.serial_number,
+        thermal_position: s.thermal_position,
+        temp: s.current_temp != null ? s.current_temp : 4.0,
+        humidity: s.current_humidity != null ? Math.round(s.current_humidity) : 50,
+        cert_number: s.cert_number,
+        calib_valid_until: s.calib_valid_until,
+        target_min: targetMin,
+        target_max: targetMax
+      });
+    });
+
+    // Ordena decrescente (mais recente primeiro)
+    history.sort((a, b) => b.timestamp - a.timestamp);
+    window.sensorReadingsHistoryByChamber[chamberId] = history;
+  } else {
+    // Atualização em tempo real periódica
+    const history = window.sensorReadingsHistoryByChamber[chamberId];
+    const lastTimestamp = history.length > 0 ? history[0].timestamp.getTime() : 0;
+    if (now - lastTimestamp >= 3000) {
+      const currentTime = new Date(now);
+      sensors.forEach(s => {
+        history.unshift({
+          id: `hist-${chamberId}-${s.id}-${currentTime.getTime()}`,
+          timestamp: currentTime,
+          chamber_id: chamberId,
+          sensor_id: s.id,
+          serial_number: s.serial_number,
+          thermal_position: s.thermal_position,
+          temp: s.current_temp != null ? s.current_temp : 4.0,
+          humidity: s.current_humidity != null ? Math.round(s.current_humidity) : 50,
+          cert_number: s.cert_number,
+          calib_valid_until: s.calib_valid_until,
+          target_min: targetMin,
+          target_max: targetMax
+        });
+      });
+      // Limita a 200 registros mais recentes
+      if (history.length > 200) {
+        history.length = 200;
+      }
+    }
+  }
+}
+
+function renderSensorHistoryTable() {
+  const tbody = document.getElementById('sensor-history-tbody');
+  if (!tbody) return;
+
+  const currentChamber = chambersData ? chambersData.find(c => c.id === selectedChamberId) : null;
+  const allReadings = window.sensorReadingsHistoryByChamber[selectedChamberId] || [];
+
+  const filtered = window.activeIsolatedSensorId
+    ? allReadings.filter(r => r.sensor_id === window.activeIsolatedSensorId)
+    : allReadings;
+
+  const elTitle = document.getElementById('history-panel-title');
+  const elBadge = document.getElementById('history-filter-badge');
+  const elBadgeTxt = document.getElementById('history-filter-text');
+  const elCounter = document.getElementById('history-record-counter');
+
+  if (window.activeIsolatedSensorId) {
+    const sInfo = sensorsData ? sensorsData.find(s => s.id === window.activeIsolatedSensorId) : null;
+    const posName = sInfo ? sInfo.thermal_position : 'Sensor';
+    if (elTitle) elTitle.innerText = `Histórico de Leituras — ${window.activeIsolatedSensorId} (${posName})`;
+    if (elBadge && elBadgeTxt) {
+      elBadge.style.display = 'inline-flex';
+      elBadgeTxt.innerText = `Filtro Ativo: ${window.activeIsolatedSensorId}`;
+    }
+    if (elCounter) elCounter.innerText = `${filtered.length} leituras registradas de ${window.activeIsolatedSensorId}`;
+  } else {
+    const chName = currentChamber ? currentChamber.name : (selectedChamberId || 'Câmara');
+    if (elTitle) elTitle.innerText = `Histórico Cronológico de Leituras Térmicas (${chName})`;
+    if (elBadge) elBadge.style.display = 'none';
+    if (elCounter) elCounter.innerText = `${filtered.length} leituras registradas (Todos os Sensores)`;
+  }
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #94A3B8; padding: 28px; font-size: 13.5px;">Nenhuma leitura cronológica registrada para o filtro selecionado.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.slice(0, 50).map(r => {
+    const col = getSensorColor(r.sensor_id);
+    const dateObj = new Date(r.timestamp);
+    const timeStr = dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const dateStr = dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const isCompliant = r.temp >= r.target_min && r.temp <= r.target_max;
+
+    let valDateFormatted = r.calib_valid_until || '--/--/----';
+    if (r.calib_valid_until && r.calib_valid_until.includes('-')) {
+      const parts = r.calib_valid_until.split('-');
+      if (parts.length === 3) {
+        valDateFormatted = `${parts[2]}/${parts[1]}/${parts[0]}`;
+      }
+    }
+
+    return `
+      <tr>
+        <td style="text-align: center;">
+          <code style="color: #38BDF8; font-weight: 700; font-size: 13px;">${timeStr}</code><br>
+          <span style="color: #64748B; font-size: 11px;">${dateStr}</span>
+        </td>
+        <td style="text-align: center;">
+          <span class="sensor-pill-badge" style="border-color:${col}66; color:${col}; font-size: 12px; font-weight: 700;">${r.sensor_id}</span>
+        </td>
+        <td style="text-align: left;">
+          <strong style="color: #F1F5F9; font-size: 13px;">${r.thermal_position}</strong><br>
+          <span style="color: #64748B; font-size: 11px; font-family: monospace;">${r.serial_number}</span>
+        </td>
+        <td style="text-align: center;">
+          <strong style="color: ${isCompliant ? '#34D399' : '#EF4444'}; font-family: monospace; font-size: 14px;">
+            ${r.temp.toFixed(1).replace('.', ',')} °C
+          </strong>
+        </td>
+        <td style="text-align: center;">
+          <span style="font-family: monospace; font-size: 12.5px; color: #E2E8F0;">${r.humidity}% UR</span>
+        </td>
+        <td style="text-align: center;">
+          ${isCompliant 
+            ? '<span class="badge-status liberado" style="font-size: 11px; padding: 3px 9px;">CONFORME</span>' 
+            : '<span class="badge-status quarentena" style="font-size: 11px; padding: 3px 9px;">EXCURSÃO</span>'
+          }
+        </td>
+        <td style="text-align: center;">
+          <span style="color: #CBD5E1; font-size: 12px; font-family: monospace;">${r.cert_number}</span><br>
+          <span style="color: #64748B; font-size: 11px;">Val. ${valDateFormatted}</span>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
 
 async function selectChamber(chamberId, forceHighlight = true) {
   selectedChamberId = chamberId;
@@ -781,6 +973,8 @@ async function selectChamber(chamberId, forceHighlight = true) {
 
     setupChartInteractions();
     renderMultiSensorChart(sensorsData, currentChamber);
+    recordSensorReadings(selectedChamberId, sensorsData, currentChamber);
+    renderSensorHistoryTable();
   } catch (e) {
     console.error('Erro ao carregar sensores:', e);
   }

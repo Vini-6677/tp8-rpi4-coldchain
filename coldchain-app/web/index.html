@@ -1756,6 +1756,43 @@
               <!-- Preenchido dinamicamente -->
             </div>
           </div>
+
+        <!-- Painel de Histórico Cronológico de Leituras dos Sensores -->
+        <div class="detail-panel" style="margin-top: 22px;" id="panel-sensor-history">
+          <div class="panel-header-row" style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div class="panel-title" style="margin-bottom: 0;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              <span id="history-panel-title">Histórico Cronológico de Leituras dos Sensores</span>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <div id="history-filter-badge" style="display: none;">
+                <span class="tag-badge tag-blue" id="history-filter-text">Sensor: S01</span>
+              </div>
+              <span style="font-size: 11px; color: #94A3B8;" id="history-record-counter">Carregando leituras...</span>
+            </div>
+          </div>
+
+          <div class="data-table-wrapper" style="max-height: 440px; overflow-y: auto;">
+            <table class="data-table" id="sensor-history-table">
+              <thead>
+                <tr>
+                  <th style="width: 145px; text-align: center;">Horário / Data</th>
+                  <th style="width: 95px; text-align: center;">Sensor</th>
+                  <th style="text-align: left;">Posição Térmica Mapeada</th>
+                  <th style="width: 120px; text-align: center;">Temperatura</th>
+                  <th style="width: 100px; text-align: center;">Umidade</th>
+                  <th style="width: 135px; text-align: center;">Status Térmico</th>
+                  <th style="width: 165px; text-align: center;">Certificado RBC</th>
+                </tr>
+              </thead>
+              <tbody id="sensor-history-tbody">
+                <!-- Preenchido dinamicamente via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         </div>
       </section>
 
@@ -2265,7 +2302,7 @@
   </div>
 
 
-  <script src="/static/app.js?v=sensor_focus_v26"></script>
+  <script src="/static/app.js?v=history_table_v27"></script>
 
   <!-- =========================================================================
        MODAL 5: CADASTRO DE MEDICAMENTO (CATÁLOGO ANVISA)
