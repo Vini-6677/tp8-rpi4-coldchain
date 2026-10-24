@@ -255,7 +255,7 @@ async function loadChambers(renderDetail = true) {
       const statusClass = c.status === 'EXCURSAO' ? 'status-excursao' : '';
       const pillClass = c.status === 'EXCURSAO' ? 'excursao' : (c.status === 'ALERTA' ? 'alerta' : 'ok');
       const pillText = c.status === 'EXCURSAO' ? 'Excursão' : (c.status === 'ALERTA' ? 'Atenção' : 'Conforme');
-      const lastSignal = c.last_reading_time ? (c.last_reading_time.split(' ')[1] || c.last_reading_time) : '17:47:18';
+      const lastSignal = c.last_reading_time ? formatBrasiliaTimeOnly(c.last_reading_time) : '17:47:18';
       const sparklineSVG = generateSparklineSVG(c, idx);
 
       const card = document.createElement('div');
@@ -813,7 +813,7 @@ async function loadExcursions() {
         <tr>
           <td style="text-align: center;"><strong style="color: #38BDF8; font-family: monospace; font-size: 13px;">${e.code}</strong></td>
           <td style="text-align: center; font-weight: 600; color: #F1F5F9; font-size: 13.5px;">${cleanChamber}</td>
-          <td style="text-align: center;"><span style="font-size: 12px; color: #94A3B8; line-height: 1.45;">${e.start_time}<br>${e.end_time || 'Em andamento'}</span></td>
+          <td style="text-align: center;"><span style="font-size: 12px; color: #CBD5E1; line-height: 1.45;">${formatBrasiliaDateTime(e.start_time)}<br>${e.end_time ? formatBrasiliaDateTime(e.end_time) : '<span style="color:#F59E0B; font-weight:600;">Em andamento</span>'}</span></td>
           <td style="text-align: center;"><strong style="color: #EF4444; font-family: monospace; font-size: 14px;">${e.peak_temp.toFixed(1)}ºC</strong></td>
           <td style="text-align: center; color: #CBD5E1; font-family: monospace; font-size: 13.5px; font-weight: 700;">${e.accumulated_degree_minutes.toFixed(1)}ºC.min</td>
           <td style="text-align: center;"><span class="badge-status quarentena" style="font-size: 12px; padding: 4px 10px;">${e.quarantined_lots_count} lotes segregados</span></td>
@@ -951,6 +951,135 @@ async function loadMetrology() {
   }
 }
 
+
+// -----------------------------------------------------------------------------
+// FORMATAÇÃO DE DATA E HORA — FUSO HORÁRIO DE BRASÍLIA (UTC-3)
+// -----------------------------------------------------------------------------
+function formatBrasiliaDateTime(val) {
+  if (!val) return '';
+  let s = String(val).trim();
+  if (!s || s === 'Em andamento') return s;
+
+  // Normaliza string para padrão ISO caso venha como "YYYY-MM-DD HH:MM:SS"
+  let iso = s;
+  if (iso.includes(' ') && !iso.includes('T')) {
+    iso = iso.replace(' ', 'T');
+  }
+  // Se não contiver indicação de fuso, assume UTC (armazém padrão SQLite/servidor)
+  if (!iso.endsWith('Z') && !iso.includes('+') && !iso.includes('-03:00')) {
+    iso += 'Z';
+  }
+
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return val;
+
+  // Formata no padrão brasileiro (DD/MM/AAAA HH:MM:SS) no Fuso Horário de Brasília
+  return d.toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+}
+
+function formatBrasiliaTimeOnly(val) {
+  if (!val) return '--:--:--';
+  const full = formatBrasiliaDateTime(val);
+  if (full.includes(' ')) {
+    return full.split(' ')[1];
+  }
+  return full;
+}
+
+function formatLedgerType(type) {
+  switch (type) {
+    case 'ANCHOR':
+      return {
+        label: 'Âncora (Selo TSA)',
+        style: 'background: rgba(16, 185, 129, 0.14); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.35);'
+      };
+    case 'BOOT':
+      return {
+        label: 'Inicialização (Boot)',
+        style: 'background: rgba(239, 68, 68, 0.12); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.3);'
+      };
+    case 'DATA':
+      return {
+        label: 'Telemetria Térmica',
+        style: 'background: rgba(56, 189, 248, 0.12); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.3);'
+      };
+    case 'GENESIS':
+      return {
+        label: 'Bloco Gênesis',
+        style: 'background: rgba(168, 85, 247, 0.14); color: #C084FC; border: 1px solid rgba(168, 85, 247, 0.35);'
+      };
+    default:
+      return {
+        label: type || 'Registro',
+        style: 'background: rgba(148, 163, 184, 0.12); color: #CBD5E1; border: 1px solid rgba(148, 163, 184, 0.3);'
+      };
+  }
+}
+
+function formatAuditAction(action) {
+  const map = {
+    'SIMULACAO_EXCURSAO': 'Simulação de Excursão',
+    'DECISAO_EXCURSAO': 'Decisão Pericial (RT)',
+    'RESOLVE_ALARME': 'Resolução de Alarme',
+    'RECONHECE_ALARME': 'Reconhecimento de Alarme',
+    'LOGIN_SUCCESS': 'Login Autorizado',
+    'LOGIN_FAILED': 'Tentativa de Login Falha',
+    'LOGIN_BLOCKED': 'Conta Bloqueada',
+    'LOGOUT': 'Encerramento de Sessão',
+    'LEDGER_ANCHOR': 'Emissão de Âncora (TSA)',
+    'CADASTRO_CAMARA': 'Cadastro de Câmara',
+    'EDICAO_CAMARA': 'Edição de Parâmetros',
+    'CADASTRO_SENSOR': 'Cadastro de Sensor',
+    'RECALIBRACAO_SENSOR': 'Recalibração de Sensor',
+    'CADASTRO_PRODUTO': 'Cadastro de Medicamento',
+    'RECEBIMENTO_ESTOQUE': 'Recebimento de Estoque',
+    'SAIDA_ESTOQUE': 'Saída de Estoque',
+    'REVISAO_POP': 'Aprovação de POP',
+    'REGISTRO_TREINAMENTO': 'Registro de Treinamento',
+    'REGISTRO_QUALIFICACAO': 'Qualificação Térmica',
+    'USER_CREATED': 'Criação de Usuário',
+    'USER_STATUS_CHANGE': 'Alteração de Usuário',
+    'USER_ROLE_CHANGE': 'Alteração de Perfil'
+  };
+  return map[action] || (action ? action.replace(/_/g, ' ') : '-');
+}
+
+function getAuditActionBadge(action) {
+  const label = formatAuditAction(action);
+  let bg = 'rgba(245, 158, 11, 0.08)';
+  let color = '#F59E0B';
+  let border = 'rgba(245, 158, 11, 0.25)';
+
+  if (action === 'LOGIN_SUCCESS' || action === 'RESOLVE_ALARME' || action === 'LEDGER_ANCHOR' || action === 'DECISAO_EXCURSAO') {
+    bg = 'rgba(52, 211, 153, 0.1)';
+    color = '#34D399';
+    border = 'rgba(52, 211, 153, 0.3)';
+  } else if (action === 'LOGIN_FAILED' || action === 'LOGIN_BLOCKED') {
+    bg = 'rgba(239, 68, 68, 0.1)';
+    color = '#FCA5A5';
+    border = 'rgba(239, 68, 68, 0.3)';
+  } else if (action === 'SIMULACAO_EXCURSAO' || action === 'RECONHECE_ALARME') {
+    bg = 'rgba(245, 158, 11, 0.12)';
+    color = '#FBBF24';
+    border = 'rgba(245, 158, 11, 0.35)';
+  } else if (action.startsWith('CADASTRO_') || action.startsWith('USER_') || action.startsWith('REGISTRO_')) {
+    bg = 'rgba(56, 189, 248, 0.1)';
+    color = '#38BDF8';
+    border = 'rgba(56, 189, 248, 0.3)';
+  }
+
+  return `<span style="display: inline-block; padding: 3px 9px; border-radius: 5px; font-size: 11.5px; font-weight: 600; background: ${bg}; color: ${color}; border: 1px solid ${border}; white-space: nowrap;">${label}</span>`;
+}
+
 // -----------------------------------------------------------------------------
 // MÓDULO 5: AUDITORIA ALCOA+ & LEDGER CRIPTOGRÁFICO
 // -----------------------------------------------------------------------------
@@ -971,15 +1100,16 @@ async function loadLedger() {
             const prev = (r.prev_hash || '').substring(0, 16);
             const cur = (r.current_hash || '').substring(0, 16);
             const sig = (r.signature || '').substring(0, 24);
-            const isBoot = r.type_name === 'BOOT';
+            const typeInfo = formatLedgerType(r.type_name);
+            const dateFormatted = formatBrasiliaDateTime(r.created_at);
             tbodyL.innerHTML += `
               <tr>
                 <td style="text-align: center;"><strong style="color: #38BDF8; font-family: monospace; font-size: 13.5px;">#${r.id}</strong></td>
-                <td style="text-align: center;"><span class="badge-status ${isBoot ? 'quarentena' : 'liberado'}" style="font-size: 11.5px; padding: 3px 8px;">${r.type_name || 'DATA'}</span></td>
+                <td style="text-align: center;"><span class="badge-status" style="font-size: 11px; padding: 4px 9px; font-weight: 700; white-space: nowrap; ${typeInfo.style}">${typeInfo.label}</span></td>
                 <td style="text-align: center;"><code style="font-size: 12px; color: #94A3B8; background: rgba(255,255,255,0.05); padding: 3px 8px; border-radius: 4px; font-family: monospace;">${prev}...</code></td>
                 <td style="text-align: center;"><code style="font-size: 12px; color: #6EE7B7; background: rgba(110,231,183,0.08); padding: 3px 8px; border-radius: 4px; font-family: monospace;">${cur}...</code></td>
                 <td style="text-align: center;"><code style="font-size: 12px; color: #C4B5FD; background: rgba(196,181,253,0.08); padding: 3px 8px; border-radius: 4px; font-family: monospace;">${sig}...</code></td>
-                <td style="text-align: center; font-size: 12px; color: #94A3B8; font-family: monospace;">${r.created_at || ''}</td>
+                <td style="text-align: center; font-size: 12px; color: #CBD5E1; font-family: monospace;">${dateFormatted}</td>
               </tr>
             `;
           });
@@ -997,12 +1127,14 @@ async function loadLedger() {
         tbodyA.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #94A3B8; padding: 22px; font-size: 13.5px;">Nenhum registro de auditoria disponível.</td></tr>';
       } else {
         logs.forEach(l => {
+          const dateFormatted = formatBrasiliaDateTime(l.timestamp);
+          const actionBadge = getAuditActionBadge(l.action);
           tbodyA.innerHTML += `
             <tr>
-              <td style="text-align: center; font-size: 12px; color: #CBD5E1; font-family: monospace;">${l.timestamp}</td>
+              <td style="text-align: center; font-size: 12px; color: #CBD5E1; font-family: monospace;">${dateFormatted}</td>
               <td style="text-align: center;"><strong style="color: #F1F5F9; font-size: 13.5px;">${l.username}</strong></td>
               <td style="text-align: center;"><span class="badge-status liberado" style="font-size: 11px;">${l.role.toUpperCase()}</span></td>
-              <td style="text-align: center;"><code style="color: #F59E0B; background: rgba(245,158,11,0.08); padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 600;">${l.action}</code></td>
+              <td style="text-align: center;">${actionBadge}</td>
               <td style="font-size: 13px; color: #E2E8F0; line-height: 1.45;">${l.details}</td>
               <td style="text-align: center; font-size: 12px; color: #94A3B8; font-family: monospace;">${l.ip_address}</td>
             </tr>
