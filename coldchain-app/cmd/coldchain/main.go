@@ -265,6 +265,11 @@ func (a *App) getSession(r *http.Request) (*Session, bool) {
 }
 
 func seedUsers(db *sql.DB) error {
+	// Limpeza e migração: remove usuário 'gerente' e atualiza 'tecnico' para Responsável Técnico
+	_, _ = db.Exec("DELETE FROM users WHERE username = 'gerente' OR role = 'gerente'")
+	_, _ = db.Exec("DELETE FROM sessions WHERE username = 'gerente'")
+	_, _ = db.Exec("UPDATE users SET name = 'Dr. Lucas Silva (Responsável Técnico)' WHERE username = 'tecnico'")
+
 	var count int
 	_ = db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
 	if count > 0 {
@@ -278,9 +283,8 @@ func seedUsers(db *sql.DB) error {
 		role     string
 	}{
 		{"admin", "admin123", "Administrador Geral", "admin"},
-		{"gerente", "gerente123", "Dra. Mariana Costa (Gerente)", "gerente"},
+		{"tecnico", "tecnico123", "Dr. Lucas Silva (Responsável Técnico)", "tecnico"},
 		{"enfermeiro", "enfermeiro123", "Enf. Carlos Mendes (Enfermeiro)", "enfermeiro"},
-		{"tecnico", "tecnico123", "Téc. Lucas Silva (Técnico)", "tecnico"},
 	}
 
 	for _, s := range seeds {
@@ -589,7 +593,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("/api/audit/logs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		sess, ok := a.getSession(r)
-		if !ok || (sess.Role != "gerente" && sess.Role != "admin") {
+		if !ok || (sess.Role != "tecnico" && sess.Role != "admin") {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]any{
 				"error": "Acesso não autorizado. Apenas Gerente ou Administrador podem visualizar a trilha de auditoria.",
@@ -692,9 +696,9 @@ func (a *App) routes() http.Handler {
 			return
 		}
 
-		if req.Role != "enfermeiro" && req.Role != "tecnico" && req.Role != "gerente" {
+		if req.Role != "enfermeiro" && req.Role != "tecnico" {
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]any{"error": "Perfil inválido. Permitidos: enfermeiro, tecnico, gerente."})
+			json.NewEncoder(w).Encode(map[string]any{"error": "Perfil inválido. Permitidos: enfermeiro, tecnico (Responsável Técnico)."})
 			return
 		}
 
@@ -806,9 +810,9 @@ func (a *App) routes() http.Handler {
 		}
 
 		req.Role = strings.ToLower(strings.TrimSpace(req.Role))
-		if req.Role != "enfermeiro" && req.Role != "tecnico" && req.Role != "gerente" {
+		if req.Role != "enfermeiro" && req.Role != "tecnico" {
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]any{"error": "Perfil inválido. Permitidos: enfermeiro, tecnico, gerente."})
+			json.NewEncoder(w).Encode(map[string]any{"error": "Perfil inválido. Permitidos: enfermeiro, tecnico (Responsável Técnico)."})
 			return
 		}
 
@@ -1016,7 +1020,7 @@ func (a *App) routes() http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		sess, ok := a.getSession(r)
-		if !ok || (sess.Role != "gerente" && sess.Role != "admin") {
+		if !ok || (sess.Role != "tecnico" && sess.Role != "admin") {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]any{"error": "Acesso restrito ao Gerente ou Administrador."})
 			return
@@ -1051,7 +1055,7 @@ func (a *App) routes() http.Handler {
 
 		if r.Method == http.MethodPost {
 			sess, ok := a.getSession(r)
-			if !ok || (sess.Role != "gerente" && sess.Role != "admin") {
+			if !ok || (sess.Role != "tecnico" && sess.Role != "admin") {
 				w.WriteHeader(http.StatusForbidden)
 				json.NewEncoder(w).Encode(map[string]any{"error": "Cadastro de câmaras restrito a Farmacêutico RT / Gerente / Administrador."})
 				return
@@ -1076,7 +1080,7 @@ func (a *App) routes() http.Handler {
 
 		if r.Method == http.MethodPut {
 			sess, ok := a.getSession(r)
-			if !ok || (sess.Role != "gerente" && sess.Role != "admin") {
+			if !ok || (sess.Role != "tecnico" && sess.Role != "admin") {
 				w.WriteHeader(http.StatusForbidden)
 				json.NewEncoder(w).Encode(map[string]any{"error": "Edição de câmaras restrita a Farmacêutico RT / Gerente / Administrador."})
 				return
@@ -1099,7 +1103,7 @@ func (a *App) routes() http.Handler {
 
 		if r.Method == http.MethodDelete {
 			sess, ok := a.getSession(r)
-			if !ok || (sess.Role != "gerente" && sess.Role != "admin") {
+			if !ok || (sess.Role != "tecnico" && sess.Role != "admin") {
 				w.WriteHeader(http.StatusForbidden)
 				json.NewEncoder(w).Encode(map[string]any{"error": "Descomissionamento restrito a Gerente ou Administrador."})
 				return
@@ -1181,7 +1185,7 @@ func (a *App) routes() http.Handler {
 				json.NewEncoder(w).Encode(map[string]string{"error": "Autenticação requerida."})
 				return
 			}
-			if sess.Role != "gerente" && sess.Role != "admin" {
+			if sess.Role != "tecnico" && sess.Role != "admin" {
 				w.WriteHeader(http.StatusForbidden)
 				json.NewEncoder(w).Encode(map[string]string{"error": "Acesso negado: apenas Gerente RT ou Admin podem cadastrar sensores."})
 				return
@@ -1215,7 +1219,7 @@ func (a *App) routes() http.Handler {
 				json.NewEncoder(w).Encode(map[string]string{"error": "Autenticação requerida."})
 				return
 			}
-			if sess.Role != "gerente" && sess.Role != "admin" {
+			if sess.Role != "tecnico" && sess.Role != "admin" {
 				w.WriteHeader(http.StatusForbidden)
 				json.NewEncoder(w).Encode(map[string]string{"error": "Acesso negado: apenas Gerente RT ou Admin podem atualizar/recalibrar sensores."})
 				return
@@ -1255,7 +1259,7 @@ func (a *App) routes() http.Handler {
 
 		if r.Method == http.MethodPost {
 			sess, ok := a.getSession(r)
-			if !ok || (sess.Role != "gerente" && sess.Role != "admin" && sess.Role != "enfermeiro") {
+			if !ok || (sess.Role != "tecnico" && sess.Role != "admin" && sess.Role != "enfermeiro") {
 				w.WriteHeader(http.StatusForbidden)
 				json.NewEncoder(w).Encode(map[string]any{"error": "Cadastro de medicamentos restrito a Farmacêutico RT / Gerente / Administrador."})
 				return
@@ -1324,7 +1328,7 @@ func (a *App) routes() http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		sess, ok := a.getSession(r)
-		if !ok || (sess.Role != "tecnico" && sess.Role != "gerente" && sess.Role != "admin" && sess.Role != "enfermeiro") {
+		if !ok || (sess.Role != "tecnico" && sess.Role != "admin" && sess.Role != "enfermeiro") {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]any{"error": "Acesso restrito ao Técnico, Gerente ou Administrador."})
 			return
@@ -1552,7 +1556,7 @@ func (a *App) routes() http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		sess, ok := a.getSession(r)
-		if !ok || (sess.Role != "gerente" && sess.Role != "admin" && sess.Role != "enfermeiro") {
+		if !ok || (sess.Role != "tecnico" && sess.Role != "admin" && sess.Role != "enfermeiro") {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]any{"error": "Decisão pericial de excursão restrita ao Farmacêutico RT / Gerente / Administrador."})
 			return
@@ -1600,7 +1604,7 @@ func (a *App) routes() http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		sess, ok := a.getSession(r)
-		if !ok || (sess.Role != "gerente" && sess.Role != "admin") {
+		if !ok || (sess.Role != "tecnico" && sess.Role != "admin") {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]any{"error": "Simulação restrita a Gerente ou Administrador."})
 
@@ -1679,7 +1683,7 @@ func (a *App) routes() http.Handler {
 			json.NewEncoder(w).Encode(map[string]string{"error": "Autenticação requerida."})
 			return
 		}
-		if sess.Role != "gerente" && sess.Role != "admin" {
+		if sess.Role != "tecnico" && sess.Role != "admin" {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]string{"error": "Acesso negado: apenas Farmacêutico RT ou Admin podem revisar POPs."})
 			return
@@ -1719,7 +1723,7 @@ func (a *App) routes() http.Handler {
 			json.NewEncoder(w).Encode(map[string]string{"error": "Autenticação requerida."})
 			return
 		}
-		if sess.Role != "gerente" && sess.Role != "admin" {
+		if sess.Role != "tecnico" && sess.Role != "admin" {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]string{"error": "Acesso negado: apenas Farmacêutico RT ou Admin podem lançar treinamentos."})
 			return
@@ -1759,7 +1763,7 @@ func (a *App) routes() http.Handler {
 			json.NewEncoder(w).Encode(map[string]string{"error": "Autenticação requerida."})
 			return
 		}
-		if sess.Role != "gerente" && sess.Role != "admin" {
+		if sess.Role != "tecnico" && sess.Role != "admin" {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]string{"error": "Acesso negado: apenas Farmacêutico RT ou Admin podem cadastrar qualificações."})
 			return

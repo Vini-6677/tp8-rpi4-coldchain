@@ -117,7 +117,16 @@ function showApp() {
   document.getElementById('app-container').style.display = 'flex';
 
   document.getElementById('app-user-name').innerText = currentUser.name || currentUser.username;
-  document.getElementById('app-user-role').innerText = currentUser.role.toUpperCase();
+
+  let roleDisplay = currentUser.role.toUpperCase();
+  if (currentUser.role === 'tecnico') {
+    roleDisplay = 'RESPONSÁVEL TÉCNICO';
+  } else if (currentUser.role === 'enfermeiro') {
+    roleDisplay = 'ENFERMEIRO';
+  } else if (currentUser.role === 'admin') {
+    roleDisplay = 'ADMINISTRADOR';
+  }
+  document.getElementById('app-user-role').innerText = roleDisplay;
   document.getElementById('app-user-avatar').innerText = (currentUser.name || currentUser.username).substring(0, 2).toUpperCase();
 
   // Permissões de abas por perfil (RBAC)
@@ -125,26 +134,28 @@ function showApp() {
   const tabMetrology = document.getElementById('tab-btn-metrology');
   const tabLedger = document.getElementById('tab-btn-ledger');
 
-  if (currentUser.role === 'enfermeiro') {
-    // Enfermeiros não visualizam Metrologia, Auditoria nem Usuários
-    if (tabMetrology) tabMetrology.style.display = 'none';
-    if (tabLedger) tabLedger.style.display = 'none';
-    if (tabUsers) tabUsers.style.display = 'none';
-  } else if (currentUser.role === 'admin') {
-    if (tabMetrology) tabMetrology.style.display = 'flex';
-    if (tabLedger) tabLedger.style.display = 'flex';
+  // Apenas o Administrador Geral acessa a aba Usuários
+  if (currentUser.role === 'admin') {
     if (tabUsers) tabUsers.style.display = 'flex';
   } else {
-    // Gerente, Técnico, etc.
-    if (tabMetrology) tabMetrology.style.display = 'flex';
-    if (tabLedger) tabLedger.style.display = 'flex';
     if (tabUsers) tabUsers.style.display = 'none';
   }
 
-  // Permissão para cadastro e exclusão/descomissionamento de câmaras (Invisível para enfermeiro)
+  // Metrologia e Auditoria/Ledger: visíveis para Responsável Técnico e Admin; invisíveis para Enfermeiro
+  if (currentUser.role === 'enfermeiro') {
+    if (tabMetrology) tabMetrology.style.display = 'none';
+    if (tabLedger) tabLedger.style.display = 'none';
+  } else {
+    // tecnico (Responsável Técnico) e admin
+    if (tabMetrology) tabMetrology.style.display = 'flex';
+    if (tabLedger) tabLedger.style.display = 'flex';
+  }
+
+  // Permissão para cadastro e exclusão/descomissionamento de câmaras:
+  // Responsável Técnico (tecnico) e Admin têm acesso total; Enfermeiro não vê.
   const btnNewChamber = document.getElementById('btn-new-chamber');
   if (btnNewChamber) {
-    if (currentUser.role === 'gerente' || currentUser.role === 'admin') {
+    if (currentUser.role === 'tecnico' || currentUser.role === 'admin') {
       btnNewChamber.style.display = 'inline-flex';
     } else {
       btnNewChamber.style.display = 'none';
@@ -153,25 +164,23 @@ function showApp() {
 
   const btnDecomChamber = document.getElementById('btn-decommission-chamber');
   if (btnDecomChamber) {
-    if (currentUser.role === 'gerente' || currentUser.role === 'admin') {
+    if (currentUser.role === 'tecnico' || currentUser.role === 'admin') {
       btnDecomChamber.style.display = 'inline-flex';
     } else {
       btnDecomChamber.style.display = 'none';
     }
   }
 
-  // Permissão para simulação de excursão (Liberado para Enfermeiro, Gerente e Administrador)
+  // Simulação de excursão (disponível para todos os perfis autorizados)
   const btnSimulateExc = document.getElementById('btn-simulate-excursion');
   if (btnSimulateExc) {
-    if (currentUser.role === 'gerente' || currentUser.role === 'admin' || currentUser.role === 'enfermeiro') {
-      btnSimulateExc.style.display = 'inline-flex';
-    } else {
-      btnSimulateExc.style.display = 'none';
-    }
+    btnSimulateExc.style.display = 'inline-flex';
   }
 
-  // Se o enfermeiro estiver em uma aba restrita, redireciona para o Painel Sinótico
+  // Se o usuário estiver em aba não autorizada, redireciona para o Painel Sinótico
   if (currentUser.role === 'enfermeiro' && (activeTab === 'metrology' || activeTab === 'ledger' || activeTab === 'users')) {
+    activeTab = 'chambers';
+  } else if (currentUser.role === 'tecnico' && activeTab === 'users') {
     activeTab = 'chambers';
   }
   switchTab(activeTab || 'chambers');
@@ -234,9 +243,14 @@ async function handleLogout() {
 // NAVEGAÇÃO ENTRE ABAS
 // -----------------------------------------------------------------------------
 function switchTab(tabId) {
-  // Guarda de acesso: Enfermeiro tem acesso restrito (apenas Sinótico, Estoque e Alarmes)
-  if (currentUser && currentUser.role === 'enfermeiro') {
-    if (tabId === 'metrology' || tabId === 'ledger' || tabId === 'users') {
+  // Guarda de acesso por perfil (RBAC):
+  if (currentUser) {
+    // Apenas o Administrador Geral acessa a aba Usuários
+    if (tabId === 'users' && currentUser.role !== 'admin') {
+      tabId = 'chambers';
+    }
+    // Enfermeiro tem acesso apenas a Sinótico, Estoque e Alarmes
+    if (currentUser.role === 'enfermeiro' && (tabId === 'metrology' || tabId === 'ledger' || tabId === 'users')) {
       tabId = 'chambers';
     }
   }
@@ -1337,7 +1351,7 @@ async function loadAlarms() {
             ` : `
               <div style="font-size: 12px; line-height: 1.4; text-align: center;">
                 <span style="color: #34D399; font-weight: 600;">Resolvido</span><br>
-                <span style="color: #94A3B8; font-size: 11px; font-weight: 500;">Assinado por ${a.resolved_by || 'Dra. Mariana Costa (Gerente)'}</span>
+                <span style="color: #94A3B8; font-size: 11px; font-weight: 500;">Assinado por ${a.resolved_by || 'Dr. Lucas Silva (Responsável Técnico)'}</span>
               </div>
             `}
           </td>
@@ -2747,7 +2761,7 @@ function openDecommissionModal() {
 
   const sigName = document.getElementById('decom-resp-name');
   if (sigName) {
-    sigName.value = currentUser ? `${currentUser.name} (${currentUser.role.toUpperCase()})` : 'Farmacêutico RT';
+    sigName.value = currentUser ? `${currentUser.name} (${currentUser.role.toUpperCase()})` : 'Dr. Lucas Silva (Responsável Técnico)';
   }
 
   m.classList.add('active');

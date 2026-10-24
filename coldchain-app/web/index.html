@@ -1634,7 +1634,7 @@
       <form id="form-login" onsubmit="event.preventDefault(); submitLogin();">
         <div class="form-group">
           <label class="form-label">Usuário Hospitalar</label>
-          <input type="text" id="login-username" class="form-control" placeholder="ex: gerente" required autocomplete="username">
+          <input type="text" id="login-username" class="form-control" placeholder="ex: tecnico" required autocomplete="username">
         </div>
         <div class="form-group">
           <label class="form-label">Senha de Acesso</label>
@@ -1645,18 +1645,15 @@
 
       <div class="demo-accounts">
         <div class="demo-accounts-title">Acesso Rápido por Perfil (Ambiente de Testes)</div>
-        <div class="demo-grid">
-          <div class="demo-badge" onclick="fillLogin('gerente', 'gerente123')">
-            <strong>Gerente / RT</strong><br><span style="color:#64748B;">gerente123</span>
-          </div>
-          <div class="demo-badge" onclick="fillLogin('admin', 'admin123')">
-            <strong>Administrador</strong><br><span style="color:#64748B;">admin123</span>
-          </div>
+        <div class="demo-grid" style="grid-template-columns: repeat(3, 1fr);">
           <div class="demo-badge" onclick="fillLogin('tecnico', 'tecnico123')">
-            <strong>Técnico</strong><br><span style="color:#64748B;">tecnico123</span>
+            <strong>Responsável Técnico (RT)</strong><br><span style="color:#64748B;">tecnico123</span>
           </div>
           <div class="demo-badge" onclick="fillLogin('enfermeiro', 'enfermeiro123')">
             <strong>Enfermeiro</strong><br><span style="color:#64748B;">enfermeiro123</span>
+          </div>
+          <div class="demo-badge" onclick="fillLogin('admin', 'admin123')">
+            <strong>Administrador</strong><br><span style="color:#64748B;">admin123</span>
           </div>
         </div>
       </div>

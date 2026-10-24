@@ -1014,7 +1014,7 @@ func GetAlarms(db *sql.DB, status string) ([]Alarm, error) {
 	                 COALESCE(a.value, 0.0), COALESCE(a.threshold, 0.0), a.status, a.escalation_level,
 	                 COALESCE(a.acknowledged_by, ''), COALESCE(a.acknowledged_at, ''),
 	                 COALESCE(a.action_taken, ''), a.created_at, COALESCE(a.resolved_at, ''),
-	                 COALESCE(NULLIF(a.resolved_by, ''), NULLIF(a.acknowledged_by, ''), 'Dra. Mariana Costa (Gerente)') AS resolved_by,
+	                 COALESCE(NULLIF(a.resolved_by, ''), NULLIF(a.acknowledged_by, ''), 'Dr. Lucas Silva (Responsável Técnico)') AS resolved_by,
 	                 COALESCE(a.electronic_sig, '') AS electronic_sig
 	          FROM alarms a
 	          JOIN chambers c ON c.id = a.chamber_id
