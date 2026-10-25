@@ -814,7 +814,9 @@ func (a *App) routes() http.Handler {
 		}
 
 		var req struct {
-			Username string `json:"username"`
+			UserID    int64  `json:"user_id"`
+			Username  string `json:"username"`
+			IsBlocked *int   `json:"is_blocked"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -822,29 +824,46 @@ func (a *App) routes() http.Handler {
 			return
 		}
 
-		if req.Username == sess.Username {
+		var targetUser string
+		var currentBlock int
+		var err error
+
+		if req.UserID > 0 {
+			err = a.db.QueryRow("SELECT username, is_blocked FROM users WHERE id = ?", req.UserID).Scan(&targetUser, &currentBlock)
+		} else if req.Username != "" {
+			err = a.db.QueryRow("SELECT username, is_blocked FROM users WHERE username = ?", strings.ToLower(strings.TrimSpace(req.Username))).Scan(&targetUser, &currentBlock)
+		} else {
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]any{"error": "O administrador não pode bloquear a si próprio."})
+			json.NewEncoder(w).Encode(map[string]any{"error": "Identificador do usuário não informado."})
 			return
 		}
 
-		var currentBlock int
-		err := a.db.QueryRow("SELECT is_blocked FROM users WHERE username = ?", req.Username).Scan(&currentBlock)
 		if err != nil {
 			w.WriteHeader(http.StatusNotFound)
 			json.NewEncoder(w).Encode(map[string]any{"error": "Usuário não encontrado."})
 			return
 		}
 
+		if targetUser == "admin" || targetUser == sess.Username {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Não é permitido bloquear a conta de Administrador Geral."})
+			return
+		}
+
 		newBlock := 1 - currentBlock
-		_, err = a.db.Exec("UPDATE users SET is_blocked = ? WHERE username = ?", newBlock, req.Username)
+		if req.IsBlocked != nil {
+			newBlock = *req.IsBlocked
+		}
+
+		_, err = a.db.Exec("UPDATE users SET is_blocked = ? WHERE username = ?", newBlock, targetUser)
 		if err != nil {
-			http.Error(w, "Erro ao atualizar status", http.StatusInternalServerError)
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]any{"error": fmt.Sprintf("Erro ao atualizar status: %v", err)})
 			return
 		}
 
 		if newBlock == 1 {
-			_, _ = a.db.Exec("DELETE FROM sessions WHERE username = ?", req.Username)
+			_, _ = a.db.Exec("DELETE FROM sessions WHERE username = ?", targetUser)
 		}
 
 		ip := getClientIP(r)
@@ -852,12 +871,12 @@ func (a *App) routes() http.Handler {
 		if newBlock == 1 {
 			actionDesc = "bloqueado"
 		}
-		a.logAudit(sess.Username, sess.Role, "USER_STATUS_CHANGE", fmt.Sprintf("Usuário '%s' foi %s pelo administrador", req.Username, actionDesc), ip)
+		a.logAudit(sess.Username, sess.Role, "USER_STATUS_CHANGE", fmt.Sprintf("Usuário '%s' foi %s pelo administrador", targetUser, actionDesc), ip)
 
 		json.NewEncoder(w).Encode(map[string]any{
 			"status":     "ok",
 			"is_blocked": newBlock,
-			"message":    fmt.Sprintf("Usuário %s com sucesso.", actionDesc),
+			"message":    fmt.Sprintf("Usuário '%s' %s com sucesso.", targetUser, actionDesc),
 		})
 	})
 

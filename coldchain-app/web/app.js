@@ -1989,7 +1989,7 @@ async function loadUsers() {
           <td style="text-align: center;"><span class="badge-status ${u.is_blocked ? 'reprovado' : 'liberado'}" style="font-size: 11px; font-weight: 700;">${u.is_blocked ? 'BLOQUEADO' : 'ATIVO'}</span></td>
           <td style="text-align: right;">
             <div style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px;">
-              <button type="button" class="btn-user-toggle" onclick="toggleBlockUser(${u.id}, ${u.is_blocked})">
+              <button type="button" class="btn-user-toggle" onclick="toggleBlockUser(${u.id}, '${u.username}', ${u.is_blocked})">
                 ${u.is_blocked ? 'Desbloquear' : 'Bloquear'}
               </button>
               ${deleteBtn}
@@ -2003,20 +2003,22 @@ async function loadUsers() {
   }
 }
 
-async function toggleBlockUser(userId, currentBlocked) {
+async function toggleBlockUser(userId, username, currentBlocked) {
   try {
     const res = await fetch('/api/admin/users/toggle-block', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: userId, is_blocked: currentBlocked ? 0 : 1 })
+      body: JSON.stringify({ user_id: userId, username: username, is_blocked: currentBlocked ? 0 : 1 })
     });
+    const data = await res.json().catch(() => ({}));
     if (res.ok) {
+      showToast(data.message || (currentBlocked ? `Usuário '${username}' desbloqueado.` : `Usuário '${username}' bloqueado com sucesso.`), 'success');
       loadUsers();
     } else {
-      showToast('Erro ao alterar bloqueio de usuário.', 'error')
+      showToast(data.error || 'Erro ao alterar bloqueio de usuário.', 'error');
     }
   } catch (e) {
-    showToast('Erro de conexão.', 'error')
+    showToast('Erro de conexão ao alterar bloqueio.', 'error');
   }
 }
 
