@@ -3866,3 +3866,48 @@ async function deleteUser(userId, username) {
     showToast('Erro de conexão ao excluir usuário.', 'error');
   }
 }
+
+
+// -----------------------------------------------------------------------------
+// VISIBILIDADE E REDEFINIÇÃO DE CHAVE CRIPTOGRÁFICA PESSOAL (21 CFR PART 11)
+// -----------------------------------------------------------------------------
+function togglePasswordVisibility(inputId, btnEl) {
+  const inp = document.getElementById(inputId);
+  if (!inp) return;
+  if (inp.type === 'password') {
+    inp.type = 'text';
+    if (btnEl) btnEl.innerText = '🙈 Ocultar';
+  } else {
+    inp.type = 'password';
+    if (btnEl) btnEl.innerText = '👁️ Mostrar';
+  }
+}
+
+async function openUserKeyResetModal() {
+  const pwd = prompt('Para redefinir sua Chave Criptográfica Pessoal (CC-KEY-...), confirme sua senha de login da conta:');
+  if (!pwd) return;
+
+  try {
+    const res = await fetch('/api/auth/reset-crypto-key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pwd })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.crypto_key) {
+      activeGeneratedCryptoKey = data.crypto_key;
+      // Preenche os campos de assinatura dos modais abertos automaticamente
+      const decInp = document.getElementById('decom-password');
+      if (decInp) decInp.value = data.crypto_key;
+      const decSensInp = document.getElementById('decom-sensor-password');
+      if (decSensInp) decSensInp.value = data.crypto_key;
+
+      openFirstLoginModal(data.crypto_key);
+      showToast('Nova chave gerada e vinculada à sua conta!', 'success');
+    } else {
+      showToast(data.error || 'Falha ao redefinir chave.', 'error');
+    }
+  } catch (e) {
+    showToast('Erro de conexão ao redefinir chave.', 'error');
+  }
+}

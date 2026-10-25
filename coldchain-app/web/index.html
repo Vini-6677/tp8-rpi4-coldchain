@@ -1674,6 +1674,7 @@
           </div>
         </div>
 
+      <button class="btn-secondary" style="height: 32px; padding: 0 12px; font-size: 11.5px; border-radius: 6px; display: inline-flex; align-items: center; gap: 5px; margin-right: 8px; border: 1px solid rgba(255,255,255,0.15);" onclick="openUserKeyResetModal()" title="Visualizar ou Redefinir sua Chave Criptográfica Pessoal">🔑 Minha Chave</button>
       <button class="btn-logout" onclick="handleLogout()">Sair</button>
       </div>
     </header>
@@ -2906,11 +2907,14 @@
             <input type="text" id="decom-resp-name" class="form-control" readonly style="opacity: 0.85; background: #0B1120; height: 40px; padding: 0 12px;">
           </div>
           <div class="form-group" style="margin-bottom: 0;">
-            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Assinatura Digital (Chave Criptográfica Pessoal)</label>
-            <input type="password" id="decom-password" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...)" required style="height: 40px; padding: 0 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 0;">Assinatura Digital (Chave Criptográfica)</label>
+              <button type="button" onclick="togglePasswordVisibility('decom-password', this)" style="background: transparent; border: none; color: #94A3B8; cursor: pointer; font-size: 12px; padding: 0;" title="Mostrar/Ocultar Chave">👁️ Mostrar</button>
+            </div>
+            <input type="password" id="decom-password" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...)" required style="height: 40px; padding: 0 12px; font-family: monospace;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
               <span style="font-size: 10px; color: #94A3B8;">Apenas chave gerada (senha não aceita)</span>
-              
+              <a href="#" onclick="openUserKeyResetModal(); return false;" style="font-size: 11px; color: #60A5FA; text-decoration: underline; font-weight: 600;">Esqueceu sua chave? Redefinir aqui</a>
             </div>
           </div>
         </div>
@@ -3021,6 +3025,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=pharma_v36"></script>
+  <script src="/static/app.js?v=pharma_v37"></script>
 </body>
 </html>

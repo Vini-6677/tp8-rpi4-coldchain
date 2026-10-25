@@ -5,6 +5,7 @@ auto eth0
 iface eth0 inet dhcp
   udhcpc_opts -b -t 5 -T 2
 
+auto wlan0
 iface wlan0 inet dhcp
   udhcpc_opts -b -t 5 -T 2
   wpa-conf /etc/wpa_supplicant.conf

@@ -317,9 +317,6 @@ func (a *App) verifySignature(username, passwordOrKey string) bool {
 }
 
 func seedUsers(db *sql.DB) error {
-	// Limpeza e migração: remove trilha de auditoria e mantém exclusivamente o administrador geral
-	_, _ = db.Exec("DROP TRIGGER IF EXISTS trg_audit_logs_no_delete")
-	_, _ = db.Exec("DELETE FROM audit_logs")
 	_, _ = db.Exec(`
 		CREATE TRIGGER IF NOT EXISTS trg_audit_logs_no_delete
 		BEFORE DELETE ON audit_logs
@@ -327,10 +324,6 @@ func seedUsers(db *sql.DB) error {
 			SELECT RAISE(ABORT, 'Segurança: Logs de auditoria são estritamente append-only e não podem ser excluídos.');
 		END;
 	`)
-
-	_, _ = db.Exec("DELETE FROM users WHERE username != 'admin'")
-	_, _ = db.Exec("DELETE FROM sessions")
-	_, _ = db.Exec("UPDATE users SET first_login = 1, crypto_key_hash = '' WHERE username = 'admin'")
 
 	var count int
 	_ = db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
@@ -691,6 +684,78 @@ func (a *App) routes() http.Handler {
 			},
 		})
 	})
+
+	// API Auth: Redefinir Chave Criptográfica Pessoal (21 CFR Part 11)
+	mux.HandleFunc("/api/auth/reset-crypto-key", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		sess, ok := a.getSession(r)
+		if !ok {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Sessão expirada. Autentique-se novamente."})
+			return
+		}
+
+		var req struct {
+			Password string `json:"password"`
+			Username string `json:"username"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+
+		targetUsername := sess.Username
+		if req.Username != "" && sess.Role == "admin" {
+			targetUsername = req.Username
+		}
+
+		var (
+			id           int64
+			passwordHash string
+			salt         string
+			name         string
+		)
+		err := a.db.QueryRow(`
+			SELECT id, password_hash, salt, name FROM users WHERE username = ?
+		`, targetUsername).Scan(&id, &passwordHash, &salt, &name)
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Usuário não encontrado."})
+			return
+		}
+
+		if req.Password != "" && targetUsername == sess.Username {
+			if hashPassword(req.Password, salt) != passwordHash {
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(map[string]any{"error": "Senha de login incorreta. Digite sua senha para redefinir a chave."})
+				return
+			}
+		}
+
+		newKey := generateCryptoKey()
+		newHash := hashPassword(newKey, salt)
+		_, err = a.db.Exec(`
+			UPDATE users SET crypto_key_hash = ?, first_login = 0 WHERE id = ?
+		`, newHash, id)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Erro ao gravar chave criptográfica no banco."})
+			return
+		}
+
+		ip := getClientIP(r)
+		a.logAudit(sess.Username, sess.Role, "REDEFINICAO_CHAVE_CRIPTOGRAFICA", fmt.Sprintf("Nova Chave Criptográfica Pessoal (21 CFR Part 11) reemitida para '%s' (%s)", name, targetUsername), ip)
+
+		json.NewEncoder(w).Encode(map[string]any{
+			"status":     "ok",
+			"crypto_key": newKey,
+			"username":   targetUsername,
+			"message":    fmt.Sprintf("Nova chave gerada com sucesso para %s.", name),
+		})
+	})
+
+
 
 	// API Auditoria: Logs de Auditoria (Restrito a Gerente e Admin)
 	mux.HandleFunc("/api/audit/logs", func(w http.ResponseWriter, r *http.Request) {
