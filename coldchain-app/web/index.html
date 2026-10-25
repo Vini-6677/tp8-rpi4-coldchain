@@ -2065,7 +2065,12 @@
       
       <section id="section-users" class="tab-section">
         <div class="detail-panel">
-          <div class="panel-title" style="margin-bottom: 14px;">Administração de Perfis Hospitalares e Acessos</div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <div class="panel-title" style="margin-bottom: 0;">Administração de Perfis Hospitalares e Acessos</div>
+            <button type="button" class="btn-action-entry" id="btn-open-new-user" onclick="openNewUserModal()" style="height: 36px; padding: 0 16px; font-size: 13px; font-weight: 600; background: #2563EB; border-radius: 6px; border: 1px solid #3B82F6; color: #FFFFFF; cursor: pointer;">
+              Cadastrar Novo Usuário
+            </button>
+          </div>
           <div class="data-table-wrapper">
             <table class="data-table">
               <thead>
@@ -2074,6 +2079,7 @@
                   <th>Login</th>
                   <th>Nome Completo</th>
                   <th>Perfil Hospitalar</th>
+                  <th>Chave Criptográfica</th>
                   <th>Status</th>
                   <th style="text-align: right;">Ações de Controle</th>
                 </tr>
@@ -2324,8 +2330,8 @@
         </div>
 
         <div class="form-group" style="margin-bottom: 16px;">
-          <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Confirmação de Senha (Assinatura Eletrônica 21 CFR Part 11)</label>
-          <input type="password" id="transfer-password" class="form-control" placeholder="Digite sua senha de acesso para assinar a transferência" required autocomplete="current-password" style="height: 40px; padding: 0 12px;">
+          <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Chave Criptográfica / Senha (Assinatura Eletrônica 21 CFR Part 11)</label>
+          <input type="password" id="transfer-password" class="form-control" placeholder="Digite sua chave criptográfica ou senha para assinar" required autocomplete="current-password" style="height: 40px; padding: 0 12px;">
         </div>
 
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
@@ -2731,8 +2737,8 @@
             <input type="text" id="decom-resp-name" class="form-control" readonly style="opacity: 0.85; background: #0B1120; height: 40px; padding: 0 12px;">
           </div>
           <div class="form-group" style="margin-bottom: 0;">
-            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Assinatura Eletrônica (Senha)</label>
-            <input type="password" id="decom-password" class="form-control" placeholder="Digite sua senha" required style="height: 40px; padding: 0 12px;">
+            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Assinatura Eletrônica (Chave Criptográfica / Senha)</label>
+            <input type="password" id="decom-password" class="form-control" placeholder="Digite sua chave criptográfica ou senha" required style="height: 40px; padding: 0 12px;">
           </div>
         </div>
 
@@ -2741,6 +2747,94 @@
           <button type="submit" class="btn-primary" id="btn-submit-decom" style="height: 38px; padding: 0 18px; font-size: 13px; font-weight: 600; background: rgba(239, 68, 68, 0.85); border: 1px solid #DC2626; color: #FFFFFF; border-radius: 6px;">Confirmar Descomissionamento</button>
         </div>
       </form>
+    </div>
+  </div>
+
+
+  <!-- =========================================================================
+       MODAL: CADASTRO DE NOVO USUÁRIO HOSPITALAR (ADMIN ONLY)
+       ========================================================================= -->
+  <div id="modal-new-user" class="modal-backdrop">
+    <div class="modal-box" style="max-width: 520px;">
+      <div class="modal-header" style="padding-bottom: 14px; margin-bottom: 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.08);">
+        <div class="modal-title" style="font-size: 16px; font-weight: 700; color: #FFFFFF; letter-spacing: -0.2px;">Cadastrar Novo Usuário Hospitalar</div>
+        <button class="btn-close-modal" onclick="closeNewUserModal()">&times;</button>
+      </div>
+
+      <div style="background: rgba(37, 99, 235, 0.1); border: 1px solid rgba(59, 130, 246, 0.35); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; font-size: 12.5px; color: #BFDBFE; line-height: 1.45;">
+        <strong>Protocolo 21 CFR Part 11:</strong> Defina o perfil e uma senha inicial provisória. No primeiro acesso deste colaborador, o sistema gerará automaticamente uma <strong>Chave Criptográfica Pessoal</strong> que substituirá a senha provisória e autenticará todos os seus acessos e assinaturas.
+      </div>
+
+      <form id="form-new-user" onsubmit="event.preventDefault(); submitCreateUser();">
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Nome Completo do Profissional</label>
+          <input type="text" id="new-user-name" class="form-control" placeholder="ex: Dra. Mariana Costa" required style="height: 40px; padding: 0 12px;">
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Login / Usuário</label>
+            <input type="text" id="new-user-username" class="form-control" placeholder="ex: mariana" required style="height: 40px; padding: 0 12px;">
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Perfil Hospitalar</label>
+            <select id="new-user-role" class="form-control" required style="height: 40px; padding: 0 32px 0 12px;">
+              <option value="tecnico">Responsável Técnico</option>
+              <option value="enfermeiro">Enfermeiro</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 18px;">
+          <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Senha Inicial Provisória</label>
+          <input type="password" id="new-user-password" class="form-control" placeholder="Digite uma senha provisória para entrega ao profissional" required style="height: 40px; padding: 0 12px;">
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+          <button type="button" class="btn-cancel" onclick="closeNewUserModal()" style="height: 38px; padding: 0 16px; font-size: 13px; font-weight: 600; border-radius: 6px;">Cancelar</button>
+          <button type="submit" class="btn-primary" id="btn-submit-new-user" style="height: 38px; padding: 0 20px; font-size: 13px; font-weight: 600; background: #2563EB; border: 1px solid #3B82F6; color: #FFFFFF; border-radius: 6px;">Criar Usuário</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL: ATIVAÇÃO DE PRIMEIRO ACESSO E CHAVE CRIPTOGRÁFICA PESSOAL
+       ========================================================================= -->
+  <div id="modal-first-login-crypto" class="modal-backdrop">
+    <div class="modal-box" style="max-width: 540px;">
+      <div class="modal-header" style="padding-bottom: 14px; margin-bottom: 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.08);">
+        <div class="modal-title" style="font-size: 16px; font-weight: 700; color: #FFFFFF; letter-spacing: -0.2px;">Ativação de Primeiro Acesso</div>
+      </div>
+      
+      <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; font-size: 12.5px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid rgba(16, 185, 129, 0.25);">
+          <span style="font-weight: 700; color: #34D399; font-size: 11.5px; letter-spacing: 0.5px; text-transform: uppercase;">CHAVE CRIPTOGRÁFICA PESSOAL GERADA</span>
+          <span style="font-size: 10.5px; font-weight: 700; color: #A7F3D0; background: rgba(16, 185, 129, 0.25); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.4);">21 CFR PART 11</span>
+        </div>
+        <div style="color: #D1FAE5; font-size: 12.5px; line-height: 1.5;">
+          Para garantir a não-rejeição e impedir vazamento da senha inicial cadastrada pelo administrador, o sistema gerou a sua <strong>Chave Criptográfica Pessoal</strong>. Esta chave é única, exclusiva e confidencial.
+        </div>
+      </div>
+
+      <div style="margin-bottom: 14px;">
+        <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Sua Chave Criptográfica Pessoal de Autenticação</label>
+        <div id="first-login-key-display" style="font-family: monospace; font-size: 17px; font-weight: 700; color: #38BDF8; background: #0B1120; border: 1.5px solid #2563EB; padding: 12px 16px; border-radius: 8px; text-align: center; letter-spacing: 1.2px; user-select: all;">
+          --
+        </div>
+      </div>
+
+      <button type="button" id="btn-copy-crypto-key" onclick="copyCryptoKey()" style="width: 100%; height: 38px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; background: #1E293B; border: 1px solid #475569; color: #F8FAFC; border-radius: 6px; cursor: pointer; transition: all 0.2s; margin-bottom: 16px;">
+        Copiar Chave Criptográfica
+      </button>
+
+      <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 12px 14px; margin-bottom: 18px; font-size: 12px; color: #94A3B8; line-height: 1.45;">
+        <strong style="color: #FBBF24;">Atenção:</strong> Salve sua chave em local seguro. A partir de agora, ela autenticará sua <strong>entrada no sistema</strong> e servirá como sua <strong>assinatura eletrônica regulatória</strong> em transferências de medicamentos, descomissionamento e encerramento de alarmes.
+      </div>
+
+      <button type="button" onclick="acknowledgeCryptoKey()" style="width: 100%; height: 42px; display: flex; align-items: center; justify-content: center; font-size: 13.5px; font-weight: 700; background: #2563EB; border: 1px solid #3B82F6; color: #FFFFFF; border-radius: 6px; cursor: pointer;">
+        Compreendi e Salvei Minha Chave — Acessar Sistema
+      </button>
     </div>
   </div>
 

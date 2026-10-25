@@ -1954,12 +1954,17 @@ async function loadUsers() {
     tbody.innerHTML = '';
 
     users.forEach(u => {
+      const cryptoBadge = u.first_login
+        ? '<span class="badge-status em_quarentena" style="font-size:11px;">Pendente (1º Acesso)</span>'
+        : '<span class="badge-status liberado" style="font-size:11px;">Chave Ativa</span>';
+
       tbody.innerHTML += `
         <tr>
           <td>${u.id}</td>
           <td><strong>${u.username}</strong></td>
           <td>${u.name}</td>
           <td><span class="tag-badge tag-blue">${u.role.toUpperCase()}</span></td>
+          <td>${cryptoBadge}</td>
           <td><span class="badge-status ${u.is_blocked ? 'reprovado' : 'liberado'}">${u.is_blocked ? 'BLOQUEADO' : 'ATIVO'}</span></td>
           <td style="text-align:right;">
             <button class="btn-action-primary" style="padding:4px 8px; font-size:11px; background:#1E293B; border:1px solid #334155;" onclick="toggleBlockUser(${u.id}, ${u.is_blocked})">
@@ -3306,5 +3311,101 @@ async function submitTransferStock() {
       submitBtn.disabled = false;
       submitBtn.innerText = 'Confirmar Transferência';
     }
+  }
+}
+
+
+// =============================================================================
+// GESTÃO DE USUÁRIO E ATIVAÇÃO DE CHAVE CRIPTOGRÁFICA (21 CFR PART 11)
+// =============================================================================
+function openFirstLoginModal(cryptoKey) {
+  const m = document.getElementById('modal-first-login-crypto');
+  const disp = document.getElementById('first-login-key-display');
+  if (disp) disp.innerText = cryptoKey;
+  if (m) m.classList.add('active');
+}
+
+function closeFirstLoginModal() {
+  const m = document.getElementById('modal-first-login-crypto');
+  if (m) m.classList.remove('active');
+}
+
+function copyCryptoKey() {
+  const disp = document.getElementById('first-login-key-display');
+  const btn = document.getElementById('btn-copy-crypto-key');
+  if (disp) {
+    const text = disp.innerText;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        if (btn) {
+          const orig = btn.innerText;
+          btn.innerText = 'Chave Copiada com Sucesso!';
+          btn.style.color = '#34D399';
+          setTimeout(() => {
+            btn.innerText = orig;
+            btn.style.color = '#F8FAFC';
+          }, 2000);
+        }
+      }).catch(() => {
+        prompt('Copie sua chave criptográfica:', text);
+      });
+    } else {
+      prompt('Copie sua chave criptográfica:', text);
+    }
+  }
+}
+
+function acknowledgeCryptoKey() {
+  closeFirstLoginModal();
+}
+
+function openNewUserModal() {
+  const m = document.getElementById('modal-new-user');
+  if (m) m.classList.add('active');
+}
+
+function closeNewUserModal() {
+  const m = document.getElementById('modal-new-user');
+  if (m) m.classList.remove('active');
+  const f = document.getElementById('form-new-user');
+  if (f) f.reset();
+}
+
+async function submitCreateUser() {
+  const nameEl = document.getElementById('new-user-name');
+  const userEl = document.getElementById('new-user-username');
+  const roleEl = document.getElementById('new-user-role');
+  const pwdEl = document.getElementById('new-user-password');
+  const btn = document.getElementById('btn-submit-new-user');
+
+  const name = nameEl ? nameEl.value.trim() : '';
+  const username = userEl ? userEl.value.trim().toLowerCase() : '';
+  const role = roleEl ? roleEl.value : 'enfermeiro';
+  const password = pwdEl ? pwdEl.value : '';
+
+  if (!name || !username || !password) {
+    alert('Preencha todos os campos obrigatórios.');
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch('/api/admin/users/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, username, role, password })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      closeNewUserModal();
+      loadUsers();
+      alert(`Usuário '${username}' cadastrado com sucesso!\n\nNo primeiro login, o sistema gerará a chave criptográfica pessoal única para este profissional.`);
+    } else {
+      alert(data.error || 'Erro ao cadastrar usuário.');
+    }
+  } catch (e) {
+    alert('Erro de conexão ao cadastrar usuário.');
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }

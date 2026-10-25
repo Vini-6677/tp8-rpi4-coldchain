@@ -45,12 +45,14 @@ type Telemetry struct {
 }
 
 type User struct {
-	ID        int64  `json:"id"`
-	Username  string `json:"username"`
-	Name      string `json:"name"`
-	Role      string `json:"role"`
-	IsBlocked int    `json:"is_blocked"`
-	CreatedAt string `json:"created_at"`
+	ID           int64  `json:"id"`
+	Username     string `json:"username"`
+	Name         string `json:"name"`
+	Role         string `json:"role"`
+	IsBlocked    int    `json:"is_blocked"`
+	CreatedAt    string `json:"created_at"`
+	FirstLogin   int    `json:"first_login"`
+	HasCryptoKey bool   `json:"has_crypto_key"`
 }
 
 type AuditLog struct {
@@ -181,6 +183,15 @@ func main() {
 	defer shutdownCancel()
 	_ = server.Shutdown(shutdownCtx)
 	slog.Info("Gateway encerrado de forma limpa.")
+}
+
+func generateCryptoKey() string {
+	b := make([]byte, 10)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("CC-KEY-%04X-%04X-%04X-%04X", time.Now().UnixNano()&0xFFFF, time.Now().Unix()&0xFFFF, 0xABCD, 0x1234)
+	}
+	hexStr := strings.ToUpper(hex.EncodeToString(b))
+	return fmt.Sprintf("CC-KEY-%s-%s-%s-%s", hexStr[0:4], hexStr[4:8], hexStr[8:12], hexStr[12:16])
 }
 
 func hashPassword(password, salt string) string {
@@ -478,32 +489,37 @@ func (a *App) routes() http.Handler {
 		ip := getClientIP(r)
 
 		var (
-			id           int64
-			passwordHash string
-			salt         string
-			name         string
-			role         string
-			isBlocked    int
+			id            int64
+			passwordHash  string
+			salt          string
+			name          string
+			role          string
+			isBlocked     int
+			firstLogin    int
+			cryptoKeyHash string
 		)
 		err := a.db.QueryRow(`
-			SELECT id, password_hash, salt, name, role, is_blocked
+			SELECT id, password_hash, salt, name, role, is_blocked, COALESCE(first_login, 0), COALESCE(crypto_key_hash, '')
 			FROM users WHERE username = ?
-		`, req.Username).Scan(&id, &passwordHash, &salt, &name, &role, &isBlocked)
+		`, req.Username).Scan(&id, &passwordHash, &salt, &name, &role, &isBlocked, &firstLogin, &cryptoKeyHash)
 
 		if err != nil {
 			a.logAudit(req.Username, "desconhecido", "LOGIN_FAILED", "Tentativa de login com usuário inexistente", ip)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]any{"error": "Usuário ou senha incorretos."})
+			json.NewEncoder(w).Encode(map[string]any{"error": "Usuário ou credencial de acesso incorretos."})
 			return
 		}
 
 		computed := hashPassword(req.Password, salt)
-		if subtle.ConstantTimeCompare([]byte(computed), []byte(passwordHash)) != 1 {
-			a.logAudit(req.Username, role, "LOGIN_FAILED", "Senha incorreta informada", ip)
+		isPwdMatch := subtle.ConstantTimeCompare([]byte(computed), []byte(passwordHash)) == 1
+		isKeyMatch := cryptoKeyHash != "" && subtle.ConstantTimeCompare([]byte(computed), []byte(cryptoKeyHash)) == 1
+
+		if !isPwdMatch && !isKeyMatch {
+			a.logAudit(req.Username, role, "LOGIN_FAILED", "Credencial incorreta informada", ip)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]any{"error": "Usuário ou senha incorretos."})
+			json.NewEncoder(w).Encode(map[string]any{"error": "Usuário ou credencial de acesso incorretos."})
 			return
 		}
 
@@ -513,6 +529,25 @@ func (a *App) routes() http.Handler {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]any{"error": "Esta conta de usuário foi bloqueada pelo administrador."})
 			return
+		}
+
+		// Geração de chave criptográfica única no primeiro acesso (RDC 430 e 21 CFR Part 11)
+		var generatedCryptoKey string
+		isFirstLogin := false
+		if firstLogin == 1 {
+			isFirstLogin = true
+			generatedCryptoKey = generateCryptoKey()
+			newKeyHash := hashPassword(generatedCryptoKey, salt)
+			_, err = a.db.Exec(`
+				UPDATE users 
+				SET crypto_key_hash = ?, first_login = 0 
+				WHERE id = ?
+			`, newKeyHash, id)
+			if err != nil {
+				http.Error(w, "Erro ao registrar chave criptográfica", http.StatusInternalServerError)
+				return
+			}
+			a.logAudit(req.Username, role, "CRYPTO_KEY_ACTIVATED", fmt.Sprintf("Primeiro acesso confirmado. Chave criptográfica única gerada com sucesso para '%s'.", req.Username), ip)
 		}
 
 		token := generateToken()
@@ -539,14 +574,19 @@ func (a *App) routes() http.Handler {
 		})
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
-			"status": "ok",
+		resp := map[string]any{
+			"status":      "ok",
+			"first_login": isFirstLogin,
 			"user": map[string]any{
 				"username": req.Username,
 				"name":     name,
 				"role":     role,
 			},
-		})
+		}
+		if isFirstLogin {
+			resp["crypto_key"] = generatedCryptoKey
+		}
+		json.NewEncoder(w).Encode(resp)
 	})
 
 	// API Auth: Logout
@@ -637,7 +677,7 @@ func (a *App) routes() http.Handler {
 		}
 
 		rows, err := a.db.Query(`
-			SELECT id, username, name, role, is_blocked, created_at
+			SELECT id, username, name, role, is_blocked, created_at, COALESCE(first_login, 0), CASE WHEN crypto_key_hash != '' THEN 1 ELSE 0 END
 			FROM users
 			ORDER BY id ASC
 		`)
@@ -650,7 +690,9 @@ func (a *App) routes() http.Handler {
 		var users []User
 		for rows.Next() {
 			var u User
-			if err := rows.Scan(&u.ID, &u.Username, &u.Name, &u.Role, &u.IsBlocked, &u.CreatedAt); err == nil {
+			var hasKeyInt int
+			if err := rows.Scan(&u.ID, &u.Username, &u.Name, &u.Role, &u.IsBlocked, &u.CreatedAt, &u.FirstLogin, &hasKeyInt); err == nil {
+				u.HasCryptoKey = (hasKeyInt == 1)
 				users = append(users, u)
 			}
 		}
@@ -706,8 +748,8 @@ func (a *App) routes() http.Handler {
 		hash := hashPassword(req.Password, salt)
 
 		_, err := a.db.Exec(`
-			INSERT INTO users (username, password_hash, salt, name, role, is_blocked)
-			VALUES (?, ?, ?, ?, ?, 0)
+			INSERT INTO users (username, password_hash, salt, name, role, is_blocked, first_login, crypto_key_hash)
+			VALUES (?, ?, ?, ?, ?, 0, 1, '')
 		`, req.Username, hash, salt, req.Name, req.Role)
 
 		if err != nil {
@@ -1127,11 +1169,13 @@ func (a *App) routes() http.Handler {
 			}
 
 			if req.Password != "" {
-				var storedHash, salt string
-				if err := a.db.QueryRow("SELECT password_hash, salt FROM users WHERE username = ?", sess.Username).Scan(&storedHash, &salt); err == nil {
-					if hashPassword(req.Password, salt) != storedHash {
+				var storedHash, salt, cryptoKeyHash string
+				if err := a.db.QueryRow("SELECT password_hash, salt, COALESCE(crypto_key_hash, '') FROM users WHERE username = ?", sess.Username).Scan(&storedHash, &salt, &cryptoKeyHash); err == nil {
+					h := hashPassword(req.Password, salt)
+					match := (h == storedHash) || (cryptoKeyHash != "" && h == cryptoKeyHash)
+					if !match {
 						w.WriteHeader(http.StatusUnauthorized)
-						json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: senha incorreta."})
+						json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: chave criptográfica ou senha incorreta."})
 						return
 					}
 				}
@@ -1489,11 +1533,13 @@ func (a *App) routes() http.Handler {
 		}
 
 		if payload.Password != "" {
-			var storedHash, salt string
-			if err := a.db.QueryRow("SELECT password_hash, salt FROM users WHERE username = ?", sess.Username).Scan(&storedHash, &salt); err == nil {
-				if hashPassword(payload.Password, salt) != storedHash {
+			var storedHash, salt, cryptoKeyHash string
+			if err := a.db.QueryRow("SELECT password_hash, salt, COALESCE(crypto_key_hash, '') FROM users WHERE username = ?", sess.Username).Scan(&storedHash, &salt, &cryptoKeyHash); err == nil {
+				h := hashPassword(payload.Password, salt)
+				match := (h == storedHash) || (cryptoKeyHash != "" && h == cryptoKeyHash)
+				if !match {
 					w.WriteHeader(http.StatusUnauthorized)
-					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: senha incorreta."})
+					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: chave criptográfica ou senha incorreta."})
 					return
 				}
 			}
@@ -1728,7 +1774,18 @@ func (a *App) routes() http.Handler {
 		}
 
 		sig := payload.ElectronicSig
-		if sig == "" {
+		if sig != "" {
+			var storedHash, salt, cryptoKeyHash string
+			if err := a.db.QueryRow("SELECT password_hash, salt, COALESCE(crypto_key_hash, '') FROM users WHERE username = ?", sess.Username).Scan(&storedHash, &salt, &cryptoKeyHash); err == nil {
+				h := hashPassword(sig, salt)
+				match := (h == storedHash) || (cryptoKeyHash != "" && h == cryptoKeyHash)
+				if !match {
+					w.WriteHeader(http.StatusUnauthorized)
+					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: chave criptográfica ou senha incorreta."})
+					return
+				}
+			}
+		} else {
 			sig = "SIGN-21CFR11-" + sess.Username
 		}
 
