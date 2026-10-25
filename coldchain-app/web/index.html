@@ -1930,6 +1930,10 @@
                   <!-- Preenchido dinamicamente via JS -->
                 </select>
               </div>
+              <button class="btn-action-secondary" id="btn-decom-sensor" onclick="openDecommissionSensorModal()" style="margin-right: 8px; border-color: rgba(239, 68, 68, 0.4); color: #FCA5A5; background: rgba(239, 68, 68, 0.12);">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                Descomissionar Sensor
+              </button>
               <button class="btn-action-secondary" id="btn-new-sensor" onclick="openNewSensorModal()">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
                 Novo Sensor / Certificado RBC
@@ -2155,7 +2159,18 @@
           <div><strong>Atenção:</strong> Temperatura fora de 2.0°C - 8.0°C! O lote será alocado automaticamente em <strong>Quarentena Preventiva</strong> (RDC 430/2020).</div>
         </div>
 
-        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; margin-bottom: 16px;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Responsável Técnico</label>
+            <input type="text" id="entry-resp-name" class="form-control" readonly style="opacity: 0.85; background: #0B1120; height: 40px; padding: 0 12px;">
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Assinatura Eletrônica (Chave Criptográfica / Senha)</label>
+            <input type="password" id="entry-password" class="form-control" placeholder="Digite sua chave criptográfica ou senha" required style="height: 40px; padding: 0 12px;">
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
           <button type="button" class="btn-cancel" onclick="closeEntryModal()">Cancelar</button>
           <button type="submit" class="btn-action-primary">Registrar Recebimento na Doca</button>
         </div>
@@ -2212,7 +2227,18 @@
           <input type="text" id="exit-nfe" class="form-control" placeholder="ex: GUIA-2026-991">
         </div>
 
-        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; margin-bottom: 16px;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Responsável Técnico</label>
+            <input type="text" id="exit-resp-name" class="form-control" readonly style="opacity: 0.85; background: #0B1120; height: 40px; padding: 0 12px;">
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Assinatura Eletrônica (Chave Criptográfica / Senha)</label>
+            <input type="password" id="exit-password" class="form-control" placeholder="Digite sua chave criptográfica ou senha" required style="height: 40px; padding: 0 12px;">
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
           <button type="button" class="btn-cancel" onclick="closeExitModal()">Cancelar</button>
           <button type="submit" class="btn-action-dispensation">Confirmar Saída (Por Validade)</button>
         </div>
@@ -2421,7 +2447,7 @@
   </div>
 
 
-  <script src="/static/app.js?v=clean_login_v30"></script>
+  <script src="/static/app.js?v=pharma_v33"></script>
 
   <!-- =========================================================================
        MODAL 5: CADASTRO DE MEDICAMENTO (CATÁLOGO ANVISA)
@@ -2486,7 +2512,18 @@
           </div>
         </div>
 
-        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 1rem;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; margin-bottom: 16px;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Responsável Técnico</label>
+            <input type="text" id="new-product-resp-name" class="form-control" readonly style="opacity: 0.85; background: #0B1120; height: 40px; padding: 0 12px;">
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Assinatura Eletrônica (Chave Criptográfica / Senha)</label>
+            <input type="password" id="new-product-password" class="form-control" placeholder="Digite sua chave criptográfica ou senha" required style="height: 40px; padding: 0 12px;">
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
           <button type="button" class="btn-cancel" onclick="closeNewProductModal()">Cancelar</button>
           <button type="submit" class="btn-primary">Salvar no Catálogo ANVISA</button>
         </div>
@@ -2554,7 +2591,18 @@
           </div>
         </div>
 
-        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 1rem;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; margin-bottom: 16px;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Responsável Técnico</label>
+            <input type="text" id="new-chamber-resp-name" class="form-control" readonly style="opacity: 0.85; background: #0B1120; height: 40px; padding: 0 12px;">
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Assinatura Eletrônica (Chave Criptográfica / Senha)</label>
+            <input type="password" id="new-chamber-password" class="form-control" placeholder="Digite sua chave criptográfica ou senha" required style="height: 40px; padding: 0 12px;">
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
           <button type="button" class="btn-cancel" onclick="closeNewChamberModal()">Cancelar</button>
           <button type="submit" class="btn-primary" id="btn-submit-chamber">Adicionar Geladeira</button>
         </div>
@@ -2622,7 +2670,18 @@
           </div>
         </div>
 
-        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 1rem;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; margin-bottom: 16px;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Responsável Técnico</label>
+            <input type="text" id="sensor-resp-name" class="form-control" readonly style="opacity: 0.85; background: #0B1120; height: 40px; padding: 0 12px;">
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Assinatura Eletrônica (Chave Criptográfica / Senha)</label>
+            <input type="password" id="sensor-password" class="form-control" placeholder="Digite sua chave criptográfica ou senha" required style="height: 40px; padding: 0 12px;">
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
           <button type="button" class="btn-cancel" onclick="closeSensorModal()">Cancelar</button>
           <button type="submit" class="btn-primary" id="btn-submit-sensor">Salvar no Parque Metrológico</button>
         </div>
@@ -2634,6 +2693,91 @@
     <!-- =========================================================================
        MODAL 8: DESCOMISSIONAMENTO DE CÂMARA / GELADEIRA
        ========================================================================= -->
+  <!-- =========================================================================
+       MODAL: DESCOMISSIONAMENTO DE SENSOR METROLÓGICO (21 CFR PART 11)
+       ========================================================================= -->
+  <div id="modal-decommission-sensor" class="modal-backdrop">
+    <div class="modal-box" style="max-width: 580px;">
+      <div class="modal-header" style="padding-bottom: 14px; margin-bottom: 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.08);">
+        <div class="modal-title" style="font-size: 16px; font-weight: 700; color: #FFFFFF; letter-spacing: -0.2px;">Descomissionamento de Sensor Metrológico RBC</div>
+        <button class="btn-close-modal" onclick="closeDecommissionSensorModal()">&times;</button>
+      </div>
+
+      <form id="form-decommission-sensor" onsubmit="event.preventDefault(); submitDecommissionSensor();">
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Sensor Metrológico Selecionado</label>
+          <select id="decom-sensor-select" class="form-control" onchange="onDecomSensorSelectChange()" style="font-weight: 600; height: 40px; padding: 0 32px 0 12px;">
+            <!-- Preenchido via JS -->
+          </select>
+        </div>
+
+        <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; font-size: 12.5px;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.08);">
+            <div>
+              <span style="color: #94A3B8; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; display: block; margin-bottom: 3px;">Código do Sensor</span>
+              <div id="decom-sensor-id-display" style="color: #38BDF8; font-family: monospace; font-weight: 700; font-size: 14px;">--</div>
+            </div>
+            <div style="text-align: right;">
+              <span style="color: #94A3B8; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; display: block; margin-bottom: 3px;">Câmara Vinculada</span>
+              <span id="decom-sensor-chamber-display" style="color: #FFFFFF; font-weight: 700; font-size: 13px;">--</span>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px;">
+            <div>
+              <span style="color: #94A3B8; font-size: 11.5px;">Nº de Série:</span>
+              <span id="decom-sensor-sn-display" style="color: #CBD5E1; font-weight: 600; margin-left: 4px;">--</span>
+            </div>
+            <div>
+              <span style="color: #94A3B8; font-size: 11.5px;">Certificado RBC:</span>
+              <span id="decom-sensor-cert-display" style="color: #A78BFA; font-weight: 700; margin-left: 4px;">--</span>
+            </div>
+            <div style="grid-column: span 2;">
+              <span style="color: #94A3B8; font-size: 11.5px;">Posição Térmica:</span>
+              <span id="decom-sensor-pos-display" style="color: #CBD5E1; font-weight: 600; margin-left: 4px;">--</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Motivo Regulatório da Baixa / Descomissionamento</label>
+          <select id="decom-sensor-reason" class="form-control" required style="height: 40px; padding: 0 32px 0 12px;">
+            <option value="Avaria Física / Falha Irreversível no Transdutor">Avaria Física / Falha Irreversível no Transdutor</option>
+            <option value="Reprovação em Calibração Externa RBC (Deriva Fora da Tolerância)">Reprovação em Calibração Externa RBC (Deriva Fora da Tolerância)</option>
+            <option value="Fim da Vida Útil do Sensor / Perda de Homologação">Fim da Vida Útil do Sensor / Perda de Homologação</option>
+            <option value="Substituição por Novo Sensor Homologado">Substituição por Novo Sensor Homologado</option>
+            <option value="Perda Permanente de Conectividade / Telemetria">Perda Permanente de Conectividade / Telemetria</option>
+            <option value="Desativação de Ponto de Mapeamento Térmico">Desativação de Ponto de Mapeamento Térmico</option>
+            <option value="Erro de Cadastro / Duplicidade de Hardware">Erro de Cadastro / Duplicidade de Hardware</option>
+            <option value="Outro Motivo Técnico Documentado">Outro Motivo Técnico Documentado</option>
+          </select>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Parecer Técnico / Justificativa Regulatória</label>
+          <textarea id="decom-sensor-justification" class="form-control" rows="3" placeholder="Descreva os laudos de engenharia clínica, número de O.S. ou motivo de exclusão do sensor..." required style="font-size: 13px; padding: 10px 12px; resize: vertical; min-height: 72px;"></textarea>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; margin-bottom: 16px;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Responsável Técnico</label>
+            <input type="text" id="decom-sensor-resp-name" class="form-control" readonly style="opacity: 0.85; background: #0B1120; height: 40px; padding: 0 12px;">
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Assinatura Eletrônica (Chave Criptográfica / Senha)</label>
+            <input type="password" id="decom-sensor-password" class="form-control" placeholder="Digite sua chave criptográfica ou senha" required style="height: 40px; padding: 0 12px;">
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+          <button type="button" class="btn-cancel" onclick="closeDecommissionSensorModal()" style="height: 38px; padding: 0 16px; font-size: 13px; font-weight: 600; border-radius: 6px;">Cancelar</button>
+          <button type="submit" id="btn-submit-decom-sensor" style="height: 38px; padding: 0 20px; font-size: 13px; font-weight: 600; background: #DC2626; border: 1px solid #EF4444; color: #FFFFFF; border-radius: 6px; cursor: pointer; transition: background 0.15s ease;">
+            Confirmar Descomissionamento do Sensor
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div id="modal-decommission-chamber" class="modal-backdrop">
     <div class="modal-box" style="max-width: 580px;">
       <div class="modal-header" style="padding-bottom: 14px; margin-bottom: 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.08);">

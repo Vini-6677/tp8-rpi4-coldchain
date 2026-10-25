@@ -275,6 +275,21 @@ func (a *App) getSession(r *http.Request) (*Session, bool) {
 	return &sess, true
 }
 
+
+func (a *App) verifySignature(username, passwordOrKey string) bool {
+	if strings.TrimSpace(passwordOrKey) == "" {
+		return false
+	}
+	var storedHash, salt, cryptoKeyHash string
+	if err := a.db.QueryRow("SELECT password_hash, salt, COALESCE(crypto_key_hash, '') FROM users WHERE username = ?", username).Scan(&storedHash, &salt, &cryptoKeyHash); err != nil {
+		return false
+	}
+	h := hashPassword(passwordOrKey, salt)
+	matchPwd := subtle.ConstantTimeCompare([]byte(h), []byte(storedHash)) == 1
+	matchKey := cryptoKeyHash != "" && subtle.ConstantTimeCompare([]byte(h), []byte(cryptoKeyHash)) == 1
+	return matchPwd || matchKey
+}
+
 func seedUsers(db *sql.DB) error {
 	// Limpeza e migração: remove trilha de auditoria e mantém exclusivamente o administrador geral
 	_, _ = db.Exec("DROP TRIGGER IF EXISTS trg_audit_logs_no_delete")
@@ -1205,12 +1220,22 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 				json.NewEncoder(w).Encode(map[string]any{"error": "Cadastro de câmaras restrito a Farmacêutico RT / Gerente / Administrador."})
 				return
 			}
-			var payload pharma.Chamber
+			var payload struct {
+				pharma.Chamber
+				Password string `json:"password"`
+			}
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				http.Error(w, "JSON inválido", http.StatusBadRequest)
 				return
 			}
-			created, err := pharma.RegisterChamber(a.db, payload)
+			if payload.Password != "" {
+				if !a.verifySignature(sess.Username, payload.Password) {
+					w.WriteHeader(http.StatusUnauthorized)
+					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: chave criptográfica ou senha incorreta."})
+					return
+				}
+			}
+			created, err := pharma.RegisterChamber(a.db, payload.Chamber)
 			if err != nil {
 				w.WriteHeader(http.StatusBadRequest)
 				json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
@@ -1321,7 +1346,7 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 		json.NewEncoder(w).Encode(list)
 	})
 
-	// 2. Sensores Metrológicos RBC (GET / POST / PUT)
+	// 2. Sensores Metrológicos RBC & Mapeamento Térmico (GET / POST / PUT / DELETE)
 	mux.HandleFunc("/api/pharma/sensors", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
@@ -1329,31 +1354,55 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 			sess, ok := a.getSession(r)
 			if !ok {
 				w.WriteHeader(http.StatusUnauthorized)
-				json.NewEncoder(w).Encode(map[string]string{"error": "Autenticação requerida."})
+				json.NewEncoder(w).Encode(map[string]any{"error": "Autenticação requerida."})
 				return
 			}
 			if sess.Role != "tecnico" && sess.Role != "admin" {
 				w.WriteHeader(http.StatusForbidden)
-				json.NewEncoder(w).Encode(map[string]string{"error": "Acesso negado: apenas Gerente RT ou Admin podem cadastrar sensores."})
+				json.NewEncoder(w).Encode(map[string]any{"error": "Acesso negado: apenas Responsável Técnico ou Admin podem cadastrar sensores."})
 				return
 			}
 
-			var payload pharma.Sensor
+			var payload struct {
+				pharma.Sensor
+				Password string `json:"password"`
+			}
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]string{"error": "Payload JSON inválido."})
+				json.NewEncoder(w).Encode(map[string]any{"error": "Payload JSON inválido."})
 				return
 			}
 
-			created, err := pharma.RegisterSensor(a.db, payload)
+			if payload.Password != "" {
+				if !a.verifySignature(sess.Username, payload.Password) {
+					w.WriteHeader(http.StatusUnauthorized)
+					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: chave criptográfica ou senha incorreta."})
+					return
+				}
+			}
+
+			created, err := pharma.RegisterSensor(a.db, payload.Sensor)
 			if err != nil {
 				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
 				return
 			}
 
 			ip := getClientIP(r)
 			a.logAudit(sess.Username, sess.Role, "CADASTRO_SENSOR", fmt.Sprintf("Novo sensor '%s' cadastrado na câmara '%s' (Série: %s, Cert: %s, Validade: %s)", created.ID, created.ChamberID, created.SerialNumber, created.CertNumber, created.CalibValidUntil), ip)
+			
+			if a.ledger != nil {
+				ledgerData, _ := json.Marshal(map[string]any{
+					"event":       "SENSOR_REGISTER",
+					"sensor_id":   created.ID,
+					"chamber_id":  created.ChamberID,
+					"cert_number": created.CertNumber,
+					"by":          sess.Username,
+					"timestamp":   time.Now().Format(time.RFC3339),
+				})
+				_, _ = a.ledger.AppendData("PHARMA-GATEWAY", uint64(time.Now().UnixNano()), ledgerData, 1)
+			}
+
 			w.WriteHeader(http.StatusCreated)
 			json.NewEncoder(w).Encode(created)
 			return
@@ -1363,31 +1412,59 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 			sess, ok := a.getSession(r)
 			if !ok {
 				w.WriteHeader(http.StatusUnauthorized)
-				json.NewEncoder(w).Encode(map[string]string{"error": "Autenticação requerida."})
+				json.NewEncoder(w).Encode(map[string]any{"error": "Autenticação requerida."})
 				return
 			}
 			if sess.Role != "tecnico" && sess.Role != "admin" {
 				w.WriteHeader(http.StatusForbidden)
-				json.NewEncoder(w).Encode(map[string]string{"error": "Acesso negado: apenas Gerente RT ou Admin podem atualizar/recalibrar sensores."})
+				json.NewEncoder(w).Encode(map[string]any{"error": "Acesso negado: apenas Responsável Técnico ou Admin podem atualizar/recalibrar sensores."})
 				return
 			}
 
-			var payload pharma.Sensor
+			var payload struct {
+				pharma.Sensor
+				Password string `json:"password"`
+			}
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]string{"error": "Payload JSON inválido."})
+				json.NewEncoder(w).Encode(map[string]any{"error": "Payload JSON inválido."})
 				return
 			}
 
-			if err := pharma.UpdateSensor(a.db, payload); err != nil {
+			if payload.Password != "" {
+				if !a.verifySignature(sess.Username, payload.Password) {
+					w.WriteHeader(http.StatusUnauthorized)
+					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: chave criptográfica ou senha incorreta."})
+					return
+				}
+			}
+
+			if err := pharma.UpdateSensor(a.db, payload.Sensor); err != nil {
 				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
 				return
 			}
 
 			ip := getClientIP(r)
 			a.logAudit(sess.Username, sess.Role, "RECALIBRACAO_SENSOR", fmt.Sprintf("Sensor '%s' recalibrado/atualizado por %s (Cert: %s, Nova Validade: %s, Status: %s)", payload.ID, sess.Name, payload.CertNumber, payload.CalibValidUntil, payload.Status), ip)
+			
+			if a.ledger != nil {
+				ledgerData, _ := json.Marshal(map[string]any{
+					"event":       "SENSOR_RECALIBRATION",
+					"sensor_id":   payload.ID,
+					"cert_number": payload.CertNumber,
+					"by":          sess.Username,
+					"timestamp":   time.Now().Format(time.RFC3339),
+				})
+				_, _ = a.ledger.AppendData("PHARMA-GATEWAY", uint64(time.Now().UnixNano()), ledgerData, 1)
+			}
+
 			json.NewEncoder(w).Encode(map[string]any{"status": "ok", "message": "Sensor atualizado com sucesso."})
+			return
+		}
+
+		if r.Method == http.MethodDelete {
+			a.handleDecommissionSensor(w, r)
 			return
 		}
 
@@ -1398,6 +1475,11 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 			return
 		}
 		json.NewEncoder(w).Encode(list)
+	})
+
+	mux.HandleFunc("/api/pharma/sensors/decommission", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		a.handleDecommissionSensor(w, r)
 	})
 
 	// 3. Catálogo de Medicamentos ANVISA (GET / POST)
@@ -1411,12 +1493,22 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 				json.NewEncoder(w).Encode(map[string]any{"error": "Cadastro de medicamentos restrito a Farmacêutico RT / Gerente / Administrador."})
 				return
 			}
-			var payload pharma.Product
+			var payload struct {
+				pharma.Product
+				Password string `json:"password"`
+			}
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				http.Error(w, "JSON inválido", http.StatusBadRequest)
 				return
 			}
-			created, err := pharma.RegisterProduct(a.db, payload)
+			if payload.Password != "" {
+				if !a.verifySignature(sess.Username, payload.Password) {
+					w.WriteHeader(http.StatusUnauthorized)
+					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: chave criptográfica ou senha incorreta."})
+					return
+				}
+			}
+			created, err := pharma.RegisterProduct(a.db, payload.Product)
 			if err != nil {
 				w.WriteHeader(http.StatusBadRequest)
 				json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
@@ -1497,10 +1589,18 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 			CargoIntegrity         string  `json:"cargo_integrity"`
 			AmbientExposureMinutes int     `json:"ambient_exposure_minutes"`
 			Decision               string  `json:"decision"`
+			Password               string  `json:"password"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			http.Error(w, "JSON inválido", http.StatusBadRequest)
 			return
+		}
+		if payload.Password != "" {
+			if !a.verifySignature(sess.Username, payload.Password) {
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: chave criptográfica ou senha incorreta."})
+				return
+			}
 		}
 
 		lot := pharma.Lot{
@@ -1565,10 +1665,18 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 			Reason        string `json:"reason"`
 			Recipient     string `json:"recipient"`
 			InvoiceNumber string `json:"invoice_number"`
+			Password      string `json:"password"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			http.Error(w, "JSON inválido", http.StatusBadRequest)
 			return
+		}
+		if payload.Password != "" {
+			if !a.verifySignature(sess.Username, payload.Password) {
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: chave criptográfica ou senha incorreta."})
+				return
+			}
 		}
 
 		exit := pharma.StockExit{
@@ -2429,4 +2537,69 @@ func (a *App) pharmaSimulatorLoop(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func (a *App) handleDecommissionSensor(w http.ResponseWriter, r *http.Request) {
+	sess, ok := a.getSession(r)
+	if !ok {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]any{"error": "Autenticação requerida."})
+		return
+	}
+	if sess.Role != "tecnico" && sess.Role != "admin" {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]any{"error": "Acesso negado: apenas Responsável Técnico ou Admin podem excluir/descomissionar sensores."})
+		return
+	}
+
+	var req struct {
+		SensorID      string `json:"sensor_id"`
+		Reason        string `json:"reason"`
+		Justification string `json:"justification"`
+		Password      string `json:"password"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	if req.SensorID == "" {
+		req.SensorID = r.URL.Query().Get("id")
+	}
+
+	if req.SensorID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any{"error": "ID do sensor é obrigatório."})
+		return
+	}
+
+	if req.Password != "" {
+		if !a.verifySignature(sess.Username, req.Password) {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: chave criptográfica ou senha incorreta."})
+			return
+		}
+	}
+
+	if err := pharma.DecommissionSensor(a.db, req.SensorID, req.Reason, req.Justification, sess.Name); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+		return
+	}
+
+	ip := getClientIP(r)
+	a.logAudit(sess.Username, sess.Role, "DESCOMISSIONAMENTO_SENSOR", fmt.Sprintf("Sensor '%s' descomissionado por %s. Motivo: %s. Parecer: %s", req.SensorID, sess.Name, req.Reason, req.Justification), ip)
+
+	if a.ledger != nil {
+		ledgerData, _ := json.Marshal(map[string]any{
+			"event":         "SENSOR_DECOMMISSION",
+			"sensor_id":     req.SensorID,
+			"reason":        req.Reason,
+			"justification": req.Justification,
+			"responsible":   sess.Name,
+			"timestamp":     time.Now().Format(time.RFC3339),
+		})
+		_, _ = a.ledger.AppendData("PHARMA-GATEWAY", uint64(time.Now().UnixNano()), ledgerData, 1)
+	}
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"status":  "ok",
+		"message": fmt.Sprintf("Sensor '%s' descomissionado com sucesso com registro em trilha de auditoria e ledger.", req.SensorID),
+	})
 }

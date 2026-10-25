@@ -1738,9 +1738,12 @@ function renderMetrologyTable(list) {
         <td>${s.calibrated_by}</td>
         <td><span style="color:#6EE7B7;">${s.calib_valid_until}</span></td>
         <td><span class="badge-status ${badgeClass}">${s.status}</span></td>
-        <td style="text-align: right;">
-          <button class="btn-action-secondary" style="padding: 3px 8px; font-size: 11px;" onclick="openEditSensorModal('${s.id}')">
+        <td style="text-align: right; white-space: nowrap;">
+          <button class="btn-action-secondary" style="padding: 3px 8px; font-size: 11px; margin-right: 6px;" onclick="openEditSensorModal('${s.id}')">
             Recalibrar / Editar
+          </button>
+          <button class="btn-action-secondary" style="padding: 3px 8px; font-size: 11px; color: #FCA5A5; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.15);" onclick="openDecommissionSensorModal('${s.id}')" title="Descomissionar / Excluir Sensor (21 CFR Part 11)">
+            Excluir / Baixa
           </button>
         </td>
       </tr>
@@ -2139,7 +2142,10 @@ async function loadKPIs() {
 
 function openNewProductModal() {
   const m = document.getElementById('modal-new-product');
-  if (m) m.classList.add('active');
+  if (m) {
+    m.classList.add('active');
+    setupSignatureField('new-product-resp-name', 'new-product-password');
+  }
 }
 
 function closeNewProductModal() {
@@ -2165,6 +2171,12 @@ async function submitNewProduct() {
     return;
   }
 
+  const pwd = document.getElementById('new-product-password') ? document.getElementById('new-product-password').value : '';
+  if (!pwd) {
+    showToast('Digite sua chave criptográfica ou senha para assinar eletronicamente (21 CFR Part 11).', 'info');
+    return;
+  }
+
   const payload = {
     trade_name: tradeName,
     dcb: dcb,
@@ -2175,7 +2187,8 @@ async function submitNewProduct() {
     temp_max: tempMax,
     humidity_min: 30.0,
     humidity_max: humMax,
-    photosensitive: photosensitive
+    photosensitive: photosensitive,
+    password: pwd
   };
 
   try {
@@ -2203,6 +2216,7 @@ function openNewChamberModal() {
   const m = document.getElementById('modal-new-chamber');
   if (m) {
     m.classList.add('active');
+    setupSignatureField('new-chamber-resp-name', 'new-chamber-password');
     const valid = document.getElementById('ch-qual-valid');
     if (valid && !valid.value) {
       const d = new Date();
@@ -2253,6 +2267,12 @@ async function submitNewChamber() {
     return;
   }
 
+  const pwd = document.getElementById('new-chamber-password') ? document.getElementById('new-chamber-password').value : '';
+  if (!pwd) {
+    showToast('Digite sua chave criptográfica ou senha para assinar eletronicamente (21 CFR Part 11).', 'info');
+    return;
+  }
+
   const payload = {
     id: id,
     name: name,
@@ -2263,7 +2283,8 @@ async function submitNewChamber() {
     humidity_max: 75.0,
     alarm_delay_min: delay,
     qualification_status: qualStatus,
-    qualification_valid_until: qualValid
+    qualification_valid_until: qualValid,
+    password: pwd
   };
 
   try {
@@ -2315,10 +2336,149 @@ async function populateSensorChambersSelect(selectedChamberId) {
   }
 }
 
+
+// -----------------------------------------------------------------------------
+// ASSINATURA ELETRÔNICA & DESCOMISSIONAMENTO DE SENSORES (21 CFR PART 11)
+// -----------------------------------------------------------------------------
+function setupSignatureField(respInputId, pwdInputId) {
+  const resp = document.getElementById(respInputId);
+  if (resp) {
+    resp.value = currentUser ? `${currentUser.name} (${currentUser.role.toUpperCase()})` : 'Operador Autorizado';
+  }
+  const pwd = document.getElementById(pwdInputId);
+  if (pwd) {
+    pwd.value = '';
+  }
+}
+
+function openDecommissionSensorModal(preselectedId) {
+  const sensors = window.allMetrologySensors || [];
+  if (sensors.length === 0) {
+    showToast('Nenhum sensor metrológico cadastrado no sistema.', 'info');
+    return;
+  }
+
+  const m = document.getElementById('modal-decommission-sensor');
+  if (!m) return;
+
+  const select = document.getElementById('decom-sensor-select');
+  if (select) {
+    select.innerHTML = sensors.map(s => {
+      const selected = (preselectedId && s.id === preselectedId) ? 'selected' : '';
+      return `<option value="${s.id}" ${selected}>${s.id} — Câmara ${s.chamber_id} (${s.thermal_position})</option>`;
+    }).join('');
+  }
+
+  const targetId = preselectedId || (select ? select.value : sensors[0].id);
+  updateDecomSensorDetails(targetId);
+
+  setupSignatureField('decom-sensor-resp-name', 'decom-sensor-password');
+  const just = document.getElementById('decom-sensor-justification');
+  if (just) just.value = '';
+
+  m.classList.add('active');
+}
+
+function closeDecommissionSensorModal() {
+  const m = document.getElementById('modal-decommission-sensor');
+  if (m) m.classList.remove('active');
+  const f = document.getElementById('form-decommission-sensor');
+  if (f) f.reset();
+}
+
+function onDecomSensorSelectChange() {
+  const select = document.getElementById('decom-sensor-select');
+  if (select) {
+    updateDecomSensorDetails(select.value);
+  }
+}
+
+function updateDecomSensorDetails(sensorId) {
+  const sensors = window.allMetrologySensors || [];
+  const s = sensors.find(x => x.id === sensorId);
+  if (!s) return;
+
+  const idEl = document.getElementById('decom-sensor-id-display');
+  if (idEl) idEl.textContent = s.id;
+
+  const chEl = document.getElementById('decom-sensor-chamber-display');
+  if (chEl) chEl.textContent = s.chamber_id;
+
+  const snEl = document.getElementById('decom-sensor-sn-display');
+  if (snEl) snEl.textContent = s.serial_number || '--';
+
+  const certEl = document.getElementById('decom-sensor-cert-display');
+  if (certEl) certEl.textContent = s.cert_number || '--';
+
+  const posEl = document.getElementById('decom-sensor-pos-display');
+  if (posEl) posEl.textContent = s.thermal_position || '--';
+}
+
+async function submitDecommissionSensor() {
+  const select = document.getElementById('decom-sensor-select');
+  const sensorId = select ? select.value : '';
+  const reason = document.getElementById('decom-sensor-reason').value;
+  const just = document.getElementById('decom-sensor-justification').value.trim();
+  const pwd = document.getElementById('decom-sensor-password').value;
+
+  if (!sensorId) {
+    showToast('Selecione um sensor para descomissionar.', 'info');
+    return;
+  }
+  if (!just) {
+    showToast('Preencha o parecer técnico com a justificativa de descomissionamento.', 'info');
+    return;
+  }
+  if (!pwd) {
+    showToast('Digite sua chave criptográfica ou senha para assinar eletronicamente (21 CFR Part 11).', 'info');
+    return;
+  }
+
+  const btn = document.getElementById('btn-submit-decom-sensor');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = 'Processando Descomissionamento...';
+  }
+
+  try {
+    const res = await fetch('/api/pharma/sensors', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sensor_id: sensorId,
+        reason: reason,
+        justification: just,
+        password: pwd
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(`Falha no descomissionamento: ${data.error || 'Erro na validação regulatória.'}`, 'error');
+      return;
+    }
+
+    showToast(data.message || `Sensor ${sensorId} descomissionado com sucesso com registro no ledger!`, 'success');
+    closeDecommissionSensorModal();
+    loadMetrology();
+    loadKPIs();
+    loadChambers(true);
+  } catch (err) {
+    console.error('Erro ao descomissionar sensor:', err);
+    showToast('Erro de comunicação ao efetuar baixa do sensor metrológico.', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = 'Confirmar Descomissionamento do Sensor';
+    }
+  }
+}
+
 function openNewSensorModal() {
   const m = document.getElementById('modal-sensor');
   if (!m) return;
   m.classList.add('active');
+  setupSignatureField('sensor-resp-name', 'sensor-password');
 
   document.getElementById('modal-sensor-title').textContent = 'Cadastrar Sensor / Certificado RBC';
   document.getElementById('sensor-is-edit').value = '0';
@@ -2351,6 +2511,7 @@ function openEditSensorModal(sensorId) {
   const m = document.getElementById('modal-sensor');
   if (!m) return;
   m.classList.add('active');
+  setupSignatureField('sensor-resp-name', 'sensor-password');
 
   document.getElementById('modal-sensor-title').textContent = `Recalibrar / Atualizar Sensor ${s.id}`;
   document.getElementById('sensor-is-edit').value = '1';
@@ -2398,6 +2559,12 @@ async function submitSensor() {
     return;
   }
 
+  const pwd = document.getElementById('sensor-password') ? document.getElementById('sensor-password').value : '';
+  if (!pwd) {
+    showToast('Digite sua chave criptográfica ou senha para assinar eletronicamente (21 CFR Part 11).', 'info');
+    return;
+  }
+
   const payload = {
     id: id,
     chamber_id: chamberId,
@@ -2406,7 +2573,8 @@ async function submitSensor() {
     cert_number: cert,
     calibrated_by: lab,
     calibrated_at: calibAt,
-    calib_valid_until: validUntil
+    calib_valid_until: validUntil,
+    password: pwd
   };
 
   const method = isEdit ? 'PUT' : 'POST';
@@ -2547,6 +2715,7 @@ function openEntryModal() {
   const m = document.getElementById('modal-entry');
   if (!m) return;
   m.classList.add('active');
+  setupSignatureField('entry-resp-name', 'entry-password');
 
   if (window.allPharmaProducts.length === 0) {
     loadProducts();
@@ -2619,8 +2788,14 @@ async function submitStockEntry() {
     arrival_temp: arrivalTemp,
     cargo_integrity: 'Conforme (Lacre de segurança intacto)',
     ambient_exposure_minutes: 0,
-    decision: decision
+    decision: decision,
+    password: (document.getElementById('entry-password') ? document.getElementById('entry-password').value : '')
   };
+
+  if (!payload.password) {
+    showToast('Digite sua chave criptográfica ou senha para assinar eletronicamente (21 CFR Part 11).', 'info');
+    return;
+  }
 
   try {
     const res = await fetch('/api/pharma/stock/entry', {
@@ -2667,6 +2842,7 @@ function openExitModal() {
   });
 
   m.classList.add('active');
+  setupSignatureField('exit-resp-name', 'exit-password');
   updateExitLotInfo();
 }
 
@@ -2703,12 +2879,19 @@ async function submitStockExit() {
   const recipient = document.getElementById('exit-recipient').value.trim();
   const nfe = document.getElementById('exit-nfe').value.trim();
 
+  const pwd = document.getElementById('exit-password') ? document.getElementById('exit-password').value : '';
+  if (!pwd) {
+    showToast('Digite sua chave criptográfica ou senha para assinar eletronicamente (21 CFR Part 11).', 'info');
+    return;
+  }
+
   const payload = {
     lot_id: lotId,
     quantity: qty,
     reason: reason,
     recipient: recipient,
-    invoice_number: nfe
+    invoice_number: nfe,
+    password: pwd
   };
 
   try {

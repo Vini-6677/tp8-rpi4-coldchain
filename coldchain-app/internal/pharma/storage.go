@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 )
 
@@ -1854,4 +1855,30 @@ func TransferChamberLots(db *sql.DB, sourceChamberID, targetChamberID, defaultSh
 	}
 
 	return len(items), nil
+}
+
+// DecommissionSensor desativa e remove um sensor metrológico mediante justificativa pericial regulatória.
+func DecommissionSensor(db *sql.DB, sensorID, reason, justification, signatureName string) error {
+	if strings.TrimSpace(sensorID) == "" {
+		return fmt.Errorf("id do sensor é obrigatório")
+	}
+
+	var serialNumber, chamberID string
+	if err := db.QueryRow("SELECT serial_number, COALESCE(chamber_id, '') FROM sensors WHERE id = ?", sensorID).Scan(&serialNumber, &chamberID); err != nil {
+		return fmt.Errorf("sensor '%s' não encontrado", sensorID)
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Remove o sensor do inventário ativo de metrologia
+	_, err = tx.Exec("DELETE FROM sensors WHERE id = ?", sensorID)
+	if err != nil {
+		return fmt.Errorf("erro ao descomissionar sensor: %w", err)
+	}
+
+	return tx.Commit()
 }

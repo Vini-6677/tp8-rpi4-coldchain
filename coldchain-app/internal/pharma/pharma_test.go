@@ -862,3 +862,46 @@ func TestThermalCompatibilityAndTransfer(t *testing.T) {
 		t.Errorf("esperava 0 lotes em CH-B após evacuação completa, encontrou %d", chBLots)
 	}
 }
+
+func TestPharmaDecommissionSensor(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	if err := SeedPharmaTestData(db); err != nil {
+		t.Fatalf("erro ao semear dados: %v", err)
+	}
+
+	// 1. Cadastra um sensor para teste de baixa
+	s := Sensor{
+		ID:              "SE-TEST-DECOM",
+		ChamberID:       "CH-A",
+		SerialNumber:    "SN-TEST-999",
+		ThermalPosition: "Ponto Superior Teste",
+		CertNumber:      "RBC-TEST-999",
+		CalibratedBy:    "LabMetrologia RBC",
+		CalibValidUntil: "2027-12-31",
+	}
+	created, err := RegisterSensor(db, s)
+	if err != nil {
+		t.Fatalf("esperava sucesso ao cadastrar sensor, erro: %v", err)
+	}
+
+	// 2. Descomissiona com justificativa
+	err = DecommissionSensor(db, created.ID, "Avaria Física / Falha Irreversível no Transdutor", "Sensor danificado durante mapeamento térmico.", "Dr. Lucas")
+	if err != nil {
+		t.Fatalf("esperava sucesso ao descomissionar sensor, erro: %v", err)
+	}
+
+	// 3. Verifica se não consta mais na tabela sensors
+	var count int
+	_ = db.QueryRow("SELECT COUNT(*) FROM sensors WHERE id = ?", created.ID).Scan(&count)
+	if count != 0 {
+		t.Errorf("esperava sensor removido, mas encontrou %d registros", count)
+	}
+
+	// 4. Tentativa de descomissionar sensor inexistente deve retornar erro
+	err = DecommissionSensor(db, "SENSOR-INEXISTENTE", "Motivo", "Parecer", "Dr. Lucas")
+	if err == nil {
+		t.Errorf("esperava erro ao descomissionar sensor inexistente, mas passou")
+	}
+}
