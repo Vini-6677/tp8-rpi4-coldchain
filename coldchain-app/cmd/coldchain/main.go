@@ -319,10 +319,17 @@ func seedUsers(db *sql.DB) error {
 
 func initDB(path string) (*sql.DB, error) {
 	_ = os.MkdirAll("/data/coldchain", 0700)
-	db, err := sql.Open("sqlite", path)
+	dsn := path
+	if !strings.Contains(dsn, "?") {
+		dsn += "?_pragma=busy_timeout(15000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(ON)&_pragma=cache_size(-20000)"
+	}
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
+	db.SetMaxOpenConns(20)
+	db.SetMaxIdleConns(10)
+	db.SetConnMaxLifetime(30 * time.Minute)
 
 	pragmas := []string{
 		"PRAGMA journal_mode=WAL;",
@@ -755,12 +762,24 @@ func (a *App) routes() http.Handler {
 		salt := generateSalt()
 		hash := hashPassword(req.Password, salt)
 
-		_, err := a.db.Exec(`
-			INSERT INTO users (username, password_hash, salt, name, role, is_blocked, first_login, crypto_key_hash)
-			VALUES (?, ?, ?, ?, ?, 0, 1, '')
-		`, req.Username, hash, salt, req.Name, req.Role)
+		var insertErr error
+		for attempt := 0; attempt < 8; attempt++ {
+			_, insertErr = a.db.Exec(`
+				INSERT INTO users (username, password_hash, salt, name, role, is_blocked, first_login, crypto_key_hash)
+				VALUES (?, ?, ?, ?, ?, 0, 1, '')
+			`, req.Username, hash, salt, req.Name, req.Role)
+			if insertErr == nil {
+				break
+			}
+			errStr := strings.ToLower(insertErr.Error())
+			if strings.Contains(errStr, "locked") || strings.Contains(errStr, "busy") {
+				time.Sleep(120 * time.Millisecond)
+				continue
+			}
+			break
+		}
 
-		if err != nil {
+		if insertErr != nil {
 			var exists int
 			_ = a.db.QueryRow("SELECT COUNT(*) FROM users WHERE username = ?", req.Username).Scan(&exists)
 			if exists > 0 {
@@ -769,7 +788,7 @@ func (a *App) routes() http.Handler {
 				return
 			}
 			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]any{"error": fmt.Sprintf("Erro ao cadastrar usuário: %v", err)})
+			json.NewEncoder(w).Encode(map[string]any{"error": fmt.Sprintf("Erro ao cadastrar usuário: %v", insertErr)})
 			return
 		}
 
@@ -2347,6 +2366,12 @@ func (a *App) pharmaSimulatorLoop(ctx context.Context) {
 				FROM sensors s
 				JOIN chambers c ON s.chamber_id = c.id`)
 			if err == nil {
+				type sUpdate struct {
+					id string
+					t  float64
+					h  float64
+				}
+				var updates []sUpdate
 				for rows.Next() {
 					var sID string
 					var tMin, tMax, hMin, hMax float64
@@ -2367,13 +2392,16 @@ func (a *App) pharmaSimulatorLoop(ctx context.Context) {
 						factor := float64((step*7+charVal)%10-5) * 0.03
 						tVal := baseTemp + factor
 						hVal := baseHum + float64((step*3+charVal)%8-4)*0.8
-
-						_, _ = a.db.Exec(`UPDATE sensors 
-							SET current_temp = ?, current_humidity = ?, last_seen = ? 
-							WHERE id = ?`, tVal, hVal, nowStr, sID)
+						updates = append(updates, sUpdate{id: sID, t: tVal, h: hVal})
 					}
 				}
 				rows.Close()
+
+				for _, u := range updates {
+					_, _ = a.db.Exec(`UPDATE sensors 
+						SET current_temp = ?, current_humidity = ?, last_seen = ? 
+						WHERE id = ?`, u.t, u.h, nowStr, u.id)
+				}
 			}
 		}
 	}

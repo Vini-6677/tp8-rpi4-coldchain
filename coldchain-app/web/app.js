@@ -1969,29 +1969,31 @@ async function loadUsers() {
 
     users.forEach(u => {
       const cryptoBadge = u.first_login
-        ? '<span class="badge-status em_quarentena" style="font-size:11px;">Pendente (1º Acesso)</span>'
-        : '<span class="badge-status liberado" style="font-size:11px;">Chave Ativa</span>';
+        ? '<span class="badge-status em_quarentena" style="font-size:11px; padding:3px 9px;">Pendente (1º Acesso)</span>'
+        : '<span class="badge-status liberado" style="font-size:11px; padding:3px 9px;">Chave Ativa</span>';
 
       const isSeed = (u.username === 'admin' || u.username === 'tecnico' || u.username === 'enfermeiro');
       const deleteBtn = isSeed ? '' : `
-        <button class="btn-action-secondary" style="padding:4px 8px; font-size:11px; margin-left:6px; color:#EF4444; border-color:rgba(239,68,68,0.4);" onclick="deleteUser(${u.id}, '${u.username}')">
+        <button type="button" class="btn-user-delete" onclick="deleteUser(${u.id}, '${u.username}')">
           Excluir
         </button>
       `;
 
       tbody.innerHTML += `
         <tr>
-          <td>${u.id}</td>
-          <td><strong>${u.username}</strong></td>
-          <td>${u.name}</td>
-          <td><span class="tag-badge tag-blue">${u.role.toUpperCase()}</span></td>
-          <td>${cryptoBadge}</td>
-          <td><span class="badge-status ${u.is_blocked ? 'reprovado' : 'liberado'}">${u.is_blocked ? 'BLOQUEADO' : 'ATIVO'}</span></td>
-          <td style="text-align:right; white-space:nowrap;">
-            <button class="btn-action-primary" style="padding:4px 8px; font-size:11px; background:#1E293B; border:1px solid #334155;" onclick="toggleBlockUser(${u.id}, ${u.is_blocked})">
-              ${u.is_blocked ? 'Desbloquear' : 'Bloquear'}
-            </button>
-            ${deleteBtn}
+          <td style="font-weight: 600; color: #64748B;">${u.id}</td>
+          <td><strong style="color: #F8FAFC; letter-spacing: 0.2px;">${u.username}</strong></td>
+          <td style="color: #CBD5E1;">${u.name}</td>
+          <td style="text-align: center;"><span class="tag-badge tag-blue" style="font-size: 11px; font-weight: 700; letter-spacing: 0.5px;">${u.role.toUpperCase()}</span></td>
+          <td style="text-align: center;">${cryptoBadge}</td>
+          <td style="text-align: center;"><span class="badge-status ${u.is_blocked ? 'reprovado' : 'liberado'}" style="font-size: 11px; font-weight: 700;">${u.is_blocked ? 'BLOQUEADO' : 'ATIVO'}</span></td>
+          <td style="text-align: right;">
+            <div style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px;">
+              <button type="button" class="btn-user-toggle" onclick="toggleBlockUser(${u.id}, ${u.is_blocked})">
+                ${u.is_blocked ? 'Desbloquear' : 'Bloquear'}
+              </button>
+              ${deleteBtn}
+            </div>
           </td>
         </tr>
       `;

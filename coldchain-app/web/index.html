@@ -2063,6 +2063,12 @@
            SEÇÃO 6: GESTÃO DE USUÁRIOS (RBAC)
            ===================================================================== -->
       
+      <style>
+.btn-user-toggle { height: 28px; padding: 0 12px; font-size: 11.5px; font-weight: 600; border-radius: 6px; background: #1E293B; border: 1px solid #334155; color: #E2E8F0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all 0.2s; }
+.btn-user-toggle:hover { background: #334155; border-color: #475569; color: #FFFFFF; }
+.btn-user-delete { height: 28px; padding: 0 12px; font-size: 11.5px; font-weight: 600; border-radius: 6px; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); color: #EF4444; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all 0.2s; }
+.btn-user-delete:hover { background: rgba(239, 68, 68, 0.22); border-color: rgba(239, 68, 68, 0.6); color: #F87171; }
+</style>
       <section id="section-users" class="tab-section">
         <div class="detail-panel">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
@@ -2075,13 +2081,13 @@
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>ID</th>
-                  <th>Login</th>
+                  <th style="width: 50px;">ID</th>
+                  <th style="width: 140px;">Login</th>
                   <th>Nome Completo</th>
-                  <th>Perfil Hospitalar</th>
-                  <th>Chave Criptográfica</th>
-                  <th>Status</th>
-                  <th style="text-align: right;">Ações de Controle</th>
+                  <th style="width: 160px; text-align: center;">Perfil Hospitalar</th>
+                  <th style="width: 180px; text-align: center;">Chave Criptográfica</th>
+                  <th style="width: 110px; text-align: center;">Status</th>
+                  <th style="text-align: right; width: 190px;">Ações de Controle</th>
                 </tr>
               </thead>
               <tbody id="users-table-body">
