@@ -361,6 +361,8 @@ func initDB(path string) (*sql.DB, error) {
 		name TEXT NOT NULL,
 		role TEXT NOT NULL,
 		is_blocked INTEGER DEFAULT 0,
+		first_login INTEGER DEFAULT 0,
+		crypto_key_hash TEXT DEFAULT '',
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
@@ -397,6 +399,10 @@ func initDB(path string) (*sql.DB, error) {
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("erro no schema: %w", err)
 	}
+
+	// Migrations de colunas para users existentes
+	_, _ = db.Exec("ALTER TABLE users ADD COLUMN crypto_key_hash TEXT DEFAULT ''")
+	_, _ = db.Exec("ALTER TABLE users ADD COLUMN first_login INTEGER DEFAULT 0")
 
 	if err := pharma.InitPharmaSchema(db); err != nil {
 		return nil, fmt.Errorf("erro ao inicializar schema pharma: %w", err)
@@ -485,7 +491,7 @@ func (a *App) routes() http.Handler {
 			return
 		}
 
-		req.Username = strings.TrimSpace(req.Username)
+		req.Username = strings.ToLower(strings.TrimSpace(req.Username))
 		ip := getClientIP(r)
 
 		var (
@@ -544,7 +550,8 @@ func (a *App) routes() http.Handler {
 				WHERE id = ?
 			`, newKeyHash, id)
 			if err != nil {
-				http.Error(w, "Erro ao registrar chave criptográfica", http.StatusInternalServerError)
+				slog.Error("Erro ao registrar chave criptográfica", "err", err, "username", req.Username)
+				http.Error(w, fmt.Sprintf("Erro ao registrar chave criptográfica: %v", err), http.StatusInternalServerError)
 				return
 			}
 			a.logAudit(req.Username, role, "CRYPTO_KEY_ACTIVATED", fmt.Sprintf("Primeiro acesso confirmado. Chave criptográfica única gerada com sucesso para '%s'.", req.Username), ip)
@@ -558,7 +565,8 @@ func (a *App) routes() http.Handler {
 		`, token, req.Username, role, name, expires.Format("2006-01-02 15:04:05"))
 
 		if err != nil {
-			http.Error(w, "Erro ao criar sessão", http.StatusInternalServerError)
+			slog.Error("Erro ao criar sessão", "err", err, "username", req.Username)
+			http.Error(w, fmt.Sprintf("Erro ao criar sessão: %v", err), http.StatusInternalServerError)
 			return
 		}
 
@@ -753,8 +761,15 @@ func (a *App) routes() http.Handler {
 		`, req.Username, hash, salt, req.Name, req.Role)
 
 		if err != nil {
-			w.WriteHeader(http.StatusConflict)
-			json.NewEncoder(w).Encode(map[string]any{"error": "Nome de usuário já existe no sistema."})
+			var exists int
+			_ = a.db.QueryRow("SELECT COUNT(*) FROM users WHERE username = ?", req.Username).Scan(&exists)
+			if exists > 0 {
+				w.WriteHeader(http.StatusConflict)
+				json.NewEncoder(w).Encode(map[string]any{"error": "Nome de usuário já existe no sistema."})
+				return
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]any{"error": fmt.Sprintf("Erro ao cadastrar usuário: %v", err)})
 			return
 		}
 
@@ -828,7 +843,52 @@ func (a *App) routes() http.Handler {
 	})
 
 	// API Admin: Alterar Grau de Permissão
-	mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *http.Request) {
+	
+	// API Admin: Excluir Usuário (apenas não-seed)
+	mux.HandleFunc("/api/admin/users/delete", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		sess, ok := a.getSession(r)
+		if !ok || sess.Role != "admin" {
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Acesso restrito ao Administrador."})
+			return
+		}
+
+		var req struct {
+			UserID int64 `json:"user_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Dados inválidos."})
+			return
+		}
+
+		var targetUser string
+		_ = a.db.QueryRow("SELECT username FROM users WHERE id = ?", req.UserID).Scan(&targetUser)
+		if targetUser == "admin" || targetUser == "tecnico" || targetUser == "enfermeiro" {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Não é permitido excluir os perfis padrão do sistema."})
+			return
+		}
+
+		_, err := a.db.Exec("DELETE FROM users WHERE id = ?", req.UserID)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Erro ao excluir usuário."})
+			return
+		}
+
+		ip := getClientIP(r)
+		a.logAudit(sess.Username, sess.Role, "USER_DELETED", fmt.Sprintf("Excluído usuário '%s' (ID #%d)", targetUser, req.UserID), ip)
+
+		json.NewEncoder(w).Encode(map[string]any{"status": "ok", "message": "Usuário excluído com sucesso."})
+	})
+
+mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
 			return

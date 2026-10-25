@@ -1,3 +1,14 @@
+// =============================================================================
+// ELIMINAÇÃO DE POPUPS NATIVOS (WINDOW.ALERT) - TOASTS MODERNOS E ELEGANTES
+// =============================================================================
+window.alert = function(msg) {
+  if (typeof showToast === 'function') {
+    showToast(String(msg), 'info');
+  } else {
+    console.warn('[ALERTA DO SISTEMA]', msg);
+  }
+};
+
 function formatChamberHeader(c) {
   let mainTitle = c.name;
   let subTitle = '';
@@ -220,11 +231,14 @@ async function submitLogin() {
     if (res.ok && data.status === 'ok') {
       currentUser = data.user;
       showApp();
+      if (data.first_login && data.crypto_key) {
+        openFirstLoginModal(data.crypto_key);
+      }
     } else {
-      alert(data.error || 'Credenciais inválidas.');
+      showToast(data.error || 'Credenciais inválidas.', 'error');
     }
   } catch (e) {
-    alert('Erro ao conectar ao servidor.');
+    showToast('Erro ao conectar ao servidor.', 'error');
   } finally {
     btn.disabled = false;
     btn.innerText = 'Autenticar no Sistema';
@@ -1392,7 +1406,7 @@ async function submitResolveAlarm() {
   const sig = sigEl ? sigEl.value.trim() : '';
 
   if (!notes || !sig) {
-    alert('Preencha o laudo técnico e a assinatura eletrônica (21 CFR Part 11).');
+    showToast('Preencha o laudo técnico e a assinatura eletrônica (21 CFR Part 11).', 'info')
     return;
   }
 
@@ -1416,10 +1430,10 @@ async function submitResolveAlarm() {
       loadExcursions();
     } else {
       const err = await res.json().catch(() => ({}));
-      alert(err.error || 'Erro ao resolver alarme.');
+      showToast(err.error || 'Erro ao resolver alarme.', 'error')
     }
   } catch (e) {
-    alert('Erro de conexão ao resolver alarme.');
+    showToast('Erro de conexão ao resolver alarme.', 'error')
   } finally {
     if (btn) {
       btn.disabled = false;
@@ -1537,7 +1551,7 @@ async function submitExcursionDecision() {
   const sig = document.getElementById('dec-signature').value;
 
   if (!report || !sig) {
-    alert('Preencha o parecer técnico e a assinatura eletrônica.');
+    showToast('Preencha o parecer técnico e a assinatura eletrônica.', 'info')
     return;
   }
 
@@ -1554,16 +1568,16 @@ async function submitExcursionDecision() {
     });
     const data = await res.json();
     if (res.ok) {
-      alert(`Decisão pericial registrada com sucesso! Lotes ${decision === 'liberado' ? 'LIBERADOS para uso' : 'REPROVADOS para descarte'}.`);
+      showToast(`Decisão pericial registrada com sucesso! Lotes ${decision === 'liberado' ? 'LIBERADOS para uso' : 'REPROVADOS para descarte'}.`, 'success')
       closeDecisionModal();
       loadExcursions();
       loadLots();
       loadChambers();
     } else {
-      alert(data.error || 'Erro ao registrar decisão.');
+      showToast(data.error || 'Erro ao registrar decisão.', 'error')
     }
   } catch (e) {
-    alert('Erro de conexão.');
+    showToast('Erro de conexão.', 'error')
   }
 }
 
@@ -1578,7 +1592,7 @@ async function simulateExcursion() {
     const res = await fetch('/api/pharma/excursions/simulate?chamber=CH-A', { method: 'POST' });
     const data = await res.json();
     if (res.ok) {
-      alert(data.message || 'Excursão térmica simulada com sucesso! Lotes alocados em análise.');
+      showToast(data.message || 'Excursão térmica simulada com sucesso! Lotes alocados em análise.', 'success')
       loadExcursions();
       loadAlarms();
       loadLots();
@@ -1588,10 +1602,10 @@ async function simulateExcursion() {
         selectChamber(selectedChamberId, true);
       }
     } else {
-      alert(data.error || 'Erro na simulação.');
+      showToast(data.error || 'Erro na simulação.', 'error')
     }
   } catch (e) {
-    alert('Erro de conexão ao simular excursão.');
+    showToast('Erro de conexão ao simular excursão.', 'error')
   } finally {
     if (btn) {
       btn.disabled = false;
@@ -1931,13 +1945,13 @@ async function createAnchorLive() {
     const res = await fetch('/api/v1/ledger/anchor', { method: 'POST' });
     const data = await res.json();
     if (res.ok) {
-      alert(`Âncora RFC 3161 #${data.anchor.id} gerada com sucesso!`);
+      showToast(`Âncora RFC 3161 #${data.anchor.id} gerada com sucesso!`, 'success')
       loadLedger();
     } else {
-      alert(data.error || 'Erro ao gerar âncora.');
+      showToast(data.error || 'Erro ao gerar âncora.', 'error')
     }
   } catch (e) {
-    alert('Erro de conexão.');
+    showToast('Erro de conexão.', 'error')
   }
 }
 
@@ -1958,6 +1972,13 @@ async function loadUsers() {
         ? '<span class="badge-status em_quarentena" style="font-size:11px;">Pendente (1º Acesso)</span>'
         : '<span class="badge-status liberado" style="font-size:11px;">Chave Ativa</span>';
 
+      const isSeed = (u.username === 'admin' || u.username === 'tecnico' || u.username === 'enfermeiro');
+      const deleteBtn = isSeed ? '' : `
+        <button class="btn-action-secondary" style="padding:4px 8px; font-size:11px; margin-left:6px; color:#EF4444; border-color:rgba(239,68,68,0.4);" onclick="deleteUser(${u.id}, '${u.username}')">
+          Excluir
+        </button>
+      `;
+
       tbody.innerHTML += `
         <tr>
           <td>${u.id}</td>
@@ -1966,10 +1987,11 @@ async function loadUsers() {
           <td><span class="tag-badge tag-blue">${u.role.toUpperCase()}</span></td>
           <td>${cryptoBadge}</td>
           <td><span class="badge-status ${u.is_blocked ? 'reprovado' : 'liberado'}">${u.is_blocked ? 'BLOQUEADO' : 'ATIVO'}</span></td>
-          <td style="text-align:right;">
+          <td style="text-align:right; white-space:nowrap;">
             <button class="btn-action-primary" style="padding:4px 8px; font-size:11px; background:#1E293B; border:1px solid #334155;" onclick="toggleBlockUser(${u.id}, ${u.is_blocked})">
               ${u.is_blocked ? 'Desbloquear' : 'Bloquear'}
             </button>
+            ${deleteBtn}
           </td>
         </tr>
       `;
@@ -1989,10 +2011,10 @@ async function toggleBlockUser(userId, currentBlocked) {
     if (res.ok) {
       loadUsers();
     } else {
-      alert('Erro ao alterar bloqueio de usuário.');
+      showToast('Erro ao alterar bloqueio de usuário.', 'error')
     }
   } catch (e) {
-    alert('Erro de conexão.');
+    showToast('Erro de conexão.', 'error')
   }
 }
 
@@ -2091,7 +2113,7 @@ async function submitNewProduct() {
   const photosensitive = parseInt(document.getElementById('prod-photosensitive').value, 10);
 
   if (tempMin > tempMax) {
-    alert('A temperatura mínima não pode ser superior à máxima.');
+    showToast('A temperatura mínima não pode ser superior à máxima.', 'info')
     return;
   }
 
@@ -2116,16 +2138,16 @@ async function submitNewProduct() {
     });
     const data = await res.json();
     if (!res.ok) {
-      alert('Erro ao cadastrar medicamento: ' + (data.error || 'Erro desconhecido'));
+      showToast('Erro ao cadastrar medicamento: ' + (data.error || 'Erro desconhecido'), 'error')
       return;
     }
 
-    alert('Medicamento ' + tradeName + ' cadastrado com sucesso no Catálogo ANVISA!');
+    showToast('Medicamento ' + tradeName + ' cadastrado com sucesso no Catálogo ANVISA!', 'success')
     closeNewProductModal();
     loadProducts(); // recarrega catálogo e selects
   } catch (e) {
     console.error('Erro na requisição:', e);
-    alert('Erro de conexão ao salvar medicamento.');
+    showToast('Erro de conexão ao salvar medicamento.', 'error')
   }
 }
 
@@ -2179,7 +2201,7 @@ async function submitNewChamber() {
   const qualValid = document.getElementById('ch-qual-valid').value;
 
   if (tempMin > tempMax) {
-    alert('A temperatura mínima não pode ser superior à máxima.');
+    showToast('A temperatura mínima não pode ser superior à máxima.', 'info')
     return;
   }
 
@@ -2204,16 +2226,16 @@ async function submitNewChamber() {
     });
     const data = await res.json();
     if (!res.ok) {
-      alert('Erro ao cadastrar equipamento: ' + (data.error || 'Erro desconhecido'));
+      showToast('Erro ao cadastrar equipamento: ' + (data.error || 'Erro desconhecido'), 'error')
       return;
     }
 
-    alert('Câmara ' + name + ' (' + id + ') cadastrada com sucesso!');
+    showToast('Câmara ' + name + ' (' + id + ') cadastrada com sucesso!', 'success')
     closeNewChamberModal();
     loadChambers(true);
   } catch (e) {
     console.error('Erro na requisição:', e);
-    alert('Erro de conexão ao cadastrar câmara.');
+    showToast('Erro de conexão ao cadastrar câmara.', 'error')
   }
 }
 
@@ -2324,7 +2346,7 @@ async function submitSensor() {
   const validUntil = document.getElementById('sensor-valid-until').value;
 
   if (!id || !chamberId || !sn || !pos || !cert || !lab || !calibAt || !validUntil) {
-    alert('Por favor, preencha todos os campos obrigatórios do sensor metrológico.');
+    showToast('Por favor, preencha todos os campos obrigatórios do sensor metrológico.', 'info')
     return;
   }
 
@@ -2349,19 +2371,19 @@ async function submitSensor() {
     });
     const data = await res.json();
     if (!res.ok) {
-      alert('Erro na operação metrológica: ' + (data.error || 'Erro desconhecido'));
+      showToast('Erro na operação metrológica: ' + (data.error || 'Erro desconhecido'), 'error')
       return;
     }
 
     const actionText = isEdit ? 'recalibrado e atualizado' : 'cadastrado';
-    alert(`Sensor ${id} ${actionText} com sucesso no Parque Metrológico RBC!`);
+    showToast(`Sensor ${id} ${actionText} com sucesso no Parque Metrológico RBC!`, 'success')
     closeSensorModal();
     loadMetrology();
     loadKPIs();
     loadChambers(true);
   } catch (e) {
     console.error('Erro na requisição metrológica:', e);
-    alert('Erro de conexão ao salvar sensor metrológico.');
+    showToast('Erro de conexão ao salvar sensor metrológico.', 'error')
   }
 }
 
@@ -2556,17 +2578,17 @@ async function submitStockEntry() {
     });
     const data = await res.json();
     if (res.ok) {
-      alert(`Recebimento na Doca concluído com sucesso!\nLote: ${data.lot.lot_number}\nStatus Inicial: ${data.lot.status.toUpperCase()}`);
+      showToast(`Recebimento na Doca concluído com sucesso!\nLote: ${data.lot.lot_number}\nStatus Inicial: ${data.lot.status.toUpperCase()}`, 'success')
       closeEntryModal();
       document.getElementById('form-entry').reset();
       loadLots();
       loadChambers();
       loadKPIs();
     } else {
-      alert(data.error || 'Erro ao registrar recebimento.');
+      showToast(data.error || 'Erro ao registrar recebimento.', 'error')
     }
   } catch (e) {
-    alert('Erro de conexão ao registrar entrada.');
+    showToast('Erro de conexão ao registrar entrada.', 'error')
   }
 }
 
@@ -2579,7 +2601,7 @@ function openExitModal() {
     .sort((a, b) => new Date(a.expiry_date) - new Date(b.expiry_date));
 
   if (validLots.length === 0) {
-    alert('Nenhum lote com status LIBERADO e saldo disponível para dispensação no momento.');
+    showToast('Nenhum lote com status LIBERADO e saldo disponível para dispensação no momento.', 'info')
     return;
   }
 
@@ -2645,17 +2667,17 @@ async function submitStockExit() {
     });
     const data = await res.json();
     if (res.ok) {
-      alert(`Dispensação / Saída concluída com sucesso!\nQuantidade retirada: ${qty} un.\nSaldo restante: ${data.remaining_quantity} un.`);
+      showToast(`Dispensação / Saída concluída com sucesso!\nQuantidade retirada: ${qty} un.\nSaldo restante: ${data.remaining_quantity} un.`, 'success')
       closeExitModal();
       document.getElementById('form-exit').reset();
       loadLots();
       loadChambers();
       loadKPIs();
     } else {
-      alert(data.error || 'Erro ao registrar saída.');
+      showToast(data.error || 'Erro ao registrar saída.', 'error')
     }
   } catch (e) {
-    alert('Erro de conexão ao registrar saída.');
+    showToast('Erro de conexão ao registrar saída.', 'error')
   }
 }
 
@@ -2751,7 +2773,7 @@ function closeTraceModal() {
 // ==============================================================================
 function openDecommissionModal() {
   if (!chambersData || chambersData.length === 0) {
-    alert('Nenhuma câmara disponível no sistema.');
+    showToast('Nenhuma câmara disponível no sistema.', 'info')
     return;
   }
 
@@ -2846,15 +2868,15 @@ async function submitDecommissionChamber() {
   const pwd = document.getElementById('decom-password').value;
 
   if (!targetChamberId) {
-    alert('Selecione uma câmara para descomissionar.');
+    showToast('Selecione uma câmara para descomissionar.', 'info')
     return;
   }
   if (!just) {
-    alert('Preencha o parecer técnico com a justificativa de descomissionamento.');
+    showToast('Preencha o parecer técnico com a justificativa de descomissionamento.', 'info')
     return;
   }
   if (!pwd) {
-    alert('Digite sua senha para autenticar a assinatura digital (21 CFR Part 11).');
+    showToast('Digite sua senha para autenticar a assinatura digital (21 CFR Part 11).', 'info')
     return;
   }
 
@@ -2879,11 +2901,11 @@ async function submitDecommissionChamber() {
 
     const data = await res.json();
     if (!res.ok) {
-      alert(`Falha no descomissionamento: ${data.error || 'Erro na validação regulatória.'}`);
+      showToast(`Falha no descomissionamento: ${data.error || 'Erro na validação regulatória.'}`, 'error')
       return;
     }
 
-    alert(data.message || 'Equipamento descomissionado com sucesso!');
+    showToast(data.message || 'Equipamento descomissionado com sucesso!', 'success')
     closeDecommissionModal();
 
     await loadChambers(true);
@@ -2892,7 +2914,7 @@ async function submitDecommissionChamber() {
     }
   } catch (err) {
     console.error('Erro ao descomissionar câmara:', err);
-    alert('Erro de comunicação ao efetuar baixa do equipamento.');
+    showToast('Erro de comunicação ao efetuar baixa do equipamento.', 'error')
   } finally {
     if (btn) {
       btn.disabled = false;
@@ -3244,15 +3266,15 @@ async function submitTransferStock() {
   const pwd = pwdInput ? pwdInput.value : '';
 
   if (!targetChamberId) {
-    alert('Selecione a câmara de destino.');
+    showToast('Selecione a câmara de destino.', 'info')
     return;
   }
   if (!just) {
-    alert('Informe o parecer técnico / justificativa para a transferência.');
+    showToast('Informe o parecer técnico / justificativa para a transferência.', 'error')
     return;
   }
   if (!pwd) {
-    alert('Digite sua senha para confirmar a assinatura eletrônica.');
+    showToast('Digite sua senha para confirmar a assinatura eletrônica.', 'info')
     return;
   }
 
@@ -3268,14 +3290,14 @@ async function submitTransferStock() {
     const lotSelect = document.getElementById('transfer-lot-select');
     payload.lot_id = Number(lotSelect ? lotSelect.value : 0);
     if (!payload.lot_id) {
-      alert('Selecione o lote a ser transferido.');
+      showToast('Selecione o lote a ser transferido.', 'info')
       return;
     }
   } else {
     const srcSelect = document.getElementById('transfer-source-chamber-select');
     payload.source_chamber_id = srcSelect ? srcSelect.value : '';
     if (!payload.source_chamber_id) {
-      alert('Selecione a câmara de origem a ser evacuada.');
+      showToast('Selecione a câmara de origem a ser evacuada.', 'info')
       return;
     }
   }
@@ -3294,18 +3316,18 @@ async function submitTransferStock() {
 
     const data = await res.json();
     if (!res.ok) {
-      alert(`Bloqueio de Transferência: ${data.error || 'Erro na validação regulatória.'}`);
+      showToast(`Bloqueio de Transferência: ${data.error || 'Erro na validação regulatória.'}`, 'error')
       return;
     }
 
-    alert(data.message || 'Transferência realizada com sucesso!');
+    showToast(data.message || 'Transferência realizada com sucesso!', 'success')
     closeTransferModal();
 
     await loadLots();
     await loadChambers(true);
   } catch (err) {
     console.error('Erro na requisição de transferência:', err);
-    alert('Erro de comunicação ao efetuar transferência.');
+    showToast('Erro de comunicação ao efetuar transferência.', 'error')
   } finally {
     if (submitBtn) {
       submitBtn.disabled = false;
@@ -3346,11 +3368,12 @@ function copyCryptoKey() {
             btn.style.color = '#F8FAFC';
           }, 2000);
         }
+        showToast('Chave copiada para a área de transferência!', 'success');
       }).catch(() => {
-        prompt('Copie sua chave criptográfica:', text);
+        showToast('Selecione e copie a chave exibida.', 'info');
       });
     } else {
-      prompt('Copie sua chave criptográfica:', text);
+      showToast('Selecione e copie a chave exibida.', 'info');
     }
   }
 }
@@ -3369,6 +3392,8 @@ function closeNewUserModal() {
   if (m) m.classList.remove('active');
   const f = document.getElementById('form-new-user');
   if (f) f.reset();
+  const feedback = document.getElementById('new-user-feedback');
+  if (feedback) feedback.style.display = 'none';
 }
 
 async function submitCreateUser() {
@@ -3377,14 +3402,23 @@ async function submitCreateUser() {
   const roleEl = document.getElementById('new-user-role');
   const pwdEl = document.getElementById('new-user-password');
   const btn = document.getElementById('btn-submit-new-user');
+  const feedback = document.getElementById('new-user-feedback');
 
   const name = nameEl ? nameEl.value.trim() : '';
   const username = userEl ? userEl.value.trim().toLowerCase() : '';
   const role = roleEl ? roleEl.value : 'enfermeiro';
   const password = pwdEl ? pwdEl.value : '';
 
+  if (feedback) feedback.style.display = 'none';
+
   if (!name || !username || !password) {
-    alert('Preencha todos os campos obrigatórios.');
+    if (feedback) {
+      feedback.style.display = 'block';
+      feedback.style.background = 'rgba(239, 68, 68, 0.12)';
+      feedback.style.border = '1px solid rgba(239, 68, 68, 0.45)';
+      feedback.style.color = '#FCA5A5';
+      feedback.innerHTML = '<strong>Atenção:</strong> Por favor, preencha todos os campos obrigatórios.';
+    }
     return;
   }
 
@@ -3397,15 +3431,79 @@ async function submitCreateUser() {
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      closeNewUserModal();
+      if (feedback) {
+        feedback.style.display = 'block';
+        feedback.style.background = 'rgba(16, 185, 129, 0.12)';
+        feedback.style.border = '1px solid rgba(16, 185, 129, 0.45)';
+        feedback.style.color = '#6EE7B7';
+        feedback.innerHTML = `<strong>Sucesso!</strong> Usuário '<strong>${username}</strong>' cadastrado. No primeiro acesso, a chave criptográfica única será gerada.`;
+      }
       loadUsers();
-      alert(`Usuário '${username}' cadastrado com sucesso!\n\nNo primeiro login, o sistema gerará a chave criptográfica pessoal única para este profissional.`);
+      setTimeout(() => {
+        closeNewUserModal();
+        showToast(`Usuário '${username}' criado com sucesso!`, 'success');
+      }, 1300);
     } else {
-      alert(data.error || 'Erro ao cadastrar usuário.');
+      if (feedback) {
+        feedback.style.display = 'block';
+        feedback.style.background = 'rgba(239, 68, 68, 0.12)';
+        feedback.style.border = '1px solid rgba(239, 68, 68, 0.45)';
+        feedback.style.color = '#FCA5A5';
+        feedback.innerHTML = `<strong>Erro ao cadastrar:</strong> ${data.error || 'Nome de usuário indisponível.'}`;
+      }
     }
   } catch (e) {
-    alert('Erro de conexão ao cadastrar usuário.');
+    if (feedback) {
+      feedback.style.display = 'block';
+      feedback.style.background = 'rgba(239, 68, 68, 0.12)';
+      feedback.style.border = '1px solid rgba(239, 68, 68, 0.45)';
+      feedback.style.color = '#FCA5A5';
+      feedback.innerHTML = '<strong>Erro de conexão:</strong> Não foi possível comunicar com o servidor.';
+    }
   } finally {
     if (btn) btn.disabled = false;
+  }
+}
+
+
+// Notificação Toast Glassmorphic (sem popups nativos de navegador)
+function showToast(message, type = 'info') {
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    container.style.cssText = 'position: fixed; bottom: 24px; right: 24px; z-index: 99999; display: flex; flex-direction: column; gap: 8px; pointer-events: none;';
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement('div');
+  const bg = type === 'error' ? 'rgba(239, 68, 68, 0.95)' : type === 'success' ? 'rgba(16, 185, 129, 0.95)' : 'rgba(30, 41, 59, 0.95)';
+  const border = type === 'error' ? '#EF4444' : type === 'success' ? '#10B981' : '#3B82F6';
+  toast.style.cssText = `background: ${bg}; border: 1px solid ${border}; color: #FFFFFF; padding: 12px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; box-shadow: 0 10px 25px rgba(0,0,0,0.5); backdrop-filter: blur(8px); max-width: 380px; pointer-events: auto; opacity: 0; transform: translateY(10px); transition: all 0.25s ease;`;
+  toast.innerText = message;
+  container.appendChild(toast);
+  setTimeout(() => { toast.style.opacity = '1'; toast.style.transform = 'translateY(0)'; }, 10);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(10px)';
+    setTimeout(() => toast.remove(), 300);
+  }, 3500);
+}
+
+async function deleteUser(userId, username) {
+  try {
+    const res = await fetch('/api/admin/users/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      showToast(`Usuário '${username}' excluído com sucesso.`, 'success');
+      loadUsers();
+    } else {
+      showToast(data.error || 'Erro ao excluir usuário.', 'error');
+    }
+  } catch (e) {
+    showToast('Erro de conexão ao excluir usuário.', 'error');
   }
 }

@@ -2761,9 +2761,12 @@
         <button class="btn-close-modal" onclick="closeNewUserModal()">&times;</button>
       </div>
 
-      <div style="background: rgba(37, 99, 235, 0.1); border: 1px solid rgba(59, 130, 246, 0.35); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; font-size: 12.5px; color: #BFDBFE; line-height: 1.45;">
+      <div style="background: rgba(37, 99, 235, 0.1); border: 1px solid rgba(59, 130, 246, 0.35); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; font-size: 12.5px; color: #BFDBFE; line-height: 1.45;">
         <strong>Protocolo 21 CFR Part 11:</strong> Defina o perfil e uma senha inicial provisória. No primeiro acesso deste colaborador, o sistema gerará automaticamente uma <strong>Chave Criptográfica Pessoal</strong> que substituirá a senha provisória e autenticará todos os seus acessos e assinaturas.
       </div>
+
+      <!-- BANNER DE FEEDBACK IN-MODAL (SEM POPUPS) -->
+      <div id="new-user-feedback" style="display: none; border-radius: 6px; padding: 10px 14px; margin-bottom: 14px; font-size: 12.5px; line-height: 1.45;"></div>
 
       <form id="form-new-user" onsubmit="event.preventDefault(); submitCreateUser();">
         <div class="form-group" style="margin-bottom: 14px;">
