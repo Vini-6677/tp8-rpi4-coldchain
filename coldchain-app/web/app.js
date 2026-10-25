@@ -80,6 +80,7 @@ let sensorsData = [];
 let lotsData = [];
 let productsData = [];
 let chartHistory = {}; // chamberId -> { timestamp, sensorTemps: { S01: val, ... } }
+let activeGeneratedCryptoKey = '';
 
 // -----------------------------------------------------------------------------
 // INICIALIZAÇÃO & AUTENTICAÇÃO RBAC
@@ -3659,13 +3660,6 @@ async function submitTransferStock() {
 // =============================================================================
 // GESTÃO DE USUÁRIO E ATIVAÇÃO DE CHAVE CRIPTOGRÁFICA (21 CFR PART 11)
 // =============================================================================
-let activeGeneratedCryptoKey = '';
-
-
-inp.value = key;
-  showToast('Sua Chave Criptográfica foi preenchida para assinatura!', 'success');
-}
-
 function openFirstLoginModal(cryptoKey) {
   activeGeneratedCryptoKey = cryptoKey || '';
   const m = document.getElementById('modal-first-login-crypto');
