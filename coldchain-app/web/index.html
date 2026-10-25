@@ -1828,8 +1828,7 @@
             <button class="btn-action-dispensation" onclick="openExitModal()">
               Saída / Dispensação (Por Validade)
             </button>
-            <button class="btn-action-secondary" id="btn-transfer-stock" onclick="openTransferModal()" style="display: inline-flex; align-items: center; gap: 6px;">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4"/></svg>
+            <button class="btn-action-secondary" id="btn-transfer-stock" onclick="openTransferModal()">
               Transferir Medicamentos
             </button>
             <button class="btn-action-secondary" id="btn-new-product" onclick="openNewProductModal()">
@@ -2164,7 +2163,6 @@
         </div>
 
         <div id="entry-temp-warning" class="alert-box" style="display:none;">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
           <div><strong>Atenção:</strong> Temperatura fora de 2.0°C - 8.0°C! O lote será alocado automaticamente em <strong>Quarentena Preventiva</strong> (RDC 430/2020).</div>
         </div>
 
@@ -2237,21 +2235,20 @@
        MODAL DE TRANSFERÊNCIA DE MEDICAMENTOS (TRAVA METROLÓGICA ANVISA RDC 430/2020)
        ========================================================================= -->
   <div id="modal-transfer-stock" class="modal-backdrop">
-    <div class="modal-box" style="max-width: 640px;">
-      <div class="modal-header">
-        <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4"/></svg>
+    <div class="modal-box" style="max-width: 620px;">
+      <div class="modal-header" style="padding-bottom: 14px; margin-bottom: 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.08);">
+        <div class="modal-title" style="font-size: 16px; font-weight: 700; color: #FFFFFF; letter-spacing: -0.2px;">
           Transferência de Medicamentos e Cadeia Térmica
         </div>
         <button class="btn-close-modal" onclick="closeTransferModal()">&times;</button>
       </div>
 
       <!-- Seletor de Modo: Lote Individual vs Evacuação de Câmara Completa -->
-      <div style="display: flex; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 4px; margin-bottom: 16px; gap: 4px;">
-        <button type="button" id="tab-transfer-mode-lot" onclick="setTransferMode('lot')" style="flex: 1; padding: 8px 12px; font-size: 12.5px; font-weight: 600; border-radius: 6px; border: none; cursor: pointer; background: #2563EB; color: #FFFFFF; transition: all 0.2s;">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 4px; margin-bottom: 18px;">
+        <button type="button" id="tab-transfer-mode-lot" onclick="setTransferMode('lot')" style="height: 36px; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 600; border-radius: 6px; border: none; cursor: pointer; background: #2563EB; color: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.3); transition: all 0.2s;">
           Transferir Lote Específico
         </button>
-        <button type="button" id="tab-transfer-mode-chamber" onclick="setTransferMode('chamber')" style="flex: 1; padding: 8px 12px; font-size: 12.5px; font-weight: 600; border-radius: 6px; border: none; cursor: pointer; background: transparent; color: #94A3B8; transition: all 0.2s;">
+        <button type="button" id="tab-transfer-mode-chamber" onclick="setTransferMode('chamber')" style="height: 36px; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 600; border-radius: 6px; border: none; cursor: pointer; background: transparent; color: #94A3B8; transition: all 0.2s;">
           Evacuar Câmara Completa (Parada / Manutenção)
         </button>
       </div>
@@ -2259,9 +2256,9 @@
       <form id="form-transfer-stock" onsubmit="event.preventDefault(); submitTransferStock();">
         <!-- Modo 1: Lote Individual -->
         <div id="transfer-mode-lot-fields">
-          <div class="form-group">
-            <label class="form-label">Selecione o Lote do Medicamento</label>
-            <select id="transfer-lot-select" class="form-control" onchange="onTransferLotSelectChange()" style="font-weight: 600;">
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Selecione o Lote do Medicamento</label>
+            <select id="transfer-lot-select" class="form-control" onchange="onTransferLotSelectChange()" style="font-weight: 600; height: 40px; padding: 0 32px 0 12px;">
               <!-- Preenchido via JS -->
             </select>
           </div>
@@ -2269,51 +2266,49 @@
 
         <!-- Modo 2: Câmara Completa -->
         <div id="transfer-mode-chamber-fields" style="display: none;">
-          <div class="form-group">
-            <label class="form-label">Câmara de Origem a ser Esvaziada / Parada</label>
-            <select id="transfer-source-chamber-select" class="form-control" onchange="onTransferSourceChamberChange()" style="font-weight: 600;">
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Câmara de Origem a ser Esvaziada / Parada</label>
+            <select id="transfer-source-chamber-select" class="form-control" onchange="onTransferSourceChamberChange()" style="font-weight: 600; height: 40px; padding: 0 32px 0 12px;">
               <!-- Preenchido via JS -->
             </select>
           </div>
         </div>
 
         <!-- Card de Informações Térmicas do Produto / Origem -->
-        <div id="transfer-product-info-box" style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 12.5px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <span style="color: #94A3B8;">Medicamento / Carga:</span>
-            <strong id="transfer-info-prod-name" style="color: #FFFFFF;">--</strong>
-          </div>
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <span style="color: #94A3B8;">Localização Atual:</span>
-            <span id="transfer-info-current-location" style="color: #CBD5E1;">--</span>
-          </div>
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="color: #94A3B8;">Faixa Térmica Requerida (Bula / ANVISA):</span>
-            <span id="transfer-info-temp-range" style="color: #38BDF8; font-weight: 700; background: rgba(56, 189, 248, 0.12); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.25);">--</span>
+        <div id="transfer-product-info-box" style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; font-size: 12.5px; display: grid; grid-template-columns: 180px 1fr; gap: 10px 16px; align-items: center;">
+          <div style="color: #94A3B8; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;">Medicamento / Carga</div>
+          <div id="transfer-info-prod-name" style="color: #FFFFFF; font-weight: 700; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">--</div>
+
+          <div style="color: #94A3B8; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;">Localização Atual</div>
+          <div id="transfer-info-current-location" style="color: #CBD5E1; font-weight: 500; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">--</div>
+
+          <div style="color: #94A3B8; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;">Faixa Térmica (ANVISA)</div>
+          <div style="text-align: right;">
+            <span id="transfer-info-temp-range" style="color: #38BDF8; font-weight: 700; font-size: 12px; background: rgba(56, 189, 248, 0.12); padding: 3px 10px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3); display: inline-block;">--</span>
           </div>
         </div>
 
         <!-- Seleção da Câmara de Destino -->
-        <div class="form-group">
-          <label class="form-label">Câmara / Geladeira de Destino</label>
-          <select id="transfer-target-chamber-select" class="form-control" onchange="onTransferTargetChamberChange()" required style="font-weight: 600;">
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Câmara / Geladeira de Destino</label>
+          <select id="transfer-target-chamber-select" class="form-control" onchange="onTransferTargetChamberChange()" required style="font-weight: 600; height: 40px; padding: 0 32px 0 12px;">
             <!-- Preenchido via JS -->
           </select>
         </div>
 
         <!-- BANNER DE VALIDAÇÃO TÉRMICA EM TEMPO REAL (TRAVA METROLÓGICA) -->
-        <div id="transfer-thermal-feedback" style="display: none; border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; font-size: 12.5px; line-height: 1.45;">
-          <!-- Injetado dinamicamente via JS -->
+        <div id="transfer-thermal-feedback" style="display: none; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; font-size: 12.5px; line-height: 1.45;">
+          <!-- Injetado dinamicamente via JS sem SVG -->
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Nova Prateleira / Posição no Destino</label>
-          <input type="text" id="transfer-shelf-location" class="form-control" placeholder="Ex: Prateleira 2, Bandeja B" value="Prateleira Geral" required>
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Nova Prateleira / Posição no Destino</label>
+          <input type="text" id="transfer-shelf-location" class="form-control" placeholder="Ex: Prateleira 2, Bandeja B" value="Prateleira Geral" required style="height: 40px; padding: 0 12px;">
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Motivo da Movimentação Regulatória</label>
-          <select id="transfer-reason" class="form-control" required>
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Motivo da Movimentação Regulatória</label>
+          <select id="transfer-reason" class="form-control" required style="height: 40px; padding: 0 32px 0 12px;">
             <option value="Parada de Equipamento / Manutenção Preventiva">Parada de Equipamento / Manutenção Preventiva</option>
             <option value="Descomissionamento de Câmara Fria / Geladeira">Descomissionamento de Câmara Fria / Geladeira</option>
             <option value="Manutenção Corretiva / Falha do Sistema de Refrigeração">Manutenção Corretiva / Falha do Sistema de Refrigeração</option>
@@ -2323,19 +2318,19 @@
           </select>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Parecer Técnico / Justificativa</label>
-          <textarea id="transfer-justification" class="form-control" rows="2" placeholder="Descreva a finalidade da transferência e garantia de integridade da cadeia de frio..." required style="font-size: 13px;"></textarea>
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Parecer Técnico / Justificativa</label>
+          <textarea id="transfer-justification" class="form-control" rows="2" placeholder="Descreva a finalidade da transferência e garantia de integridade da cadeia de frio..." required style="font-size: 13px; padding: 10px 12px; resize: vertical; min-height: 64px;"></textarea>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Confirmação de Senha (Assinatura Eletrônica 21 CFR Part 11)</label>
-          <input type="password" id="transfer-password" class="form-control" placeholder="Digite sua senha de acesso para assinar a transferência" required autocomplete="current-password">
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Confirmação de Senha (Assinatura Eletrônica 21 CFR Part 11)</label>
+          <input type="password" id="transfer-password" class="form-control" placeholder="Digite sua senha de acesso para assinar a transferência" required autocomplete="current-password" style="height: 40px; padding: 0 12px;">
         </div>
 
-        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
-          <button type="button" class="btn-action-secondary" onclick="closeTransferModal()">Cancelar</button>
-          <button type="submit" class="btn-action-entry" id="btn-submit-transfer" style="background: #2563EB;">
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+          <button type="button" class="btn-action-secondary" onclick="closeTransferModal()" style="height: 38px; padding: 0 16px; font-size: 13px; font-weight: 600; border-radius: 6px;">Cancelar</button>
+          <button type="submit" class="btn-action-entry" id="btn-submit-transfer" style="height: 38px; padding: 0 20px; font-size: 13px; font-weight: 600; background: #2563EB; border: 1px solid #3B82F6; border-radius: 6px;">
             Confirmar Transferência
           </button>
         </div>
@@ -2652,43 +2647,63 @@
        ========================================================================= -->
   <div id="modal-decommission-chamber" class="modal-backdrop">
     <div class="modal-box" style="max-width: 580px;">
-      <div class="modal-header">
-        <div class="modal-title">Descomissionamento de Equipamento</div>
+      <div class="modal-header" style="padding-bottom: 14px; margin-bottom: 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.08);">
+        <div class="modal-title" style="font-size: 16px; font-weight: 700; color: #FFFFFF; letter-spacing: -0.2px;">Descomissionamento de Equipamento</div>
         <button class="btn-close-modal" onclick="closeDecommissionModal()">&times;</button>
       </div>
 
       <form id="form-decommission-chamber" onsubmit="event.preventDefault(); submitDecommissionChamber();">
-        <div class="form-group">
-          <label class="form-label">Equipamento para Descomissionamento</label>
-          <select id="decom-chamber-select" class="form-control" onchange="onDecomChamberSelectChange()" style="font-weight: 600;">
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Equipamento para Descomissionamento</label>
+          <select id="decom-chamber-select" class="form-control" onchange="onDecomChamberSelectChange()" style="font-weight: 600; height: 40px; padding: 0 32px 0 12px;">
             <!-- Preenchido dinamicamente via JS -->
           </select>
         </div>
 
-        <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; font-size: 13px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-          <div>Equipamento: <strong id="decom-chamber-name" style="color: #FFFFFF;">--</strong></div>
-          <div>Código ID: <span id="decom-chamber-id" class="chamber-id-badge" style="font-weight: 700;">--</span></div>
-          <div>Faixa Operacional: <span id="decom-chamber-range" style="color: #60A5FA; font-weight: 600;">--</span></div>
-          <div>Lotes Ativos: <span id="decom-chamber-lots" style="color: #10B981; font-weight: 600;">--</span></div>
-          <div style="grid-column: span 2;">Sensores Vinculados: <span id="decom-chamber-sensors" style="color: #CBD5E1;">--</span></div>
+        <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; font-size: 12.5px;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.08);">
+            <div style="flex: 1; min-width: 0; padding-right: 12px;">
+              <span style="color: #94A3B8; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; display: block; margin-bottom: 3px;">Equipamento Selecionado</span>
+              <div id="decom-chamber-name" style="color: #FFFFFF; font-weight: 700; font-size: 13.5px; line-height: 1.35;">--</div>
+            </div>
+            <div style="text-align: right; flex-shrink: 0;">
+              <span style="color: #94A3B8; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; display: block; margin-bottom: 3px;">Código ID</span>
+              <span id="decom-chamber-id" class="chamber-id-badge" style="font-weight: 700; display: inline-block;">--</span>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px;">
+            <div>
+              <span style="color: #94A3B8; font-size: 11.5px;">Faixa Operacional:</span>
+              <span id="decom-chamber-range" style="color: #60A5FA; font-weight: 700; margin-left: 4px;">--</span>
+            </div>
+            <div>
+              <span style="color: #94A3B8; font-size: 11.5px;">Lotes Ativos:</span>
+              <span id="decom-chamber-lots" style="color: #10B981; font-weight: 700; margin-left: 4px;">--</span>
+            </div>
+            <div style="grid-column: span 2;">
+              <span style="color: #94A3B8; font-size: 11.5px;">Sensores Vinculados:</span>
+              <span id="decom-chamber-sensors" style="color: #CBD5E1; font-weight: 600; margin-left: 4px;">--</span>
+            </div>
+          </div>
         </div>
 
         <!-- ALERTA DE LOTES ATIVOS E BOTÃO DE TRANSFERÊNCIA DE CÂMARA -->
-        <div id="decom-transfer-alert" style="display: none; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; font-size: 12.5px; color: #FDE68A;">
-          <div style="font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            Bloqueio Regulatório Ativo (ANVISA RDC 430/2020)
+        <div id="decom-transfer-alert" style="display: none; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; font-size: 12.5px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid rgba(245, 158, 11, 0.25);">
+            <span style="font-weight: 700; color: #FBBF24; font-size: 11.5px; letter-spacing: 0.5px; text-transform: uppercase;">BLOQUEIO REGULATÓRIO ATIVO</span>
+            <span style="font-size: 10.5px; font-weight: 700; color: #FDE68A; background: rgba(245, 158, 11, 0.25); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(245, 158, 11, 0.4);">ANVISA RDC 430/2020</span>
           </div>
-          <div>Esta câmara possui medicamentos armazenados. Para garantir a rastreabilidade e integridade térmica, transfira a carga antes de efetivar o descomissionamento:</div>
-          <button type="button" class="btn-action-entry" id="btn-decom-open-transfer" style="margin-top: 10px; width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: #2563EB;" onclick="onDecomTransferButtonClick()">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4"/></svg>
+          <div style="color: #FEF3C7; font-size: 12.5px; line-height: 1.45; margin-bottom: 12px;">
+            Esta câmara possui medicamentos armazenados. Para garantir a rastreabilidade e integridade térmica, transfira a carga antes de efetivar o descomissionamento:
+          </div>
+          <button type="button" class="btn-action-entry" id="btn-decom-open-transfer" style="width: 100%; height: 38px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; background: #2563EB; color: #FFFFFF; border: 1px solid #3B82F6; border-radius: 6px; cursor: pointer; transition: background 0.15s ease;" onclick="onDecomTransferButtonClick()">
             Transferir Medicamentos Desta Câmara
           </button>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Motivo Técnico</label>
-          <select id="decom-reason" class="form-control" required>
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Motivo Técnico</label>
+          <select id="decom-reason" class="form-control" required style="height: 40px; padding: 0 32px 0 12px;">
             <option value="Substituição por Novo Equipamento Qualificado">Substituição por Novo Equipamento Qualificado</option>
             <option value="Fim de Vida Útil / Inviabilidade Mecânica do Compressor">Fim de Vida Útil / Inviabilidade Mecânica do Compressor</option>
             <option value="Transferência de Ativo para Outra Filial / Unidade">Transferência de Ativo para Outra Filial / Unidade</option>
@@ -2697,33 +2712,33 @@
           </select>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Parecer Técnico / Justificativa</label>
-          <textarea id="decom-justification" class="form-control" rows="3" placeholder="Descreva os laudos de engenharia clínica, número de O.S. ou plano de transferência de carga..." required style="font-size: 13px;"></textarea>
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Parecer Técnico / Justificativa</label>
+          <textarea id="decom-justification" class="form-control" rows="3" placeholder="Descreva os laudos de engenharia clínica, número de O.S. ou plano de transferência de carga..." required style="font-size: 13px; padding: 10px 12px; resize: vertical; min-height: 72px;"></textarea>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Destino dos Sensores Metrológicos Vinculados</label>
-          <select id="decom-sensor-action" class="form-control">
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Destino dos Sensores Metrológicos Vinculados</label>
+          <select id="decom-sensor-action" class="form-control" style="height: 40px; padding: 0 32px 0 12px;">
             <option value="recolher" selected>Recolher sensores para bancada de calibração RBC (manter histórico)</option>
             <option value="descartar">Descartar sensores junto ao equipamento</option>
           </select>
         </div>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px;">
-          <div class="form-group">
-            <label class="form-label">Responsável Técnico</label>
-            <input type="text" id="decom-resp-name" class="form-control" readonly style="opacity: 0.85; background: #0B1120;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; margin-bottom: 16px;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Responsável Técnico</label>
+            <input type="text" id="decom-resp-name" class="form-control" readonly style="opacity: 0.85; background: #0B1120; height: 40px; padding: 0 12px;">
           </div>
-          <div class="form-group">
-            <label class="form-label">Assinatura Eletrônica (Senha)</label>
-            <input type="password" id="decom-password" class="form-control" placeholder="Digite sua senha" required>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Assinatura Eletrônica (Senha)</label>
+            <input type="password" id="decom-password" class="form-control" placeholder="Digite sua senha" required style="height: 40px; padding: 0 12px;">
           </div>
         </div>
 
-        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
-          <button type="button" class="btn-cancel" onclick="closeDecommissionModal()">Cancelar</button>
-          <button type="submit" class="btn-primary" id="btn-submit-decom" style="background: rgba(239, 68, 68, 0.85); border-color: #DC2626; color: #FFFFFF;">Confirmar Descomissionamento</button>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+          <button type="button" class="btn-cancel" onclick="closeDecommissionModal()" style="height: 38px; padding: 0 16px; font-size: 13px; font-weight: 600; border-radius: 6px;">Cancelar</button>
+          <button type="submit" class="btn-primary" id="btn-submit-decom" style="height: 38px; padding: 0 18px; font-size: 13px; font-weight: 600; background: rgba(239, 68, 68, 0.85); border: 1px solid #DC2626; color: #FFFFFF; border-radius: 6px;">Confirmar Descomissionamento</button>
         </div>
       </form>
     </div>

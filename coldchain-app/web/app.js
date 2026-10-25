@@ -2911,14 +2911,14 @@ function setTransferMode(mode) {
   const chamberFields = document.getElementById('transfer-mode-chamber-fields');
 
   if (mode === 'lot') {
-    if (tabLot) { tabLot.style.background = '#2563EB'; tabLot.style.color = '#FFFFFF'; }
-    if (tabChamber) { tabChamber.style.background = 'transparent'; tabChamber.style.color = '#94A3B8'; }
+    if (tabLot) { tabLot.style.background = '#2563EB'; tabLot.style.color = '#FFFFFF'; tabLot.style.boxShadow = '0 1px 3px rgba(0,0,0,0.3)'; }
+    if (tabChamber) { tabChamber.style.background = 'transparent'; tabChamber.style.color = '#94A3B8'; tabChamber.style.boxShadow = 'none'; }
     if (lotFields) lotFields.style.display = 'block';
     if (chamberFields) chamberFields.style.display = 'none';
     onTransferLotSelectChange();
   } else {
-    if (tabLot) { tabLot.style.background = 'transparent'; tabLot.style.color = '#94A3B8'; }
-    if (tabChamber) { tabChamber.style.background = '#2563EB'; tabChamber.style.color = '#FFFFFF'; }
+    if (tabLot) { tabLot.style.background = 'transparent'; tabLot.style.color = '#94A3B8'; tabLot.style.boxShadow = 'none'; }
+    if (tabChamber) { tabChamber.style.background = '#2563EB'; tabChamber.style.color = '#FFFFFF'; tabChamber.style.boxShadow = '0 1px 3px rgba(0,0,0,0.3)'; }
     if (lotFields) lotFields.style.display = 'none';
     if (chamberFields) chamberFields.style.display = 'block';
     onTransferSourceChamberChange();
@@ -3183,15 +3183,17 @@ function onTransferTargetChamberChange() {
   if (feedback) {
     feedback.style.display = 'block';
     if (evalResult.compatible) {
-      feedback.style.background = 'rgba(16, 185, 129, 0.12)';
-      feedback.style.border = '1.5px solid rgba(16, 185, 129, 0.4)';
-      feedback.style.color = '#6EE7B7';
+      feedback.style.background = 'rgba(16, 185, 129, 0.10)';
+      feedback.style.border = '1px solid rgba(16, 185, 129, 0.45)';
+      feedback.style.color = '#D1FAE5';
+      feedback.style.padding = '14px 16px';
+      feedback.style.borderRadius = '8px';
       feedback.innerHTML = `
-        <div style="font-weight: 700; display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-          ${evalResult.title}
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid rgba(16, 185, 129, 0.25);">
+          <span style="font-weight: 700; color: #34D399; font-size: 11.5px; letter-spacing: 0.5px; text-transform: uppercase;">CONFORMIDADE TÉRMICA VALIDADA</span>
+          <span style="font-size: 10.5px; font-weight: 700; color: #A7F3D0; background: rgba(16, 185, 129, 0.2); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.4);">ANVISA RDC 430/2020</span>
         </div>
-        <div>${evalResult.message}</div>
+        <div style="font-size: 12.5px; line-height: 1.5; color: #D1FAE5; font-weight: 400;">${evalResult.message}</div>
       `;
       if (submitBtn) {
         submitBtn.disabled = false;
@@ -3200,15 +3202,17 @@ function onTransferTargetChamberChange() {
         submitBtn.title = '';
       }
     } else {
-      feedback.style.background = 'rgba(239, 68, 68, 0.15)';
-      feedback.style.border = '1.5px solid rgba(239, 68, 68, 0.5)';
-      feedback.style.color = '#FCA5A5';
+      feedback.style.background = 'rgba(239, 68, 68, 0.10)';
+      feedback.style.border = '1px solid rgba(239, 68, 68, 0.45)';
+      feedback.style.color = '#FECACA';
+      feedback.style.padding = '14px 16px';
+      feedback.style.borderRadius = '8px';
       feedback.innerHTML = `
-        <div style="font-weight: 700; display: flex; align-items: center; gap: 6px; margin-bottom: 4px; color: #EF4444;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-          ${evalResult.title}
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid rgba(239, 68, 68, 0.25);">
+          <span style="font-weight: 700; color: #F87171; font-size: 11.5px; letter-spacing: 0.5px; text-transform: uppercase;">TRAVA METROLÓGICA ATIVADA</span>
+          <span style="font-size: 10.5px; font-weight: 700; color: #FCA5A5; background: rgba(239, 68, 68, 0.2); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(239, 68, 68, 0.4);">ANVISA RDC 430/2020</span>
         </div>
-        <div>${evalResult.message}</div>
+        <div style="font-size: 12.5px; line-height: 1.5; color: #FECACA; font-weight: 400;">${evalResult.message}</div>
       `;
       if (submitBtn) {
         submitBtn.disabled = true;
