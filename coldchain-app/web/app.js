@@ -126,6 +126,9 @@ function showLogin() {
 function showApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app-container').style.display = 'flex';
+  if (currentUser) {
+    activeGeneratedCryptoKey = localStorage.getItem('cc_key_' + currentUser.username) || sessionStorage.getItem('cc_key_' + currentUser.username) || '';
+  }
 
   document.getElementById('app-user-name').innerText = currentUser.name || currentUser.username;
 
@@ -2173,7 +2176,7 @@ async function submitNewProduct() {
 
   const pwd = document.getElementById('new-product-password') ? document.getElementById('new-product-password').value : '';
   if (!pwd) {
-    showToast('Digite sua chave criptográfica ou senha para assinar eletronicamente (21 CFR Part 11).', 'info');
+    showToast('Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida (21 CFR Part 11).', 'info');
     return;
   }
 
@@ -2269,7 +2272,7 @@ async function submitNewChamber() {
 
   const pwd = document.getElementById('new-chamber-password') ? document.getElementById('new-chamber-password').value : '';
   if (!pwd) {
-    showToast('Digite sua chave criptográfica ou senha para assinar eletronicamente (21 CFR Part 11).', 'info');
+    showToast('Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida (21 CFR Part 11).', 'info');
     return;
   }
 
@@ -2430,7 +2433,7 @@ async function submitDecommissionSensor() {
     return;
   }
   if (!pwd) {
-    showToast('Digite sua chave criptográfica ou senha para assinar eletronicamente (21 CFR Part 11).', 'info');
+    showToast('Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida (21 CFR Part 11).', 'info');
     return;
   }
 
@@ -2561,7 +2564,7 @@ async function submitSensor() {
 
   const pwd = document.getElementById('sensor-password') ? document.getElementById('sensor-password').value : '';
   if (!pwd) {
-    showToast('Digite sua chave criptográfica ou senha para assinar eletronicamente (21 CFR Part 11).', 'info');
+    showToast('Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida (21 CFR Part 11).', 'info');
     return;
   }
 
@@ -2645,70 +2648,148 @@ async function loadLots() {
     if (!res.ok) return;
     const list = (await res.json()) || [];
     window.allPharmaLots = list;
-
-    const tbody = document.getElementById('lots-table-body');
-    if (!tbody) return;
-    tbody.innerHTML = '';
-
-    if (list.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; color:#64748B; padding:18px;">Nenhum lote registrado em estoque.</td></tr>';
-      return;
-    }
-
-    list.forEach((l, idx) => {
-      let badgeClass = 'liberado';
-      if (l.status === 'quarentena') badgeClass = 'quarentena';
-      else if (l.status === 'reprovado' || l.status === 'vencido') badgeClass = 'reprovado';
-      else if (l.status === 'recolhido' || l.status === 'devolvido') badgeClass = 'alerta';
-
-      const expiryFormatted = l.expiry_date.split('-').reverse().join('/');
-      const isClose = l.days_to_expiry <= 30;
-
-      const tr = document.createElement('tr');
-      tr.className = 'lot-table-row';
-      tr.innerHTML = `
-        <td style="text-align: center;"><span class="badge-fefo-rank" style="background:${idx === 0 ? '#10B981' : '#334155'}; font-size:11px; font-weight:700; margin: 0 auto;">${idx + 1}º</span></td>
-        <td>
-          <strong style="color:#F8FAFC;">${l.product_trade_name}</strong>
-          <div style="font-size:11px; color:#94A3B8;">${l.product_dcb} — ${l.manufacturer || ''}</div>
-        </td>
-        <td><span style="font-size:11.5px; color:#CBD5E1;">${l.anvisa_reg || '---'}</span></td>
-        <td><strong style="color:#38BDF8; font-family:monospace;">${l.lot_number}</strong></td>
-        <td>
-          <div style="font-weight:600; color:#F8FAFC;">${expiryFormatted}</div>
-          <div style="font-size:10.5px; color:${isClose ? '#F87171' : '#94A3B8'}; font-weight:${isClose ? '700' : '400'};">
-            ${l.days_to_expiry > 0 ? `${l.days_to_expiry} dias restantes` : '<span style="color:#EF4444;">VENCIDO</span>'}
-          </div>
-        </td>
-        <td><strong style="font-size:13px; color:#F8FAFC;">${l.quantity}</strong> <span style="font-size:11px; color:#94A3B8;">un.</span></td>
-        <td>
-          <div style="font-size:12px; color:#F8FAFC;">${l.chamber_name || l.chamber_id}</div>
-          <div style="font-size:10.5px; color:#94A3B8;">${l.shelf_location || ''}</div>
-        </td>
-        <td><span class="badge-status ${badgeClass}">${l.status.toUpperCase()}</span></td>
-        <td style="text-align: center; white-space: nowrap;">
-          <button class="btn-action-secondary" style="padding:5px 12px; font-size:11.5px; display: inline-flex; align-items: center; justify-content: center;" onclick="openTraceModal('${l.lot_number}')">
-            Rastreabilidade
-          </button>
-          <button class="btn-action-primary" style="padding:5px 12px; font-size:11.5px; margin-left: 6px; display: inline-flex; align-items: center; justify-content: center; background: #2563EB;" onclick="openTransferModal(${l.id})">
-            ⇄ Transferir
-          </button>
-        </td>
-      `;
-      tbody.appendChild(tr);
-    });
+    renderLotsTable();
   } catch (e) {
     console.error('Erro ao carregar lotes:', e);
   }
 }
 
-function filterLotsTable() {
-  const q = (document.getElementById('filter-lot-input').value || '').toLowerCase().trim();
-  const rows = document.querySelectorAll('#lots-table-body tr.lot-table-row');
-  rows.forEach(r => {
-    const text = r.textContent.toLowerCase();
-    r.style.display = text.includes(q) ? '' : 'none';
+function renderLotsTable() {
+  const tbody = document.getElementById('lots-table-body');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  const list = window.allPharmaLots || [];
+  if (list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; color:#64748B; padding:22px;">Nenhum lote registrado em estoque.</td></tr>';
+    return;
+  }
+
+  const statusFilterEl = document.getElementById('filter-lot-status');
+  const statusFilter = (statusFilterEl ? statusFilterEl.value : 'ativos').toLowerCase();
+  const searchInput = document.getElementById('filter-lot-input');
+  const q = (searchInput ? searchInput.value : '').toLowerCase().trim();
+
+  // Filtragem estrita conforme requisito
+  let filtered = list.filter(l => {
+    const qty = Number(l.quantity) || 0;
+    const isEsgotado = (qty <= 0 || l.status === 'esgotado');
+    const isQuarentena = (l.status === 'quarentena');
+    const isVencido = (l.days_to_expiry <= 0 || l.status === 'vencido');
+
+    if (statusFilter === 'ativos') {
+      // Padrão: Apenas lotes ativos com saldo disponível
+      return !isEsgotado && l.status !== 'descartado' && l.status !== 'reprovado';
+    } else if (statusFilter === 'esgotados') {
+      // Apenas lotes esgotados ou baixados
+      return isEsgotado;
+    } else if (statusFilter === 'quarentena') {
+      return isQuarentena;
+    } else if (statusFilter === 'vencidos') {
+      return isVencido;
+    } else {
+      // 'todos' (Histórico geral)
+      return true;
+    }
   });
+
+  // Filtro de texto por lote / medicamento / anvisa
+  if (q) {
+    filtered = filtered.filter(l => {
+      const hay = `${l.lot_number || ''} ${l.product_trade_name || ''} ${l.product_dcb || ''} ${l.anvisa_reg || ''} ${l.chamber_name || ''}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  if (filtered.length === 0) {
+    let emptyMsg = 'Nenhum lote encontrado para os filtros selecionados.';
+    if (statusFilter === 'ativos') {
+      emptyMsg = 'Nenhum lote ativo com saldo em estoque. Alterne o filtro para "Apenas Lotes Esgotados" ou "Todos os Lotes" para visualizar o histórico.';
+    } else if (statusFilter === 'esgotados') {
+      emptyMsg = 'Nenhum lote esgotado no momento.';
+    }
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:#64748B; padding:22px;">${emptyMsg}</td></tr>`;
+    return;
+  }
+
+  let activeRank = 0;
+
+  filtered.forEach(l => {
+    const qty = Number(l.quantity) || 0;
+    const isEsgotado = (qty <= 0 || l.status === 'esgotado');
+    let badgeClass = 'liberado';
+    let statusLabel = (l.status || 'LIBERADO').toUpperCase();
+
+    if (isEsgotado) {
+      badgeClass = 'esgotado';
+      statusLabel = 'ESGOTADO';
+    } else if (l.status === 'quarentena') {
+      badgeClass = 'quarentena';
+    } else if (l.status === 'reprovado' || l.status === 'vencido') {
+      badgeClass = 'reprovado';
+    } else if (l.status === 'recolhido' || l.status === 'devolvido') {
+      badgeClass = 'alerta';
+    }
+
+    const expiryFormatted = l.expiry_date ? l.expiry_date.split('-').reverse().join('/') : '---';
+    const isClose = (l.days_to_expiry <= 30 && l.days_to_expiry > 0);
+    const isExpired = (l.days_to_expiry <= 0);
+
+    // Prioridade FEFO: Esgotado não ocupa o 1º lugar na fila de dispensação
+    let rankHtml = '';
+    if (isEsgotado) {
+      rankHtml = `<span style="display:inline-block; padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: 700; background: rgba(239, 68, 68, 0.15); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.35); text-transform: uppercase;">Esgotado</span>`;
+    } else {
+      activeRank++;
+      const isFirst = (activeRank === 1);
+      rankHtml = `<span class="badge-fefo-rank" style="background:${isFirst ? '#10B981' : '#334155'}; font-size:11px; font-weight:700; margin: 0 auto;">${activeRank}º</span>`;
+    }
+
+    // Saldo com destaque em vermelho para esgotado
+    const saldoHtml = isEsgotado
+      ? `<strong style="font-size:13px; color:#EF4444;">0</strong> <span style="font-size:11px; color:#F87171; font-weight:700;">un.</span>`
+      : `<strong style="font-size:13px; color:#F8FAFC;">${qty}</strong> <span style="font-size:11px; color:#94A3B8;">un.</span>`;
+
+    // Botão transferir: desabilitado e opaco para saldo zero
+    const transferBtnHtml = isEsgotado
+      ? `<button class="btn-action-primary" disabled title="Lote esgotado (saldo zero) - Transferência indisponível" style="padding:5px 12px; font-size:11.5px; margin-left: 6px; display: inline-flex; align-items: center; justify-content: center; background: #1E293B; color: #64748B; opacity: 0.4; cursor: not-allowed; border: 1px solid #334155;">⇄ Transferir</button>`
+      : `<button class="btn-action-primary" style="padding:5px 12px; font-size:11.5px; margin-left: 6px; display: inline-flex; align-items: center; justify-content: center; background: #2563EB;" onclick="openTransferModal(${l.id})">⇄ Transferir</button>`;
+
+    const tr = document.createElement('tr');
+    tr.className = 'lot-table-row';
+    tr.innerHTML = `
+      <td style="text-align: center;">${rankHtml}</td>
+      <td>
+        <strong style="color:#F8FAFC;">${l.product_trade_name || 'Medicamento'}</strong>
+        <div style="font-size:11px; color:#94A3B8;">${l.product_dcb || ''} ${l.manufacturer ? '— ' + l.manufacturer : ''}</div>
+      </td>
+      <td><span style="font-size:11.5px; color:#CBD5E1;">${l.anvisa_reg || '---'}</span></td>
+      <td><strong style="color:#38BDF8; font-family:monospace;">${l.lot_number}</strong></td>
+      <td>
+        <div style="font-weight:600; color:#F8FAFC;">${expiryFormatted}</div>
+        <div style="font-size:10.5px; color:${isExpired ? '#EF4444' : (isClose ? '#F87171' : '#94A3B8')}; font-weight:${isClose || isExpired ? '700' : '400'};">
+          ${isExpired ? '<span style="color:#EF4444; font-weight:700;">VENCIDO</span>' : `${l.days_to_expiry} dias restantes`}
+        </div>
+      </td>
+      <td>${saldoHtml}</td>
+      <td>
+        <div style="font-size:12px; color:#F8FAFC;">${l.chamber_name || l.chamber_id}</div>
+        <div style="font-size:10.5px; color:#94A3B8;">${l.shelf_location || ''}</div>
+      </td>
+      <td><span class="badge-status ${badgeClass}">${statusLabel}</span></td>
+      <td style="text-align: center; white-space: nowrap;">
+        <button class="btn-action-secondary" style="padding:5px 12px; font-size:11.5px; display: inline-flex; align-items: center; justify-content: center;" onclick="openTraceModal('${l.lot_number}')">
+          Rastreabilidade
+        </button>
+        ${transferBtnHtml}
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function filterLotsTable() {
+  renderLotsTable();
 }
 
 function openEntryModal() {
@@ -2793,7 +2874,7 @@ async function submitStockEntry() {
   };
 
   if (!payload.password) {
-    showToast('Digite sua chave criptográfica ou senha para assinar eletronicamente (21 CFR Part 11).', 'info');
+    showToast('Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida (21 CFR Part 11).', 'info');
     return;
   }
 
@@ -2881,7 +2962,7 @@ async function submitStockExit() {
 
   const pwd = document.getElementById('exit-password') ? document.getElementById('exit-password').value : '';
   if (!pwd) {
-    showToast('Digite sua chave criptográfica ou senha para assinar eletronicamente (21 CFR Part 11).', 'info');
+    showToast('Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida (21 CFR Part 11).', 'info');
     return;
   }
 
@@ -3577,6 +3658,97 @@ async function submitTransferStock() {
 // =============================================================================
 let activeGeneratedCryptoKey = '';
 
+
+// -----------------------------------------------------------------------------
+// GESTÃO DE CHAVE CRIPTOGRÁFICA PESSOAL (21 CFR PART 11)
+// -----------------------------------------------------------------------------
+function getMyStoredCryptoKey() {
+  if (activeGeneratedCryptoKey) return activeGeneratedCryptoKey;
+  if (!currentUser) return '';
+  return localStorage.getItem('cc_key_' + currentUser.username) || sessionStorage.getItem('cc_key_' + currentUser.username) || '';
+}
+
+function setMyStoredCryptoKey(key) {
+  if (!key) return;
+  activeGeneratedCryptoKey = key;
+  if (currentUser) {
+    localStorage.setItem('cc_key_' + currentUser.username, key);
+    sessionStorage.setItem('cc_key_' + currentUser.username, key);
+  }
+}
+
+function openMyCryptoKeyModal() {
+  const m = document.getElementById('modal-my-crypto-key');
+  const disp = document.getElementById('my-crypto-key-display');
+  const key = getMyStoredCryptoKey();
+  if (disp) {
+    disp.textContent = key || 'Nenhuma chave salva localmente';
+  }
+  if (m) m.classList.add('active');
+}
+
+function closeMyCryptoKeyModal() {
+  const m = document.getElementById('modal-my-crypto-key');
+  if (m) m.classList.remove('active');
+}
+
+function copyMyActiveCryptoKey() {
+  const key = getMyStoredCryptoKey();
+  const btn = document.getElementById('btn-copy-my-key');
+  if (!key) {
+    showToast('Nenhuma chave criptográfica salva. Clique em "Gerar Nova Chave".', 'info');
+    return;
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(key).then(() => {
+      if (btn) {
+        const orig = btn.innerText;
+        btn.innerText = '✓ Chave Copiada!';
+        setTimeout(() => { btn.innerText = orig; }, 2000);
+      }
+      showToast('Chave criptográfica copiada com sucesso!', 'success');
+    }).catch(() => {
+      showToast(`Chave: ${key}`, 'info');
+    });
+  } else {
+    showToast(`Chave: ${key}`, 'info');
+  }
+}
+
+async function regenerateMyCryptoKey() {
+  if (!confirm('Deseja emitir uma nova Chave Criptográfica Pessoal? A chave anterior será invalidada imediatamente para novas assinaturas (21 CFR Part 11).')) {
+    return;
+  }
+  try {
+    const res = await fetch('/api/auth/regenerate-crypto-key', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || 'Erro ao gerar nova chave criptográfica.', 'error');
+      return;
+    }
+    setMyStoredCryptoKey(data.crypto_key);
+    const disp = document.getElementById('my-crypto-key-display');
+    if (disp) disp.textContent = data.crypto_key;
+    showToast('Nova Chave Criptográfica emitida com sucesso e vinculada ao seu usuário!', 'success');
+  } catch (err) {
+    console.error('Erro ao regenerar chave:', err);
+    showToast('Erro de comunicação ao regenerar chave criptográfica.', 'error');
+  }
+}
+
+function insertMyCryptoKeyIntoInput(inputId) {
+  const inp = document.getElementById(inputId);
+  if (!inp) return;
+  const key = getMyStoredCryptoKey();
+  if (!key) {
+    showToast('Chave não encontrada no navegador. Clique no botão "🔑 Minha Chave Digital" no topo para consultar ou emitir sua chave.', 'info');
+    openMyCryptoKeyModal();
+    return;
+  }
+  inp.value = key;
+  showToast('Sua Chave Criptográfica foi preenchida para assinatura!', 'success');
+}
+
 function openFirstLoginModal(cryptoKey) {
   activeGeneratedCryptoKey = cryptoKey || '';
   const m = document.getElementById('modal-first-login-crypto');
@@ -3640,6 +3812,7 @@ function acknowledgeCryptoKey() {
       return;
     }
   }
+  setMyStoredCryptoKey(activeGeneratedCryptoKey);
   showToast('Chave criptográfica validada com sucesso! Acesso concedido.', 'success');
   closeFirstLoginModal();
 }

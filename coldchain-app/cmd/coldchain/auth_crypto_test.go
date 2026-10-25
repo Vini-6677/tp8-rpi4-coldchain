@@ -208,3 +208,42 @@ func TestFirstLoginCryptoKeyGeneration(t *testing.T) {
 		t.Errorf("expected signature hash to match stored crypto_key_hash")
 	}
 }
+
+func TestVerifySignatureRejectsAccountPassword(t *testing.T) {
+	app, db := setupTestApp(t)
+	defer db.Close()
+
+	salt := generateSalt()
+	accountPassword := "SecretAdmin2026!"
+	pwdHash := hashPassword(accountPassword, salt)
+	generatedKey := "CC-KEY-A1B2-C3D4-E5F6-7890"
+	keyHash := hashPassword(generatedKey, salt)
+
+	_, err := db.Exec(`
+		INSERT INTO users (username, password_hash, salt, name, role, is_blocked, first_login, crypto_key_hash)
+		VALUES ('carlos_rt', ?, ?, 'Dr. Carlos Farmacêutico', 'tecnico', 0, 0, ?)
+	`, pwdHash, salt, keyHash)
+	if err != nil {
+		t.Fatalf("failed to insert user: %v", err)
+	}
+
+	// 1. Must ACCEPT the generated crypto key
+	if !app.verifySignature("carlos_rt", generatedKey) {
+		t.Errorf("verifySignature failed to accept the generated personal crypto key!")
+	}
+
+	// 2. Must REJECT the account password (login password is strictly NOT allowed for 21 CFR Part 11 signing)
+	if app.verifySignature("carlos_rt", accountPassword) {
+		t.Errorf("SECURITY VIOLATION: verifySignature accepted account login password as a digital signature!")
+	}
+
+	// 3. Must REJECT arbitrary passwords
+	if app.verifySignature("carlos_rt", "wrong_key_123") {
+		t.Errorf("SECURITY VIOLATION: verifySignature accepted wrong key!")
+	}
+
+	// 4. Must REJECT empty key
+	if app.verifySignature("carlos_rt", "") {
+		t.Errorf("SECURITY VIOLATION: verifySignature accepted empty key!")
+	}
+}

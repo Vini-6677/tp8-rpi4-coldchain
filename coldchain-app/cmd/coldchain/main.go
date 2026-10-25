@@ -277,17 +277,21 @@ func (a *App) getSession(r *http.Request) (*Session, bool) {
 
 
 func (a *App) verifySignature(username, passwordOrKey string) bool {
-	if strings.TrimSpace(passwordOrKey) == "" {
+	key := strings.TrimSpace(passwordOrKey)
+	if key == "" {
 		return false
 	}
-	var storedHash, salt, cryptoKeyHash string
-	if err := a.db.QueryRow("SELECT password_hash, salt, COALESCE(crypto_key_hash, '') FROM users WHERE username = ?", username).Scan(&storedHash, &salt, &cryptoKeyHash); err != nil {
+	var salt, cryptoKeyHash string
+	if err := a.db.QueryRow("SELECT salt, COALESCE(crypto_key_hash, '') FROM users WHERE username = ?", username).Scan(&salt, &cryptoKeyHash); err != nil {
 		return false
 	}
-	h := hashPassword(passwordOrKey, salt)
-	matchPwd := subtle.ConstantTimeCompare([]byte(h), []byte(storedHash)) == 1
-	matchKey := cryptoKeyHash != "" && subtle.ConstantTimeCompare([]byte(h), []byte(cryptoKeyHash)) == 1
-	return matchPwd || matchKey
+	if cryptoKeyHash == "" {
+		return false
+	}
+	h := hashPassword(key, salt)
+	// Segurança estrita 21 CFR Part 11: apenas a Chave Criptográfica Pessoal gerada é válida para assinaturas digitais.
+	// A senha de login na conta é terminantemente REJEITADA como assinatura.
+	return subtle.ConstantTimeCompare([]byte(h), []byte(cryptoKeyHash)) == 1
 }
 
 func seedUsers(db *sql.DB) error {
@@ -644,6 +648,44 @@ func (a *App) routes() http.Handler {
 		})
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
+	})
+
+	// API Auth: Obter ou Regenerar Chave Criptográfica Pessoal (21 CFR Part 11)
+	mux.HandleFunc("/api/auth/regenerate-crypto-key", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodPost {
+			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		sess, ok := a.getSession(r)
+		if !ok {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Autenticação requerida."})
+			return
+		}
+
+		var salt string
+		if err := a.db.QueryRow("SELECT salt FROM users WHERE username = ?", sess.Username).Scan(&salt); err != nil {
+			http.Error(w, "Usuário não encontrado", http.StatusInternalServerError)
+			return
+		}
+
+		newKey := generateCryptoKey()
+		newHash := hashPassword(newKey, salt)
+		_, err := a.db.Exec("UPDATE users SET crypto_key_hash = ?, first_login = 0 WHERE username = ?", newHash, sess.Username)
+		if err != nil {
+			http.Error(w, "Erro ao atualizar chave criptográfica", http.StatusInternalServerError)
+			return
+		}
+
+		ip := getClientIP(r)
+		a.logAudit(sess.Username, sess.Role, "CRYPTO_KEY_REGENERATED", fmt.Sprintf("Nova chave criptográfica pessoal 21 CFR Part 11 emitida para '%s'.", sess.Username), ip)
+
+		json.NewEncoder(w).Encode(map[string]any{
+			"status":     "ok",
+			"crypto_key": newKey,
+			"message":    "Nova Chave Criptográfica Pessoal emitida com sucesso!",
+		})
 	})
 
 	// API Auth: Me
@@ -1231,7 +1273,7 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 			if payload.Password != "" {
 				if !a.verifySignature(sess.Username, payload.Password) {
 					w.WriteHeader(http.StatusUnauthorized)
-					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: chave criptográfica ou senha incorreta."})
+					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital inválida: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar assinaturas digitais (21 CFR Part 11)."})
 					return
 				}
 			}
@@ -1296,17 +1338,10 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 				return
 			}
 
-			if req.Password != "" {
-				var storedHash, salt, cryptoKeyHash string
-				if err := a.db.QueryRow("SELECT password_hash, salt, COALESCE(crypto_key_hash, '') FROM users WHERE username = ?", sess.Username).Scan(&storedHash, &salt, &cryptoKeyHash); err == nil {
-					h := hashPassword(req.Password, salt)
-					match := (h == storedHash) || (cryptoKeyHash != "" && h == cryptoKeyHash)
-					if !match {
-						w.WriteHeader(http.StatusUnauthorized)
-						json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: chave criptográfica ou senha incorreta."})
-						return
-					}
-				}
+			if req.Password == "" || !a.verifySignature(sess.Username, req.Password) {
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital inválida: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar assinaturas (21 CFR Part 11)."})
+				return
 			}
 
 			if err := pharma.DecommissionChamber(a.db, req.ChamberID, req.Reason, req.Justification, sess.Name, req.SensorAction); err != nil {
@@ -1376,7 +1411,7 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 			if payload.Password != "" {
 				if !a.verifySignature(sess.Username, payload.Password) {
 					w.WriteHeader(http.StatusUnauthorized)
-					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: chave criptográfica ou senha incorreta."})
+					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital inválida: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar assinaturas digitais (21 CFR Part 11)."})
 					return
 				}
 			}
@@ -1434,7 +1469,7 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 			if payload.Password != "" {
 				if !a.verifySignature(sess.Username, payload.Password) {
 					w.WriteHeader(http.StatusUnauthorized)
-					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: chave criptográfica ou senha incorreta."})
+					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital inválida: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar assinaturas digitais (21 CFR Part 11)."})
 					return
 				}
 			}
@@ -1504,7 +1539,7 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 			if payload.Password != "" {
 				if !a.verifySignature(sess.Username, payload.Password) {
 					w.WriteHeader(http.StatusUnauthorized)
-					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: chave criptográfica ou senha incorreta."})
+					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital inválida: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar assinaturas digitais (21 CFR Part 11)."})
 					return
 				}
 			}
@@ -1598,7 +1633,7 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 		if payload.Password != "" {
 			if !a.verifySignature(sess.Username, payload.Password) {
 				w.WriteHeader(http.StatusUnauthorized)
-				json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: chave criptográfica ou senha incorreta."})
+				json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital inválida: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar assinaturas digitais (21 CFR Part 11)."})
 				return
 			}
 		}
@@ -1674,7 +1709,7 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 		if payload.Password != "" {
 			if !a.verifySignature(sess.Username, payload.Password) {
 				w.WriteHeader(http.StatusUnauthorized)
-				json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: chave criptográfica ou senha incorreta."})
+				json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital inválida: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar assinaturas digitais (21 CFR Part 11)."})
 				return
 			}
 		}
@@ -1743,17 +1778,10 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 			return
 		}
 
-		if payload.Password != "" {
-			var storedHash, salt, cryptoKeyHash string
-			if err := a.db.QueryRow("SELECT password_hash, salt, COALESCE(crypto_key_hash, '') FROM users WHERE username = ?", sess.Username).Scan(&storedHash, &salt, &cryptoKeyHash); err == nil {
-				h := hashPassword(payload.Password, salt)
-				match := (h == storedHash) || (cryptoKeyHash != "" && h == cryptoKeyHash)
-				if !match {
-					w.WriteHeader(http.StatusUnauthorized)
-					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: chave criptográfica ou senha incorreta."})
-					return
-				}
-			}
+		if payload.Password == "" || !a.verifySignature(sess.Username, payload.Password) {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital inválida: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar assinaturas (21 CFR Part 11)."})
+			return
 		}
 
 		ip := getClientIP(r)
@@ -1985,19 +2013,10 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 		}
 
 		sig := payload.ElectronicSig
-		if sig != "" {
-			var storedHash, salt, cryptoKeyHash string
-			if err := a.db.QueryRow("SELECT password_hash, salt, COALESCE(crypto_key_hash, '') FROM users WHERE username = ?", sess.Username).Scan(&storedHash, &salt, &cryptoKeyHash); err == nil {
-				h := hashPassword(sig, salt)
-				match := (h == storedHash) || (cryptoKeyHash != "" && h == cryptoKeyHash)
-				if !match {
-					w.WriteHeader(http.StatusUnauthorized)
-					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: chave criptográfica ou senha incorreta."})
-					return
-				}
-			}
-		} else {
-			sig = "SIGN-21CFR11-" + sess.Username
+		if sig == "" || !a.verifySignature(sess.Username, sig) {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital inválida: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar laudos (21 CFR Part 11)."})
+			return
 		}
 
 		if err := pharma.ResolveAlarm(a.db, payload.AlarmID, sess.Username, sess.Name, payload.Notes, sig); err != nil {
@@ -2052,8 +2071,10 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 			return
 		}
 
-		if payload.ElectronicSig == "" {
-			payload.ElectronicSig = fmt.Sprintf("SIG-P256-RT-%s-%d", sess.Username, time.Now().Unix())
+		if payload.ElectronicSig == "" || !a.verifySignature(sess.Username, payload.ElectronicSig) {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital inválida: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar parecer de excursão (21 CFR Part 11)."})
+			return
 		}
 
 		if err := pharma.DecideExcursion(a.db, payload.ExcursionID, payload.Decision, payload.Report, payload.ElectronicSig, sess.Name); err != nil {
@@ -2572,7 +2593,7 @@ func (a *App) handleDecommissionSensor(w http.ResponseWriter, r *http.Request) {
 	if req.Password != "" {
 		if !a.verifySignature(sess.Username, req.Password) {
 			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: chave criptográfica ou senha incorreta."})
+			json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital inválida: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar assinaturas digitais (21 CFR Part 11)."})
 			return
 		}
 	}
