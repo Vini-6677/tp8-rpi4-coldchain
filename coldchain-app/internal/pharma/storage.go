@@ -1628,11 +1628,11 @@ func DecommissionChamber(db *sql.DB, chamberID, reason, justification, signature
 		return fmt.Errorf("câmara '%s' não encontrada", chamberID)
 	}
 
-	// 2. Trava de Segurança Regulatória: Não permite exclusão se houver lotes de medicamentos ativos!
+	// 2. Trava de Segurança Regulatória: Não permite exclusão se houver lotes com saldo ativo armazenados nela!
 	var activeLots int
-	_ = db.QueryRow("SELECT COUNT(*) FROM lots WHERE chamber_id = ? AND status != 'descartado'", chamberID).Scan(&activeLots)
+	_ = db.QueryRow("SELECT COUNT(*) FROM lots WHERE chamber_id = ? AND status != 'descartado' AND status != 'esgotado' AND quantity > 0", chamberID).Scan(&activeLots)
 	if activeLots > 0 {
-		return fmt.Errorf("não é possível descomissionar a câmara '%s': existem %d lotes de medicamentos ativos armazenados nela. Transfira os lotes antes de efetuar a baixa", chName, activeLots)
+		return fmt.Errorf("não é possível descomissionar a câmara '%s': existem %d lotes de medicamentos com saldo ativo armazenados nela. Transfira os lotes antes de efetuar a baixa", chName, activeLots)
 	}
 
 	// 3. Trava de Segurança Regulatória: Não permite exclusão se houver alarmes operacionais ativos pendentes
@@ -1648,7 +1648,10 @@ func DecommissionChamber(db *sql.DB, chamberID, reason, justification, signature
 	}
 	defer tx.Rollback()
 
-	// 4. Trata os sensores vinculados
+	// 4. Desvincula lotes históricos / esgotados para não violar integridade
+	_, _ = tx.Exec("UPDATE lots SET chamber_id = NULL WHERE chamber_id = ?", chamberID)
+
+	// 5. Trata os sensores vinculados
 	if sensorAction == "descartar" {
 		_, _ = tx.Exec("DELETE FROM sensors WHERE chamber_id = ?", chamberID)
 	} else {

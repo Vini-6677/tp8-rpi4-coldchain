@@ -1256,12 +1256,10 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 				http.Error(w, "JSON inválido", http.StatusBadRequest)
 				return
 			}
-			if payload.Password != "" {
-				if !a.verifySignature(sess.Username, payload.Password) {
-					w.WriteHeader(http.StatusUnauthorized)
-					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital inválida: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar assinaturas digitais (21 CFR Part 11)."})
-					return
-				}
+			if payload.Password == "" || !a.verifySignature(sess.Username, payload.Password) {
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar cadastros (21 CFR Part 11)."})
+				return
 			}
 			created, err := pharma.RegisterChamber(a.db, payload.Chamber)
 			if err != nil {
@@ -1394,12 +1392,10 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 				return
 			}
 
-			if payload.Password != "" {
-				if !a.verifySignature(sess.Username, payload.Password) {
-					w.WriteHeader(http.StatusUnauthorized)
-					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital inválida: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar assinaturas digitais (21 CFR Part 11)."})
-					return
-				}
+			if payload.Password == "" || !a.verifySignature(sess.Username, payload.Password) {
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar cadastros (21 CFR Part 11)."})
+				return
 			}
 
 			created, err := pharma.RegisterSensor(a.db, payload.Sensor)
@@ -1452,12 +1448,10 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 				return
 			}
 
-			if payload.Password != "" {
-				if !a.verifySignature(sess.Username, payload.Password) {
-					w.WriteHeader(http.StatusUnauthorized)
-					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital inválida: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar assinaturas digitais (21 CFR Part 11)."})
-					return
-				}
+			if payload.Password == "" || !a.verifySignature(sess.Username, payload.Password) {
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar cadastros (21 CFR Part 11)."})
+				return
 			}
 
 			if err := pharma.UpdateSensor(a.db, payload.Sensor); err != nil {
@@ -1616,12 +1610,10 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 			http.Error(w, "JSON inválido", http.StatusBadRequest)
 			return
 		}
-		if payload.Password != "" {
-			if !a.verifySignature(sess.Username, payload.Password) {
-				w.WriteHeader(http.StatusUnauthorized)
-				json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital inválida: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar assinaturas digitais (21 CFR Part 11)."})
-				return
-			}
+		if payload.Password == "" || !a.verifySignature(sess.Username, payload.Password) {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar recebimentos (21 CFR Part 11)."})
+			return
 		}
 
 		lot := pharma.Lot{
@@ -1692,12 +1684,10 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 			http.Error(w, "JSON inválido", http.StatusBadRequest)
 			return
 		}
-		if payload.Password != "" {
-			if !a.verifySignature(sess.Username, payload.Password) {
-				w.WriteHeader(http.StatusUnauthorized)
-				json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital inválida: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar assinaturas digitais (21 CFR Part 11)."})
-				return
-			}
+		if payload.Password == "" || !a.verifySignature(sess.Username, payload.Password) {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar dispensações (21 CFR Part 11)."})
+			return
 		}
 
 		exit := pharma.StockExit{
@@ -2576,12 +2566,10 @@ func (a *App) handleDecommissionSensor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Password != "" {
-		if !a.verifySignature(sess.Username, req.Password) {
-			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital inválida: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar assinaturas digitais (21 CFR Part 11)."})
-			return
-		}
+	if req.Password == "" || !a.verifySignature(sess.Username, req.Password) {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar assinaturas digitais (21 CFR Part 11)."})
+		return
 	}
 
 	if err := pharma.DecommissionSensor(a.db, req.SensorID, req.Reason, req.Justification, sess.Name); err != nil {
