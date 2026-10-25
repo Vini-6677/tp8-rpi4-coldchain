@@ -18,6 +18,9 @@ func setupTestDB(t *testing.T) *sql.DB {
 	if err := InitPharmaSchema(db); err != nil {
 		t.Fatalf("erro ao inicializar schema pharma: %v", err)
 	}
+	if err := SeedPharmaTestData(db); err != nil {
+		t.Fatalf("erro ao popular dados de teste: %v", err)
+	}
 	return db
 }
 

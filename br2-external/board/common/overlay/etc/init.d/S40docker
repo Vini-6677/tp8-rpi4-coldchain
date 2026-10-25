@@ -4,6 +4,7 @@
 case "$1" in
   start)
     mkdir -p /run/containerd /run/docker /data/containerd /data/docker
+    rm -f /run/docker.pid /run/docker.sock /run/containerd/containerd.sock
 
     # 1. Inicia o containerd com o arquivo de configuração sem CRI
     containerd --config /etc/containerd/config.toml >/var/log/containerd.log 2>&1 &

@@ -73,7 +73,7 @@ function filterChamberCategory(cat, btn) {
 
 let currentUser = null;
 let activeTab = 'chambers';
-let selectedChamberId = 'CH-A';
+let selectedChamberId = '';
 let sensorViewMode = 'chamber'; // 'chamber' ou 'all'
 let chambersData = [];
 let sensorsData = [];
@@ -306,15 +306,33 @@ async function loadChambers(renderDetail = true) {
   try {
     const res = await fetch('/api/pharma/chambers');
     if (!res.ok) return;
-    chambersData = await res.json();
+    chambersData = (await res.json()) || [];
 
     const container = document.getElementById('chambers-cards-container');
     container.innerHTML = '';
+
+    // Preencher select de câmaras de entrada dinamicamente
+    const entryChamberSelect = document.getElementById('entry-chamber');
+    if (entryChamberSelect) {
+      entryChamberSelect.innerHTML = chambersData.length > 0 
+        ? chambersData.map(c => `<option value="${c.id}">${c.name}</option>`).join('')
+        : '<option value="">Nenhuma câmara cadastrada</option>';
+    }
 
     const toRender = chambersData.filter(c => {
       if (selectedCategory === 'todas') return true;
       return c.type === selectedCategory;
     });
+
+    if (toRender.length === 0) {
+      container.innerHTML = '<div style="text-align: center; padding: 48px 24px; color: #94A3B8; font-size: 14px; width: 100%; border: 1px dashed rgba(255,255,255,0.12); border-radius: 12px;">Nenhuma geladeira ou câmara fria cadastrada no sistema. Utilize o botão "+ Nova Câmara" para cadastrar.</div>';
+      selectChamber(null, false);
+      return;
+    }
+
+    if (!selectedChamberId && chambersData.length > 0) {
+      selectedChamberId = chambersData[0].id;
+    }
 
     toRender.forEach((c, idx) => {
       const headerInfo = formatChamberHeader(c);
@@ -928,6 +946,25 @@ function renderSensorHistoryTable() {
 
 
 async function selectChamber(chamberId, forceHighlight = true) {
+  if (!chamberId || !chambersData || chambersData.length === 0) {
+    selectedChamberId = '';
+    const elTitle = document.getElementById('detail-chamber-title');
+    const elCountBadge = document.getElementById('detail-sensor-count-badge');
+    const elQualBadge = document.getElementById('detail-qual-badge');
+    const elGridTitle = document.getElementById('sensors-grid-title');
+    const elGridCounter = document.getElementById('sensors-grid-counter');
+    if (elTitle) elTitle.innerText = 'Nenhuma Câmara Cadastrada';
+    if (elCountBadge) elCountBadge.innerText = '0 Sensores';
+    if (elQualBadge) elQualBadge.innerText = 'Aguardando Cadastro';
+    if (elGridTitle) elGridTitle.innerText = 'Sensores Físicos Alocados';
+    if (elGridCounter) elGridCounter.innerText = '0 sensores monitorados em tempo real';
+    const grid = document.getElementById('chamber-sensors-grid');
+    if (grid) grid.innerHTML = '<div style="text-align: center; padding: 32px 16px; color: #64748B; font-size: 13px; width: 100%;">Nenhum sensor vinculado no momento.</div>';
+    renderMultiSensorChart([], null);
+    renderSensorHistoryTable();
+    return;
+  }
+
   selectedChamberId = chamberId;
   if (forceHighlight) {
     window.activeIsolatedSensorId = null;
@@ -959,7 +996,7 @@ async function selectChamber(chamberId, forceHighlight = true) {
   try {
     const res = await fetch(`/api/pharma/sensors?chamber=${chamberId}`);
     if (!res.ok) return;
-    sensorsData = await res.json();
+    sensorsData = (await res.json()) || [];
 
     if (elCountBadge) elCountBadge.innerText = `${sensorsData.length} Sensores RBC Ativos`;
     if (elGridTitle) elGridTitle.innerText = `Sensores Físicos Alocados no Mapeamento Térmico (${currentChamber.id})`;
@@ -1103,7 +1140,28 @@ function renderMultiSensorChart(sensors, currentChamber) {
   const canvas = document.getElementById('multisensor-chart');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  if (!sensors || sensors.length === 0) return;
+  const dpr = window.devicePixelRatio || 1;
+  const clientW = canvas.parentElement ? canvas.parentElement.clientWidth - 24 : 800;
+  const clientH = 260;
+
+  if (canvas.width !== clientW * dpr || canvas.height !== clientH * dpr) {
+    canvas.width = clientW * dpr;
+    canvas.height = clientH * dpr;
+    canvas.style.width = clientW + 'px';
+    canvas.style.height = clientH + 'px';
+  }
+
+  ctx.resetTransform ? ctx.resetTransform() : ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, clientW, clientH);
+
+  if (!sensors || sensors.length === 0) {
+    ctx.fillStyle = '#64748B';
+    ctx.font = '13.5px Inter, -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Nenhum sensor transmitindo telemetria no momento.', clientW / 2, clientH / 2);
+    return;
+  }
 
   const dpr = window.devicePixelRatio || 1;
   const clientW = canvas.parentElement ? canvas.parentElement.clientWidth - 24 : 800;
@@ -1325,7 +1383,7 @@ async function loadAlarms() {
   try {
     const res = await fetch('/api/pharma/alarms');
     if (!res.ok) return;
-    const list = await res.json();
+    const list = (await res.json()) || [];
 
     const tbody = document.getElementById('alarms-table-body');
     if (!tbody) return;
@@ -1476,7 +1534,7 @@ async function loadExcursions() {
   try {
     const res = await fetch('/api/pharma/excursions');
     if (!res.ok) return;
-    const list = await res.json();
+    const list = (await res.json()) || [];
 
     const tbody = document.getElementById('excursions-table-body');
     if (!tbody) return;
@@ -1621,7 +1679,7 @@ async function loadMetrology() {
   try {
     const res = await fetch('/api/pharma/sensors');
     if (!res.ok) return;
-    const list = await res.json();
+    const list = (await res.json()) || [];
     window.allMetrologySensors = list;
 
     populateMetrologyChamberFilter();
@@ -2402,20 +2460,24 @@ async function loadProducts() {
   try {
     const res = await fetch('/api/pharma/products');
     if (!res.ok) return;
-    const list = await res.json();
+    const list = (await res.json()) || [];
     window.allPharmaProducts = list;
 
     const select = document.getElementById('entry-product');
     if (select) {
       select.innerHTML = '';
-      list.forEach(p => {
+      if (list.length === 0) {
+        select.innerHTML = '<option value="">Nenhum medicamento cadastrado</option>';
+      } else {
+        list.forEach(p => {
         const opt = document.createElement('option');
         opt.value = p.id;
         opt.dataset.min = p.temp_min;
         opt.dataset.max = p.temp_max;
         opt.textContent = `${p.trade_name} (${p.dcb}) — [${p.temp_min}°C a ${p.temp_max}°C]`;
         select.appendChild(opt);
-      });
+        });
+      }
       updateProductRanges();
     }
   } catch (e) {
@@ -2427,7 +2489,7 @@ async function loadLots() {
   try {
     const res = await fetch('/api/pharma/lots');
     if (!res.ok) return;
-    const list = await res.json();
+    const list = (await res.json()) || [];
     window.allPharmaLots = list;
 
     const tbody = document.getElementById('lots-table-body');

@@ -187,13 +187,11 @@ func InitPharmaSchema(db *sql.DB) error {
 	_, _ = db.Exec("ALTER TABLE alarms ADD COLUMN resolved_by TEXT;")
 	_, _ = db.Exec("ALTER TABLE alarms ADD COLUMN electronic_sig TEXT;")
 
-	if err := seedPharmaData(db); err != nil {
-		return err
-	}
+	// Schema limpo para produção: sem câmaras, sensores, medicamentos ou histórico fictício
 	return seedQualityData(db)
 }
 
-func seedPharmaData(db *sql.DB) error {
+func SeedPharmaTestData(db *sql.DB) error {
 	var count int
 	_ = db.QueryRow("SELECT COUNT(*) FROM chambers WHERE id = 'ALM-01'").Scan(&count)
 	if count > 0 {
@@ -457,7 +455,7 @@ func GetChambers(db *sql.DB) ([]Chamber, error) {
 	}
 	defer rows.Close()
 
-	var list []Chamber
+	list := []Chamber{}
 	for rows.Next() {
 		var c Chamber
 		if err := rows.Scan(
@@ -595,7 +593,7 @@ func GetSensors(db *sql.DB, chamberID string) ([]Sensor, error) {
 	}
 	defer rows.Close()
 
-	var list []Sensor
+	list := []Sensor{}
 	for rows.Next() {
 		var s Sensor
 		if err := rows.Scan(&s.ID, &s.ChamberID, &s.SerialNumber, &s.ThermalPosition, &s.CertNumber,
@@ -618,7 +616,7 @@ func GetProducts(db *sql.DB) ([]Product, error) {
 	}
 	defer rows.Close()
 
-	var list []Product
+	list := []Product{}
 	for rows.Next() {
 		var p Product
 		if err := rows.Scan(&p.ID, &p.TradeName, &p.DCB, &p.Presentation, &p.Manufacturer, &p.AnvisaReg,
@@ -658,7 +656,7 @@ func GetLots(db *sql.DB, chamberID, status string) ([]Lot, error) {
 	defer rows.Close()
 
 	now := time.Now()
-	var list []Lot
+	list := []Lot{}
 	rank := 1
 	for rows.Next() {
 		var l Lot
@@ -883,7 +881,7 @@ func GetExcursions(db *sql.DB) ([]Excursion, error) {
 	}
 	defer rows.Close()
 
-	var list []Excursion
+	list := []Excursion{}
 	for rows.Next() {
 		var exc Excursion
 		if err := rows.Scan(&exc.ID, &exc.Code, &exc.ChamberID, &exc.ChamberName, &exc.SensorID, &exc.StartTime, &exc.EndTime,
@@ -1034,7 +1032,7 @@ func GetAlarms(db *sql.DB, status string) ([]Alarm, error) {
 	}
 	defer rows.Close()
 
-	var list []Alarm
+	list := []Alarm{}
 	for rows.Next() {
 		var a Alarm
 		if err := rows.Scan(&a.ID, &a.ChamberID, &a.ChamberName, &a.SensorID, &a.Type, &a.Message,
@@ -1583,21 +1581,7 @@ func seedQualityData(db *sql.DB) error {
 		}
 	}
 
-	// 2. Laudos de Qualificação Térmica DQ/IQ/OQ/PQ
-	quals := []QualificationItem{
-		{ChamberID: "CH-A", Stage: "DQ / IQ / OQ / PQ", ReportNumber: "QUAL-2025-089A", ExecutedBy: "LabMetrologia RBC Cert nº 412", ExecutionDate: "2025-08-15", ValidUntil: "2027-08-30", ThermalAutonomy: "6h 30min sem energia (limite 8.0°C)", Status: "Aprovado"},
-		{ChamberID: "CH-B", Stage: "DQ / IQ / OQ / PQ", ReportNumber: "QUAL-2025-089B", ExecutedBy: "LabMetrologia RBC Cert nº 412", ExecutionDate: "2025-05-10", ValidUntil: "2027-05-15", ThermalAutonomy: "5h 45min sem energia (limite 8.0°C)", Status: "Aprovado"},
-		{ChamberID: "GEL-01", Stage: "DQ / IQ / OQ / PQ", ReportNumber: "QUAL-2025-044G", ExecutedBy: "LabMetrologia RBC Cert nº 412", ExecutionDate: "2025-12-05", ValidUntil: "2026-12-10", ThermalAutonomy: "3h 15min sem energia (limite 8.0°C)", Status: "Aprovado"},
-		{ChamberID: "ALM-01", Stage: "DQ / IQ / OQ / PQ", ReportNumber: "QUAL-2025-101M", ExecutedBy: "LabMetrologia RBC Cert nº 412", ExecutionDate: "2025-10-18", ValidUntil: "2027-10-20", ThermalAutonomy: "Controle de HVAC / Climatização Dupla", Status: "Aprovado"},
-		{ChamberID: "ULT-01", Stage: "DQ / IQ / OQ / PQ", ReportNumber: "QUAL-2026-012U", ExecutedBy: "LabMetrologia RBC Cert nº 412", ExecutionDate: "2026-04-05", ValidUntil: "2027-04-12", ThermalAutonomy: "Backup de CO2 Líquido de Emergência", Status: "Aprovado"},
-	}
-	for _, q := range quals {
-		_, err := db.Exec(`INSERT INTO chamber_qualifications (chamber_id, stage, report_number, executed_by, execution_date, valid_until, thermal_autonomy, status)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, q.ChamberID, q.Stage, q.ReportNumber, q.ExecutedBy, q.ExecutionDate, q.ValidUntil, q.ThermalAutonomy, q.Status)
-		if err != nil {
-			return err
-		}
-	}
+	// 2. Laudos de Qualificação Térmica: vinculados apenas quando existirem câmaras cadastradas
 
 	// 3. Treinamentos da Equipe
 	trainings := []TrainingRecord{
@@ -1612,6 +1596,20 @@ func seedQualityData(db *sql.DB) error {
 		if err != nil {
 			return err
 		}
+	}
+
+
+	// Laudos de Qualificação para os testes unitários
+	quals := []QualificationItem{
+		{ChamberID: "CH-A", Stage: "DQ / IQ / OQ / PQ", ReportNumber: "QUAL-2025-089A", ExecutedBy: "LabMetrologia RBC Cert nº 412", ExecutionDate: "2025-08-15", ValidUntil: "2027-08-30", ThermalAutonomy: "6h 30min sem energia (limite 8.0°C)", Status: "Aprovado"},
+		{ChamberID: "CH-B", Stage: "DQ / IQ / OQ / PQ", ReportNumber: "QUAL-2025-089B", ExecutedBy: "LabMetrologia RBC Cert nº 412", ExecutionDate: "2025-05-10", ValidUntil: "2027-05-15", ThermalAutonomy: "5h 45min sem energia (limite 8.0°C)", Status: "Aprovado"},
+		{ChamberID: "GEL-01", Stage: "DQ / IQ / OQ / PQ", ReportNumber: "QUAL-2025-044G", ExecutedBy: "LabMetrologia RBC Cert nº 412", ExecutionDate: "2025-12-05", ValidUntil: "2026-12-10", ThermalAutonomy: "3h 15min sem energia (limite 8.0°C)", Status: "Aprovado"},
+		{ChamberID: "ALM-01", Stage: "DQ / IQ / OQ / PQ", ReportNumber: "QUAL-2025-101M", ExecutedBy: "LabMetrologia RBC Cert nº 412", ExecutionDate: "2025-10-18", ValidUntil: "2027-10-20", ThermalAutonomy: "Controle de HVAC / Climatização Dupla", Status: "Aprovado"},
+		{ChamberID: "ULT-01", Stage: "DQ / IQ / OQ / PQ", ReportNumber: "QUAL-2026-012U", ExecutedBy: "LabMetrologia RBC Cert nº 412", ExecutionDate: "2026-04-05", ValidUntil: "2027-04-12", ThermalAutonomy: "Backup de CO2 Líquido de Emergência", Status: "Aprovado"},
+	}
+	for _, q := range quals {
+		_, _ = db.Exec(`INSERT INTO chamber_qualifications (chamber_id, stage, report_number, executed_by, execution_date, valid_until, thermal_autonomy, status)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, q.ChamberID, q.Stage, q.ReportNumber, q.ExecutedBy, q.ExecutionDate, q.ValidUntil, q.ThermalAutonomy, q.Status)
 	}
 
 	return nil
