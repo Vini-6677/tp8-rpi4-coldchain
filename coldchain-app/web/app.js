@@ -1163,20 +1163,6 @@ function renderMultiSensorChart(sensors, currentChamber) {
     return;
   }
 
-  const dpr = window.devicePixelRatio || 1;
-  const clientW = canvas.parentElement ? canvas.parentElement.clientWidth - 24 : 800;
-  const clientH = 260;
-
-  if (canvas.width !== clientW * dpr || canvas.height !== clientH * dpr) {
-    canvas.width = clientW * dpr;
-    canvas.height = clientH * dpr;
-    canvas.style.width = clientW + 'px';
-    canvas.style.height = clientH + 'px';
-  }
-
-  ctx.resetTransform ? ctx.resetTransform() : ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.scale(dpr, dpr);
-
   const W = clientW;
   const H = clientH;
 
