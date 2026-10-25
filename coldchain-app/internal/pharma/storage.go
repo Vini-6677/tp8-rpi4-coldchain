@@ -634,7 +634,8 @@ func GetProducts(db *sql.DB) ([]Product, error) {
 func GetLots(db *sql.DB, chamberID, status string) ([]Lot, error) {
 	query := `SELECT l.id, l.product_id, p.trade_name, p.dcb, p.manufacturer, p.anvisa_reg,
 	                 l.lot_number, l.expiry_date, l.quantity, l.chamber_id, c.name,
-	                 l.shelf_location, l.status, l.unit_price, l.created_at
+	                 l.shelf_location, l.status, l.unit_price, l.created_at,
+	                 p.temp_min, p.temp_max
 	          FROM lots l
 	          JOIN products p ON p.id = l.product_id
 	          JOIN chambers c ON c.id = l.chamber_id
@@ -663,7 +664,8 @@ func GetLots(db *sql.DB, chamberID, status string) ([]Lot, error) {
 		var l Lot
 		if err := rows.Scan(&l.ID, &l.ProductID, &l.ProductTradeName, &l.ProductDCB, &l.Manufacturer, &l.AnvisaReg,
 			&l.LotNumber, &l.ExpiryDate, &l.Quantity, &l.ChamberID, &l.ChamberName,
-			&l.ShelfLocation, &l.Status, &l.UnitPrice, &l.CreatedAt); err != nil {
+			&l.ShelfLocation, &l.Status, &l.UnitPrice, &l.CreatedAt,
+			&l.TempMin, &l.TempMax); err != nil {
 			return nil, err
 		}
 
@@ -1664,4 +1666,194 @@ func DecommissionChamber(db *sql.DB, chamberID, reason, justification, signature
 	}
 
 	return tx.Commit()
+}
+
+// CheckThermalCompatibility avalia se a faixa operacional da câmara de destino é compatível
+// com os limites de conservação do produto farmacêutico segundo a ANVISA RDC 430/2020.
+func CheckThermalCompatibility(pMin, pMax, cMin, cMax float64, prodName, chamberName string) (bool, string) {
+	if cMin > pMax {
+		return false, fmt.Sprintf("TRAVA METROLÓGICA (RDC 430/2020): Incompatibilidade térmica crítica. A câmara '%s' opera na faixa de %.1f °C a %.1f °C, que é totalmente SUPERIOR ao teto térmico do produto '%s' (máximo de %.1f °C). Risco de perda de eficácia biológica.", chamberName, cMin, cMax, prodName, pMax)
+	}
+	if cMax < pMin {
+		return false, fmt.Sprintf("TRAVA METROLÓGICA (RDC 430/2020): Incompatibilidade térmica crítica. A câmara '%s' opera na faixa de %.1f °C a %.1f °C, que é totalmente INFERIOR ao piso térmico do produto '%s' (mínimo de %.1f °C). Risco de congelamento e inativação de princípios ativos.", chamberName, cMin, cMax, prodName, pMin)
+	}
+	if cMin < (pMin - 1.0) {
+		return false, fmt.Sprintf("TRAVA METROLÓGICA (RDC 430/2020): A câmara de destino '%s' pode atingir %.1f °C, ultrapassando o limite mínimo seguro de conservação do produto '%s' (%.1f °C).", chamberName, cMin, prodName, pMin)
+	}
+	if cMax > (pMax + 1.0) {
+		return false, fmt.Sprintf("TRAVA METROLÓGICA (RDC 430/2020): A câmara de destino '%s' opera até %.1f °C, ultrapassando o limite máximo seguro de conservação do produto '%s' (%.1f °C).", chamberName, cMax, prodName, pMax)
+	}
+	return true, fmt.Sprintf("CONFORME (RDC 430/2020): A câmara '%s' (%.1f °C a %.1f °C) é termicamente compatível com a faixa requerida pelo produto '%s' (%.1f °C a %.1f °C).", chamberName, cMin, cMax, prodName, pMin, pMax)
+}
+
+// TransferLot realiza a movimentação interna de um lote entre câmaras com validação estrita de compatibilidade térmica.
+func TransferLot(db *sql.DB, lotID int64, targetChamberID, targetShelfLocation, reason, responsibleName string) error {
+	if lotID <= 0 {
+		return fmt.Errorf("id do lote inválido")
+	}
+	if targetChamberID == "" {
+		return fmt.Errorf("câmara de destino é obrigatória")
+	}
+	if targetShelfLocation == "" {
+		targetShelfLocation = "Prateleira Geral"
+	}
+
+	var (
+		lotNumber string
+		curQty int
+		status string
+		sourceChamberID string
+		sourceChamberName string
+		productID int64
+		prodTradeName string
+		pMin, pMax float64
+	)
+
+	err := db.QueryRow(`
+		SELECT l.lot_number, l.quantity, l.status, l.chamber_id, c.name,
+		       p.id, p.trade_name, p.temp_min, p.temp_max
+		FROM lots l
+		JOIN chambers c ON c.id = l.chamber_id
+		JOIN products p ON p.id = l.product_id
+		WHERE l.id = ?
+	`, lotID).Scan(&lotNumber, &curQty, &status, &sourceChamberID, &sourceChamberName, &productID, &prodTradeName, &pMin, &pMax)
+	if err != nil {
+		return fmt.Errorf("lote não encontrado: %w", err)
+	}
+
+	if status == "descartado" || status == "esgotado" {
+		return fmt.Errorf("não é permitido transferir um lote com status '%s'", status)
+	}
+
+	if sourceChamberID == targetChamberID {
+		return fmt.Errorf("a câmara de destino é a mesma câmara de origem atual (%s)", sourceChamberName)
+	}
+
+	var (
+		targetName string
+		cMin, cMax float64
+		targetStatus string
+	)
+	err = db.QueryRow("SELECT name, temp_min, temp_max, status FROM chambers WHERE id = ?", targetChamberID).Scan(&targetName, &cMin, &cMax, &targetStatus)
+	if err != nil {
+		return fmt.Errorf("câmara de destino '%s' não encontrada: %w", targetChamberID, err)
+	}
+
+	if targetStatus == "DESCOMISSIONADA" || targetStatus == "INATIVA" {
+		return fmt.Errorf("câmara de destino '%s' está %s e não pode receber medicamentos", targetName, targetStatus)
+	}
+
+	compatible, msg := CheckThermalCompatibility(pMin, pMax, cMin, cMax, prodTradeName, targetName)
+	if !compatible {
+		return fmt.Errorf("%s", msg)
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec("UPDATE lots SET chamber_id = ?, shelf_location = ? WHERE id = ?", targetChamberID, targetShelfLocation, lotID)
+	if err != nil {
+		return fmt.Errorf("falha ao atualizar localização do lote: %w", err)
+	}
+
+	hDetails := fmt.Sprintf("Transferência de custódia da câmara %s (%s) para a câmara %s (%s) [Local: %s]. Motivo: %s. Operador: %s. %s",
+		sourceChamberName, sourceChamberID, targetName, targetChamberID, targetShelfLocation, reason, responsibleName, msg)
+
+	_, _ = tx.Exec(`INSERT INTO lot_history (lot_id, event_type, details, chamber_id)
+		VALUES (?, 'TRANSFERENCIA_INTERNA', ?, ?)`,
+		lotID, hDetails, targetChamberID)
+
+	return tx.Commit()
+}
+
+// TransferChamberLots evacua todos os lotes de uma câmara de origem para uma câmara compatível de destino.
+func TransferChamberLots(db *sql.DB, sourceChamberID, targetChamberID, defaultShelf, reason, responsibleName string) (int, error) {
+	if sourceChamberID == "" || targetChamberID == "" {
+		return 0, fmt.Errorf("câmaras de origem e destino são obrigatórias")
+	}
+	if sourceChamberID == targetChamberID {
+		return 0, fmt.Errorf("a câmara de destino não pode ser igual à de origem")
+	}
+	if defaultShelf == "" {
+		defaultShelf = "Prateleira Geral (Evacuação)"
+	}
+
+	var (
+		sourceName string
+		targetName string
+		targetStatus string
+		cMin, cMax float64
+	)
+	if err := db.QueryRow("SELECT name FROM chambers WHERE id = ?", sourceChamberID).Scan(&sourceName); err != nil {
+		return 0, fmt.Errorf("câmara de origem não encontrada")
+	}
+	if err := db.QueryRow("SELECT name, temp_min, temp_max, status FROM chambers WHERE id = ?", targetChamberID).Scan(&targetName, &cMin, &cMax, &targetStatus); err != nil {
+		return 0, fmt.Errorf("câmara de destino não encontrada")
+	}
+	if targetStatus == "DESCOMISSIONADA" || targetStatus == "INATIVA" {
+		return 0, fmt.Errorf("câmara de destino '%s' está %s e não pode receber medicamentos", targetName, targetStatus)
+	}
+
+	rows, err := db.Query(`
+		SELECT l.id, l.lot_number, p.trade_name, p.temp_min, p.temp_max
+		FROM lots l
+		JOIN products p ON p.id = l.product_id
+		WHERE l.chamber_id = ? AND l.status NOT IN ('descartado', 'esgotado')
+	`, sourceChamberID)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	type lotItem struct {
+		id int64
+		lotNumber string
+		tradeName string
+		pMin, pMax float64
+	}
+	var items []lotItem
+	for rows.Next() {
+		var it lotItem
+		if err := rows.Scan(&it.id, &it.lotNumber, &it.tradeName, &it.pMin, &it.pMax); err == nil {
+			items = append(items, it)
+		}
+	}
+
+	if len(items) == 0 {
+		return 0, fmt.Errorf("a câmara de origem '%s' não possui lotes de medicamentos ativos para transferir", sourceName)
+	}
+
+	for _, it := range items {
+		compatible, _ := CheckThermalCompatibility(it.pMin, it.pMax, cMin, cMax, it.tradeName, targetName)
+		if !compatible {
+			return 0, fmt.Errorf("TRAVA METROLÓGICA (RDC 430/2020): Não é possível evacuar os lotes para '%s'. O medicamento '%s' (Lote %s) exige %.1f °C a %.1f °C e não pode ser exposto à faixa de %.1f °C a %.1f °C desta câmara.", targetName, it.tradeName, it.lotNumber, it.pMin, it.pMax, cMin, cMax)
+		}
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	for _, it := range items {
+		_, err = tx.Exec("UPDATE lots SET chamber_id = ?, shelf_location = ? WHERE id = ?", targetChamberID, defaultShelf, it.id)
+		if err != nil {
+			return 0, fmt.Errorf("erro ao transferir lote %s: %w", it.lotNumber, err)
+		}
+		hDetails := fmt.Sprintf("Evacuação de câmara: Lote transferido da câmara %s (%s) para a câmara %s (%s) [Local: %s]. Motivo: %s. Operador: %s. Validação térmica: CONFORME.",
+			sourceName, sourceChamberID, targetName, targetChamberID, defaultShelf, reason, responsibleName)
+		_, _ = tx.Exec(`INSERT INTO lot_history (lot_id, event_type, details, chamber_id)
+			VALUES (?, 'TRANSFERENCIA_INTERNA', ?, ?)`,
+			it.id, hDetails, targetChamberID)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+
+	return len(items), nil
 }

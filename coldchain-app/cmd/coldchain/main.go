@@ -1449,6 +1449,217 @@ func (a *App) routes() http.Handler {
 		json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
 	})
 
+	// 7.1 Transferência de Estoque com Trava Metrológica (ANVISA RDC 430/2020)
+	mux.HandleFunc("/api/pharma/stock/transfer", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		sess, ok := a.getSession(r)
+		if !ok || (sess.Role != "tecnico" && sess.Role != "admin" && sess.Role != "enfermeiro") {
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Acesso não autorizado para transferência de medicamentos."})
+			return
+		}
+
+		var payload struct {
+			LotID           int64  `json:"lot_id"`
+			SourceChamberID string `json:"source_chamber_id"`
+			TargetChamberID string `json:"target_chamber_id"`
+			ShelfLocation   string `json:"shelf_location"`
+			Reason          string `json:"reason"`
+			Justification   string `json:"justification"`
+			Password        string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, "JSON inválido", http.StatusBadRequest)
+			return
+		}
+
+		if payload.TargetChamberID == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Câmara de destino é obrigatória."})
+			return
+		}
+		if payload.Reason == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Motivo da transferência é obrigatório."})
+			return
+		}
+
+		if payload.Password != "" {
+			var storedHash, salt string
+			if err := a.db.QueryRow("SELECT password_hash, salt FROM users WHERE username = ?", sess.Username).Scan(&storedHash, &salt); err == nil {
+				if hashPassword(payload.Password, salt) != storedHash {
+					w.WriteHeader(http.StatusUnauthorized)
+					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura eletrônica inválida: senha incorreta."})
+					return
+				}
+			}
+		}
+
+		ip := getClientIP(r)
+		fullReason := payload.Reason
+		if payload.Justification != "" {
+			fullReason += " - Parecer: " + payload.Justification
+		}
+
+		if payload.LotID > 0 {
+			if err := pharma.TransferLot(a.db, payload.LotID, payload.TargetChamberID, payload.ShelfLocation, fullReason, sess.Name); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+				return
+			}
+
+			a.logAudit(sess.Username, sess.Role, "TRANSFERENCIA_LOTE", fmt.Sprintf("Transferência do lote #%d para câmara %s. Motivo: %s", payload.LotID, payload.TargetChamberID, fullReason), ip)
+			if a.ledger != nil {
+				ledgerMsg := fmt.Sprintf("TRANSFER|LOT_ID:%d|TO:%s|REASON:%s|BY:%s", payload.LotID, payload.TargetChamberID, fullReason, sess.Username)
+				_, _ = a.ledger.AppendData("PHARMA-GATEWAY", uint64(time.Now().UnixNano()), []byte(ledgerMsg), 1)
+			}
+			json.NewEncoder(w).Encode(map[string]any{"status": "ok", "message": "Lote transferido com sucesso e validado termicamente."})
+			return
+		}
+
+		if payload.SourceChamberID != "" {
+			count, err := pharma.TransferChamberLots(a.db, payload.SourceChamberID, payload.TargetChamberID, payload.ShelfLocation, fullReason, sess.Name)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+				return
+			}
+
+			a.logAudit(sess.Username, sess.Role, "EVACUACAO_CAMARA", fmt.Sprintf("Evacuação de %d lotes da câmara %s para %s. Motivo: %s", count, payload.SourceChamberID, payload.TargetChamberID, fullReason), ip)
+			if a.ledger != nil {
+				ledgerMsg := fmt.Sprintf("EVACUATION|FROM:%s|TO:%s|COUNT:%d|REASON:%s|BY:%s", payload.SourceChamberID, payload.TargetChamberID, count, fullReason, sess.Username)
+				_, _ = a.ledger.AppendData("PHARMA-GATEWAY", uint64(time.Now().UnixNano()), []byte(ledgerMsg), 1)
+			}
+			json.NewEncoder(w).Encode(map[string]any{"status": "ok", "message": fmt.Sprintf("%d lotes transferidos com sucesso para a câmara %s.", count, payload.TargetChamberID), "transferred_count": count})
+			return
+		}
+
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any{"error": "Especifique o lot_id ou a source_chamber_id para transferência."})
+	})
+
+	// 7.2 Validação Prévia de Compatibilidade Térmica para Transferência
+	mux.HandleFunc("/api/pharma/stock/transfer/validate", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		targetChamberID := r.URL.Query().Get("target_chamber_id")
+		lotIDStr := r.URL.Query().Get("lot_id")
+		sourceChamberID := r.URL.Query().Get("source_chamber_id")
+
+		if targetChamberID == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{"error": "target_chamber_id é obrigatório"})
+			return
+		}
+
+		var targetName string
+		var cMin, cMax float64
+		if err := a.db.QueryRow("SELECT name, temp_min, temp_max FROM chambers WHERE id = ?", targetChamberID).Scan(&targetName, &cMin, &cMax); err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Câmara de destino não encontrada."})
+			return
+		}
+
+		if lotIDStr != "" {
+			var pName string
+			var pMin, pMax float64
+			err := a.db.QueryRow(`
+				SELECT p.trade_name, p.temp_min, p.temp_max
+				FROM lots l
+				JOIN products p ON p.id = l.product_id
+				WHERE l.id = ?
+			`, lotIDStr).Scan(&pName, &pMin, &pMax)
+			if err != nil {
+				w.WriteHeader(http.StatusNotFound)
+				json.NewEncoder(w).Encode(map[string]any{"error": "Lote não encontrado."})
+				return
+			}
+
+			compat, msg := pharma.CheckThermalCompatibility(pMin, pMax, cMin, cMax, pName, targetName)
+			json.NewEncoder(w).Encode(pharma.TransferValidationResult{
+				Compatible: compat,
+				Message:    msg,
+				ProdName:   pName,
+				ProdMin:    pMin,
+				ProdMax:    pMax,
+				TargetName: targetName,
+				TargetMin:  cMin,
+				TargetMax:  cMax,
+			})
+			return
+		}
+
+		if sourceChamberID != "" {
+			rows, err := a.db.Query(`
+				SELECT p.trade_name, p.temp_min, p.temp_max
+				FROM lots l
+				JOIN products p ON p.id = l.product_id
+				WHERE l.chamber_id = ? AND l.status NOT IN ('descartado', 'esgotado')
+			`, sourceChamberID)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+				return
+			}
+			defer rows.Close()
+
+			allCompat := true
+			firstIncompatMsg := ""
+			count := 0
+			for rows.Next() {
+				count++
+				var pn string
+				var pmi, pma float64
+				if err := rows.Scan(&pn, &pmi, &pma); err == nil {
+					compat, msg := pharma.CheckThermalCompatibility(pmi, pma, cMin, cMax, pn, targetName)
+					if !compat {
+						allCompat = false
+						if firstIncompatMsg == "" {
+							firstIncompatMsg = msg
+						}
+					}
+				}
+			}
+
+			if count == 0 {
+				json.NewEncoder(w).Encode(pharma.TransferValidationResult{
+					Compatible: true,
+					Message:    "Nenhum lote ativo nesta câmara para transferir.",
+					TargetName: targetName,
+					TargetMin:  cMin,
+					TargetMax:  cMax,
+				})
+				return
+			}
+
+			if !allCompat {
+				json.NewEncoder(w).Encode(pharma.TransferValidationResult{
+					Compatible: false,
+					Message:    firstIncompatMsg,
+					TargetName: targetName,
+					TargetMin:  cMin,
+					TargetMax:  cMax,
+				})
+				return
+			}
+
+			json.NewEncoder(w).Encode(pharma.TransferValidationResult{
+				Compatible: true,
+				Message:    fmt.Sprintf("Todos os %d lotes ativos são termicamente compatíveis com a câmara '%s'.", count, targetName),
+				TargetName: targetName,
+				TargetMin:  cMin,
+				TargetMax:  cMax,
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any{"error": "Informe lot_id ou source_chamber_id"})
+	})
+
 	// 8. Alarmes Operacionais
 	mux.HandleFunc("/api/pharma/alarms", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

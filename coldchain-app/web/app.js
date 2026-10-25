@@ -2439,9 +2439,12 @@ async function loadLots() {
           <div style="font-size:10.5px; color:#94A3B8;">${l.shelf_location || ''}</div>
         </td>
         <td><span class="badge-status ${badgeClass}">${l.status.toUpperCase()}</span></td>
-        <td style="text-align: center;">
-          <button class="btn-action-secondary" style="padding:5px 14px; font-size:11.5px; margin: 0 auto; display: inline-flex; align-items: center; justify-content: center;" onclick="openTraceModal('${l.lot_number}')">
+        <td style="text-align: center; white-space: nowrap;">
+          <button class="btn-action-secondary" style="padding:5px 12px; font-size:11.5px; display: inline-flex; align-items: center; justify-content: center;" onclick="openTraceModal('${l.lot_number}')">
             Rastreabilidade
+          </button>
+          <button class="btn-action-primary" style="padding:5px 12px; font-size:11.5px; margin-left: 6px; display: inline-flex; align-items: center; justify-content: center; background: #2563EB;" onclick="openTransferModal(${l.id})">
+            ⇄ Transferir
           </button>
         </td>
       `;
@@ -2783,11 +2786,43 @@ function updateDecomChamberDetails(chamberId) {
   const elLots = document.getElementById('decom-chamber-lots');
   const elSensors = document.getElementById('decom-chamber-sensors');
 
+  const activeLots = (window.allPharmaLots || []).filter(l => l.chamber_id === chamberId && l.status !== 'descartado' && l.status !== 'esgotado');
+
   if (elName) elName.innerText = c.name;
   if (elId) elId.innerText = c.id;
   if (elRange) elRange.innerText = `${c.temp_min.toFixed(1).replace('.', ',')} °C a ${c.temp_max.toFixed(1).replace('.', ',')} °C`;
-  if (elLots) elLots.innerText = `${c.quarantined_lots_count || 0} lotes ativos`;
+  if (elLots) elLots.innerText = `${activeLots.length} lotes ativos`;
   if (elSensors) elSensors.innerText = `${c.sensor_count || 0} sensores vinculados`;
+
+  // Alerta e trava regulatória ANVISA RDC 430
+  const decomAlert = document.getElementById('decom-transfer-alert');
+  const btnDecomConfirm = document.querySelector('#form-decommission-chamber button[type="submit"]');
+  if (decomAlert) {
+    if (activeLots.length > 0) {
+      decomAlert.style.display = 'block';
+      if (btnDecomConfirm) {
+        btnDecomConfirm.disabled = true;
+        btnDecomConfirm.style.opacity = '0.5';
+        btnDecomConfirm.style.cursor = 'not-allowed';
+        btnDecomConfirm.title = 'Transfira os medicamentos ativos antes de descomissionar o equipamento.';
+      }
+    } else {
+      decomAlert.style.display = 'none';
+      if (btnDecomConfirm) {
+        btnDecomConfirm.disabled = false;
+        btnDecomConfirm.style.opacity = '1';
+        btnDecomConfirm.style.cursor = 'pointer';
+        btnDecomConfirm.title = '';
+      }
+    }
+  }
+}
+
+function onDecomTransferButtonClick() {
+  const select = document.getElementById('decom-chamber-select');
+  const chId = select ? select.value : selectedChamberId;
+  closeDecommissionModal();
+  openTransferModal(null, chId);
 }
 
 function closeDecommissionModal() {
@@ -2857,6 +2892,415 @@ async function submitDecommissionChamber() {
     if (btn) {
       btn.disabled = false;
       btn.innerText = 'Confirmar Descomissionamento';
+    }
+  }
+}
+
+
+// =============================================================================
+// SEÇÃO DE TRANSFERÊNCIA DE MEDICAMENTOS COM TRAVA METROLÓGICA (RDC 430/2020)
+// =============================================================================
+
+window.currentTransferMode = 'lot';
+
+function setTransferMode(mode) {
+  window.currentTransferMode = mode;
+  const tabLot = document.getElementById('tab-transfer-mode-lot');
+  const tabChamber = document.getElementById('tab-transfer-mode-chamber');
+  const lotFields = document.getElementById('transfer-mode-lot-fields');
+  const chamberFields = document.getElementById('transfer-mode-chamber-fields');
+
+  if (mode === 'lot') {
+    if (tabLot) { tabLot.style.background = '#2563EB'; tabLot.style.color = '#FFFFFF'; }
+    if (tabChamber) { tabChamber.style.background = 'transparent'; tabChamber.style.color = '#94A3B8'; }
+    if (lotFields) lotFields.style.display = 'block';
+    if (chamberFields) chamberFields.style.display = 'none';
+    onTransferLotSelectChange();
+  } else {
+    if (tabLot) { tabLot.style.background = 'transparent'; tabLot.style.color = '#94A3B8'; }
+    if (tabChamber) { tabChamber.style.background = '#2563EB'; tabChamber.style.color = '#FFFFFF'; }
+    if (lotFields) lotFields.style.display = 'none';
+    if (chamberFields) chamberFields.style.display = 'block';
+    onTransferSourceChamberChange();
+  }
+}
+
+function openTransferModal(lotId, sourceChamberId) {
+  const m = document.getElementById('modal-transfer-stock');
+  if (!m) return;
+
+  populateTransferModal(lotId, sourceChamberId);
+  m.classList.add('active');
+}
+
+function closeTransferModal() {
+  const m = document.getElementById('modal-transfer-stock');
+  if (m) m.classList.remove('active');
+  const f = document.getElementById('form-transfer-stock');
+  if (f) f.reset();
+  const feedback = document.getElementById('transfer-thermal-feedback');
+  if (feedback) feedback.style.display = 'none';
+}
+
+function populateTransferModal(preferredLotId, preferredSourceChamberId) {
+  const lotSelect = document.getElementById('transfer-lot-select');
+  const sourceChamberSelect = document.getElementById('transfer-source-chamber-select');
+  const targetChamberSelect = document.getElementById('transfer-target-chamber-select');
+
+  const lots = window.allPharmaLots || [];
+  const chambers = chambersData || [];
+
+  if (lotSelect) {
+    lotSelect.innerHTML = '';
+    const activeLots = lots.filter(l => l.status !== 'descartado' && l.status !== 'esgotado');
+    if (activeLots.length === 0) {
+      lotSelect.innerHTML = '<option value="">Nenhum lote ativo disponível</option>';
+    } else {
+      activeLots.forEach(l => {
+        const opt = document.createElement('option');
+        opt.value = l.id;
+        const tMin = (l.temp_min !== undefined) ? l.temp_min.toFixed(1) : '2.0';
+        const tMax = (l.temp_max !== undefined) ? l.temp_max.toFixed(1) : '8.0';
+        opt.innerText = `${l.lot_number} — ${l.product_trade_name} (${l.chamber_name || l.chamber_id}) [Exige: ${tMin}°C a ${tMax}°C]`;
+        if (preferredLotId && l.id === Number(preferredLotId)) {
+          opt.selected = true;
+        }
+        lotSelect.appendChild(opt);
+      });
+    }
+  }
+
+  if (sourceChamberSelect) {
+    sourceChamberSelect.innerHTML = '';
+    chambers.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      const count = lots.filter(l => l.chamber_id === c.id && l.status !== 'descartado' && l.status !== 'esgotado').length;
+      opt.innerText = `${c.name} (${count} lotes ativos) [${c.temp_min.toFixed(1)}°C a ${c.temp_max.toFixed(1)}°C]`;
+      if (preferredSourceChamberId && c.id === preferredSourceChamberId) {
+        opt.selected = true;
+      }
+      sourceChamberSelect.appendChild(opt);
+    });
+  }
+
+  if (targetChamberSelect) {
+    targetChamberSelect.innerHTML = '';
+    chambers.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.innerText = `${c.name} [${c.temp_min.toFixed(1)}°C a ${c.temp_max.toFixed(1)}°C]`;
+      targetChamberSelect.appendChild(opt);
+    });
+  }
+
+  if (preferredSourceChamberId) {
+    setTransferMode('chamber');
+  } else {
+    setTransferMode('lot');
+  }
+}
+
+function onTransferLotSelectChange() {
+  const lotSelect = document.getElementById('transfer-lot-select');
+  if (!lotSelect || !lotSelect.value) return;
+
+  const lots = window.allPharmaLots || [];
+  const selectedLot = lots.find(l => l.id === Number(lotSelect.value));
+  if (!selectedLot) return;
+
+  const elProd = document.getElementById('transfer-info-prod-name');
+  const elLoc = document.getElementById('transfer-info-current-location');
+  const elRange = document.getElementById('transfer-info-temp-range');
+
+  if (elProd) elProd.innerText = `${selectedLot.product_trade_name} (Lote: ${selectedLot.lot_number})`;
+  if (elLoc) elLoc.innerText = `${selectedLot.chamber_name || selectedLot.chamber_id} — ${selectedLot.shelf_location || 'Local não especificado'}`;
+  const tMin = (selectedLot.temp_min !== undefined) ? selectedLot.temp_min : 2.0;
+  const tMax = (selectedLot.temp_max !== undefined) ? selectedLot.temp_max : 8.0;
+  if (elRange) elRange.innerText = `${tMin.toFixed(1).replace('.', ',')} °C a ${tMax.toFixed(1).replace('.', ',')} °C`;
+
+  updateTargetChamberOptionsForLot(selectedLot);
+  onTransferTargetChamberChange();
+}
+
+function onTransferSourceChamberChange() {
+  const srcSelect = document.getElementById('transfer-source-chamber-select');
+  if (!srcSelect || !srcSelect.value) return;
+
+  const srcId = srcSelect.value;
+  const chambers = chambersData || [];
+  const lots = window.allPharmaLots || [];
+  const srcChamber = chambers.find(c => c.id === srcId);
+  const chamberLots = lots.filter(l => l.chamber_id === srcId && l.status !== 'descartado' && l.status !== 'esgotado');
+
+  const elProd = document.getElementById('transfer-info-prod-name');
+  const elLoc = document.getElementById('transfer-info-current-location');
+  const elRange = document.getElementById('transfer-info-temp-range');
+
+  if (elProd) elProd.innerText = `Carga Completa (${chamberLots.length} lotes de medicamentos)`;
+  if (elLoc) elLoc.innerText = srcChamber ? `${srcChamber.name} (${srcChamber.id})` : srcId;
+  if (elRange) {
+    if (srcChamber) {
+      elRange.innerText = `${srcChamber.temp_min.toFixed(1).replace('.', ',')} °C a ${srcChamber.temp_max.toFixed(1).replace('.', ',')} °C`;
+    } else {
+      elRange.innerText = '--';
+    }
+  }
+
+  updateTargetChamberOptionsForChamber(srcId);
+  onTransferTargetChamberChange();
+}
+
+function updateTargetChamberOptionsForLot(lot) {
+  const targetSelect = document.getElementById('transfer-target-chamber-select');
+  if (!targetSelect) return;
+
+  const chambers = chambersData || [];
+  const pMin = (lot.temp_min !== undefined) ? lot.temp_min : 2.0;
+  const pMax = (lot.temp_max !== undefined) ? lot.temp_max : 8.0;
+
+  targetSelect.innerHTML = '';
+  chambers.forEach(c => {
+    if (c.id === lot.chamber_id) return;
+    const opt = document.createElement('option');
+    opt.value = c.id;
+
+    const evalResult = evaluateThermalInterlock(pMin, pMax, c.temp_min, c.temp_max, lot.product_trade_name, c.name);
+    const tag = evalResult.compatible ? '✅ COMPATÍVEL' : '⛔ INCOMPATÍVEL';
+    opt.innerText = `${c.name} [${c.temp_min.toFixed(1)}°C a ${c.temp_max.toFixed(1)}°C] — ${tag}`;
+    targetSelect.appendChild(opt);
+  });
+}
+
+function updateTargetChamberOptionsForChamber(sourceChamberId) {
+  const targetSelect = document.getElementById('transfer-target-chamber-select');
+  if (!targetSelect) return;
+
+  const chambers = chambersData || [];
+  targetSelect.innerHTML = '';
+  chambers.forEach(c => {
+    if (c.id === sourceChamberId) return;
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.innerText = `${c.name} [${c.temp_min.toFixed(1)}°C a ${c.temp_max.toFixed(1)}°C]`;
+    targetSelect.appendChild(opt);
+  });
+}
+
+function evaluateThermalInterlock(pMin, pMax, cMin, cMax, prodName, chamberName) {
+  if (cMin > pMax) {
+    return {
+      compatible: false,
+      title: 'TRAVA METROLÓGICA ATIVADA (ANVISA RDC 430/2020)',
+      message: `Incompatibilidade crítica: A câmara de destino '${chamberName}' opera a [${cMin.toFixed(1)} °C a ${cMax.toFixed(1)} °C], que é totalmente SUPERIOR ao teto térmico do produto '${prodName}' (máximo de ${pMax.toFixed(1)} °C). Risco de perda irreversível de estabilidade e potência biológica.`
+    };
+  }
+  if (cMax < pMin) {
+    return {
+      compatible: false,
+      title: 'TRAVA METROLÓGICA ATIVADA (ANVISA RDC 430/2020)',
+      message: `Incompatibilidade crítica: A câmara de destino '${chamberName}' opera a [${cMin.toFixed(1)} °C a ${cMax.toFixed(1)} °C], que é totalmente INFERIOR ao piso térmico do produto '${prodName}' (mínimo de ${pMin.toFixed(1)} °C). Risco de congelamento e quebra de estrutura molecular.`
+    };
+  }
+  if (cMin < (pMin - 1.0)) {
+    return {
+      compatible: false,
+      title: 'TRAVA METROLÓGICA ATIVADA (ANVISA RDC 430/2020)',
+      message: `Risco de desvio térmico: A câmara de destino '${chamberName}' pode atingir ${cMin.toFixed(1)} °C, abaixo do limite seguro de conservação do produto '${prodName}' (${pMin.toFixed(1)} °C).`
+    };
+  }
+  if (cMax > (pMax + 1.0)) {
+    return {
+      compatible: false,
+      title: 'TRAVA METROLÓGICA ATIVADA (ANVISA RDC 430/2020)',
+      message: `Risco de desvio térmico: A câmara de destino '${chamberName}' pode atingir ${cMax.toFixed(1)} °C, acima do limite seguro de conservação do produto '${prodName}' (${pMax.toFixed(1)} °C).`
+    };
+  }
+
+  return {
+    compatible: true,
+    title: 'CONFORMIDADE TÉRMICA VALIDADA',
+    message: `A câmara de destino '${chamberName}' opera na faixa ideal de [${cMin.toFixed(1)} °C a ${cMax.toFixed(1)} °C], plenamente adequada para conservar o medicamento '${prodName}' (exigência: ${pMin.toFixed(1)} °C a ${pMax.toFixed(1)} °C).`
+  };
+}
+
+function onTransferTargetChamberChange() {
+  const targetSelect = document.getElementById('transfer-target-chamber-select');
+  const feedback = document.getElementById('transfer-thermal-feedback');
+  const submitBtn = document.getElementById('btn-submit-transfer');
+
+  if (!targetSelect || !targetSelect.value) {
+    if (feedback) feedback.style.display = 'none';
+    return;
+  }
+
+  const targetId = targetSelect.value;
+  const chambers = chambersData || [];
+  const targetChamber = chambers.find(c => c.id === targetId);
+  if (!targetChamber) return;
+
+  let evalResult = { compatible: true, title: 'VALIDADO', message: 'Câmara selecionada' };
+
+  if (window.currentTransferMode === 'lot') {
+    const lotSelect = document.getElementById('transfer-lot-select');
+    const lots = window.allPharmaLots || [];
+    const selectedLot = lots.find(l => l.id === Number(lotSelect ? lotSelect.value : 0));
+    if (selectedLot) {
+      const pMin = (selectedLot.temp_min !== undefined) ? selectedLot.temp_min : 2.0;
+      const pMax = (selectedLot.temp_max !== undefined) ? selectedLot.temp_max : 8.0;
+      evalResult = evaluateThermalInterlock(pMin, pMax, targetChamber.temp_min, targetChamber.temp_max, selectedLot.product_trade_name, targetChamber.name);
+    }
+  } else {
+    const srcSelect = document.getElementById('transfer-source-chamber-select');
+    const srcId = srcSelect ? srcSelect.value : '';
+    const lots = window.allPharmaLots || [];
+    const chamberLots = lots.filter(l => l.chamber_id === srcId && l.status !== 'descartado' && l.status !== 'esgotado');
+
+    if (chamberLots.length === 0) {
+      evalResult = { compatible: true, title: 'CÂMARA VAZIA', message: 'Não há lotes ativos para evacuar nesta câmara.' };
+    } else {
+      let allOk = true;
+      for (const it of chamberLots) {
+        const pMin = (it.temp_min !== undefined) ? it.temp_min : 2.0;
+        const pMax = (it.temp_max !== undefined) ? it.temp_max : 8.0;
+        const res = evaluateThermalInterlock(pMin, pMax, targetChamber.temp_min, targetChamber.temp_max, it.product_trade_name, targetChamber.name);
+        if (!res.compatible) {
+          allOk = false;
+          evalResult = res;
+          break;
+        }
+      }
+      if (allOk) {
+        evalResult = {
+          compatible: true,
+          title: 'CONFORMIDADE TÉRMICA VALIDADA',
+          message: `Todos os ${chamberLots.length} lotes de medicamentos são 100% compatíveis com a câmara '${targetChamber.name}' (${targetChamber.temp_min.toFixed(1)} °C a ${targetChamber.temp_max.toFixed(1)} °C).`
+        };
+      }
+    }
+  }
+
+  if (feedback) {
+    feedback.style.display = 'block';
+    if (evalResult.compatible) {
+      feedback.style.background = 'rgba(16, 185, 129, 0.12)';
+      feedback.style.border = '1.5px solid rgba(16, 185, 129, 0.4)';
+      feedback.style.color = '#6EE7B7';
+      feedback.innerHTML = `
+        <div style="font-weight: 700; display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          ${evalResult.title}
+        </div>
+        <div>${evalResult.message}</div>
+      `;
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.style.opacity = '1';
+        submitBtn.style.cursor = 'pointer';
+        submitBtn.title = '';
+      }
+    } else {
+      feedback.style.background = 'rgba(239, 68, 68, 0.15)';
+      feedback.style.border = '1.5px solid rgba(239, 68, 68, 0.5)';
+      feedback.style.color = '#FCA5A5';
+      feedback.innerHTML = `
+        <div style="font-weight: 700; display: flex; align-items: center; gap: 6px; margin-bottom: 4px; color: #EF4444;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+          ${evalResult.title}
+        </div>
+        <div>${evalResult.message}</div>
+      `;
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.style.opacity = '0.4';
+        submitBtn.style.cursor = 'not-allowed';
+        submitBtn.title = 'Transferência bloqueada por incompatibilidade térmica (ANVISA RDC 430/2020).';
+      }
+    }
+  }
+}
+
+async function submitTransferStock() {
+  const targetSelect = document.getElementById('transfer-target-chamber-select');
+  const shelfInput = document.getElementById('transfer-shelf-location');
+  const reasonSelect = document.getElementById('transfer-reason');
+  const justInput = document.getElementById('transfer-justification');
+  const pwdInput = document.getElementById('transfer-password');
+  const submitBtn = document.getElementById('btn-submit-transfer');
+
+  const targetChamberId = targetSelect ? targetSelect.value : '';
+  const shelf = shelfInput ? shelfInput.value.trim() : 'Prateleira Geral';
+  const reason = reasonSelect ? reasonSelect.value : '';
+  const just = justInput ? justInput.value.trim() : '';
+  const pwd = pwdInput ? pwdInput.value : '';
+
+  if (!targetChamberId) {
+    alert('Selecione a câmara de destino.');
+    return;
+  }
+  if (!just) {
+    alert('Informe o parecer técnico / justificativa para a transferência.');
+    return;
+  }
+  if (!pwd) {
+    alert('Digite sua senha para confirmar a assinatura eletrônica.');
+    return;
+  }
+
+  const payload = {
+    target_chamber_id: targetChamberId,
+    shelf_location: shelf,
+    reason: reason,
+    justification: just,
+    password: pwd
+  };
+
+  if (window.currentTransferMode === 'lot') {
+    const lotSelect = document.getElementById('transfer-lot-select');
+    payload.lot_id = Number(lotSelect ? lotSelect.value : 0);
+    if (!payload.lot_id) {
+      alert('Selecione o lote a ser transferido.');
+      return;
+    }
+  } else {
+    const srcSelect = document.getElementById('transfer-source-chamber-select');
+    payload.source_chamber_id = srcSelect ? srcSelect.value : '';
+    if (!payload.source_chamber_id) {
+      alert('Selecione a câmara de origem a ser evacuada.');
+      return;
+    }
+  }
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerText = 'Validando e Transferindo...';
+  }
+
+  try {
+    const res = await fetch('/api/pharma/stock/transfer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      alert(`Bloqueio de Transferência: ${data.error || 'Erro na validação regulatória.'}`);
+      return;
+    }
+
+    alert(data.message || 'Transferência realizada com sucesso!');
+    closeTransferModal();
+
+    await loadLots();
+    await loadChambers(true);
+  } catch (err) {
+    console.error('Erro na requisição de transferência:', err);
+    alert('Erro de comunicação ao efetuar transferência.');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerText = 'Confirmar Transferência';
     }
   }
 }

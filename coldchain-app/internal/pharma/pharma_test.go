@@ -765,3 +765,97 @@ func TestPharmaDecommissionChamber(t *testing.T) {
 		t.Errorf("esperava 0 câmaras com ID TEMP-TEST após descomissionamento, obteve %d", count)
 	}
 }
+
+func TestThermalCompatibilityAndTransfer(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// 1. Testes unitários da trava de compatibilidade térmica
+	// 1.1 Almoxarifado (15°C a 25°C) tentando transferir para Ultrafreezer (-80°C) -> BLOQUEIO
+	compat, msg := CheckThermalCompatibility(15.0, 25.0, -86.0, -60.0, "Medicamento Ambiente", "Ultrafreezer")
+	if compat {
+		t.Errorf("esperava bloqueio térmico para medicamento de almoxarifado em ultrafreezer, mas obteve sucesso: %s", msg)
+	}
+
+	// 1.2 Vacina (2°C a 8°C) tentando transferir para Almoxarifado (15°C a 25°C) -> BLOQUEIO
+	compat, msg = CheckThermalCompatibility(2.0, 8.0, 15.0, 25.0, "Vacina Meningocócica", "Almoxarifado")
+	if compat {
+		t.Errorf("esperava bloqueio térmico para vacina em almoxarifado, mas obteve sucesso: %s", msg)
+	}
+
+	// 1.3 Vacina (2°C a 8°C) tentando transferir para Câmara de Congelados (-20°C a -10°C) -> BLOQUEIO
+	compat, msg = CheckThermalCompatibility(2.0, 8.0, -20.0, -10.0, "Vacina Meningocócica", "Câmara R Congelados")
+	if compat {
+		t.Errorf("esperava bloqueio térmico para vacina em câmara de congelados, mas obteve sucesso: %s", msg)
+	}
+
+	// 1.4 Vacina (2°C a 8°C) para Câmara B (2°C a 8°C) -> APROVADO
+	compat, msg = CheckThermalCompatibility(2.0, 8.0, 2.0, 8.0, "Vacina Meningocócica", "Câmara B")
+	if !compat {
+		t.Errorf("esperava compatibilidade térmica para vacina em câmara 2 a 8°C, mas falhou: %s", msg)
+	}
+
+	// 2. Teste de Transferência Real no Banco de Dados com Trava Metrológica
+	// Pega o lote 1 (Vacina Meningocócica na câmara CH-A, 2°C a 8°C)
+	var lotID int64
+	var sourceChamber string
+	err := db.QueryRow("SELECT id, chamber_id FROM lots WHERE lot_number = 'VAC-MEN-2026-A1'").Scan(&lotID, &sourceChamber)
+	if err != nil {
+		t.Fatalf("lote VAC-MEN-2026-A1 não encontrado no banco de testes: %v", err)
+	}
+
+	// 2.1 Tentar transferir vacina para Almoxarifado ALM-01 -> DEVE FALHAR COM ERRO DE TRAVA TÉRMICA
+	err = TransferLot(db, lotID, "ALM-01", "Prat 1", "Teste Inválido", "Dr. Lucas")
+	if err == nil {
+		t.Errorf("esperava falha ao transferir vacina de 2-8°C para almoxarifado ALM-01, mas a transferência foi aceita!")
+	}
+
+	// 2.2 Tentar transferir vacina para Ultrafreezer ULT-01 -> DEVE FALHAR COM ERRO DE TRAVA TÉRMICA
+	err = TransferLot(db, lotID, "ULT-01", "Rack 1", "Teste Inválido", "Dr. Lucas")
+	if err == nil {
+		t.Errorf("esperava falha ao transferir vacina de 2-8°C para ultrafreezer ULT-01, mas a transferência foi aceita!")
+	}
+
+	// 2.3 Transferir vacina para Câmara B (CH-B, 2°C a 8°C) -> DEVE TER SUCESSO
+	err = TransferLot(db, lotID, "CH-B", "Prateleira 3, Bandeja A", "Balanceamento de Carga", "Dr. Lucas")
+	if err != nil {
+		t.Fatalf("esperava sucesso ao transferir vacina para câmara compatível CH-B, mas obteve erro: %v", err)
+	}
+
+	// 2.4 Verifica se a câmara do lote foi atualizada
+	var currentChamber string
+	_ = db.QueryRow("SELECT chamber_id FROM lots WHERE id = ?", lotID).Scan(&currentChamber)
+	if currentChamber != "CH-B" {
+		t.Errorf("esperava lote alocado em CH-B, obteve %s", currentChamber)
+	}
+
+	// 2.5 Verifica se foi gravado o evento no histórico do lote (lot_history)
+	var histCount int
+	_ = db.QueryRow("SELECT COUNT(*) FROM lot_history WHERE lot_id = ? AND event_type = 'TRANSFERENCIA_INTERNA'", lotID).Scan(&histCount)
+	if histCount == 0 {
+		t.Errorf("esperava registro do evento TRANSFERENCIA_INTERNA em lot_history, mas nenhum foi encontrado")
+	}
+
+	// 3. Teste de Evacuação de Câmara (TransferChamberLots)
+	// Tentar evacuar CH-B para ALM-01 deve ser bloqueado porque CH-B contém vacinas termolábeis
+	_, err = TransferChamberLots(db, "CH-B", "ALM-01", "Prateleira Geral", "Parada para manutenção", "Dr. Lucas")
+	if err == nil {
+		t.Errorf("esperava bloqueio térmico ao evacuar câmara com vacinas para almoxarifado, mas passou!")
+	}
+
+	// Evacuar CH-B para CH-A (ambas 2°C a 8°C) deve passar
+	count, err := TransferChamberLots(db, "CH-B", "CH-A", "Prateleira Geral Evacuação", "Parada para manutenção", "Dr. Lucas")
+	if err != nil {
+		t.Fatalf("esperava sucesso ao evacuar CH-B para CH-A, mas obteve erro: %v", err)
+	}
+	if count == 0 {
+		t.Errorf("esperava transferir pelo menos 1 lote, transferiu %d", count)
+	}
+
+	// Agora CH-B não tem mais nenhum lote ativo
+	var chBLots int
+	_ = db.QueryRow("SELECT COUNT(*) FROM lots WHERE chamber_id = 'CH-B' AND status != 'descartado'").Scan(&chBLots)
+	if chBLots != 0 {
+		t.Errorf("esperava 0 lotes em CH-B após evacuação completa, encontrou %d", chBLots)
+	}
+}

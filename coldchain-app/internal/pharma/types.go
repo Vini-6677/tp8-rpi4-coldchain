@@ -74,6 +74,8 @@ type Lot struct {
 	UnitPrice        float64 `json:"unit_price"`
 	DaysToExpiry     int     `json:"days_to_expiry"`
 	FefoRank         int     `json:"fefo_rank"`
+	TempMin          float64 `json:"temp_min"`
+	TempMax          float64 `json:"temp_max"`
 	CreatedAt        string  `json:"created_at"`
 }
 
@@ -249,4 +251,38 @@ type QualityDossier struct {
 	GeneratedAt    string              `json:"generated_at"`
 	TechnicalLead  string              `json:"technical_lead"`
 	CRF            string              `json:"crf"`
+}
+
+// TransferLotRequest encapsula os parâmetros de transferência de um lote específico.
+type TransferLotRequest struct {
+	LotID           int64  `json:"lot_id"`
+	TargetChamberID string `json:"target_chamber_id"`
+	ShelfLocation   string `json:"shelf_location"`
+	Reason          string `json:"reason"`
+	Justification   string `json:"justification"`
+	ResponsibleName string `json:"responsible_name"`
+	Password        string `json:"password"`
+}
+
+// TransferChamberLotsRequest encapsula os parâmetros para evacuar todos os lotes de uma câmara de origem.
+type TransferChamberLotsRequest struct {
+	SourceChamberID string `json:"source_chamber_id"`
+	TargetChamberID string `json:"target_chamber_id"`
+	DefaultShelf    string `json:"default_shelf"`
+	Reason          string `json:"reason"`
+	Justification   string `json:"justification"`
+	ResponsibleName string `json:"responsible_name"`
+	Password        string `json:"password"`
+}
+
+// TransferValidationResult representa o parecer de compatibilidade térmica para transferência.
+type TransferValidationResult struct {
+	Compatible bool    `json:"compatible"`
+	Message    string  `json:"message"`
+	ProdName   string  `json:"prod_name"`
+	ProdMin    float64 `json:"prod_min"`
+	ProdMax    float64 `json:"prod_max"`
+	TargetName string  `json:"target_name"`
+	TargetMin  float64 `json:"target_min"`
+	TargetMax  float64 `json:"target_max"`
 }

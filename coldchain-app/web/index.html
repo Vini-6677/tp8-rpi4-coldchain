@@ -1828,6 +1828,10 @@
             <button class="btn-action-dispensation" onclick="openExitModal()">
               Saída / Dispensação (Por Validade)
             </button>
+            <button class="btn-action-secondary" id="btn-transfer-stock" onclick="openTransferModal()" style="display: inline-flex; align-items: center; gap: 6px;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4"/></svg>
+              Transferir Medicamentos
+            </button>
             <button class="btn-action-secondary" id="btn-new-product" onclick="openNewProductModal()">
               Novo Medicamento (Catálogo)
             </button>
@@ -2230,6 +2234,116 @@
   </div>
 
   <!-- =========================================================================
+       MODAL DE TRANSFERÊNCIA DE MEDICAMENTOS (TRAVA METROLÓGICA ANVISA RDC 430/2020)
+       ========================================================================= -->
+  <div id="modal-transfer-stock" class="modal-backdrop">
+    <div class="modal-box" style="max-width: 640px;">
+      <div class="modal-header">
+        <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4"/></svg>
+          Transferência de Medicamentos e Cadeia Térmica
+        </div>
+        <button class="btn-close-modal" onclick="closeTransferModal()">&times;</button>
+      </div>
+
+      <!-- Seletor de Modo: Lote Individual vs Evacuação de Câmara Completa -->
+      <div style="display: flex; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 4px; margin-bottom: 16px; gap: 4px;">
+        <button type="button" id="tab-transfer-mode-lot" onclick="setTransferMode('lot')" style="flex: 1; padding: 8px 12px; font-size: 12.5px; font-weight: 600; border-radius: 6px; border: none; cursor: pointer; background: #2563EB; color: #FFFFFF; transition: all 0.2s;">
+          Transferir Lote Específico
+        </button>
+        <button type="button" id="tab-transfer-mode-chamber" onclick="setTransferMode('chamber')" style="flex: 1; padding: 8px 12px; font-size: 12.5px; font-weight: 600; border-radius: 6px; border: none; cursor: pointer; background: transparent; color: #94A3B8; transition: all 0.2s;">
+          Evacuar Câmara Completa (Parada / Manutenção)
+        </button>
+      </div>
+
+      <form id="form-transfer-stock" onsubmit="event.preventDefault(); submitTransferStock();">
+        <!-- Modo 1: Lote Individual -->
+        <div id="transfer-mode-lot-fields">
+          <div class="form-group">
+            <label class="form-label">Selecione o Lote do Medicamento</label>
+            <select id="transfer-lot-select" class="form-control" onchange="onTransferLotSelectChange()" style="font-weight: 600;">
+              <!-- Preenchido via JS -->
+            </select>
+          </div>
+        </div>
+
+        <!-- Modo 2: Câmara Completa -->
+        <div id="transfer-mode-chamber-fields" style="display: none;">
+          <div class="form-group">
+            <label class="form-label">Câmara de Origem a ser Esvaziada / Parada</label>
+            <select id="transfer-source-chamber-select" class="form-control" onchange="onTransferSourceChamberChange()" style="font-weight: 600;">
+              <!-- Preenchido via JS -->
+            </select>
+          </div>
+        </div>
+
+        <!-- Card de Informações Térmicas do Produto / Origem -->
+        <div id="transfer-product-info-box" style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 12.5px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="color: #94A3B8;">Medicamento / Carga:</span>
+            <strong id="transfer-info-prod-name" style="color: #FFFFFF;">--</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="color: #94A3B8;">Localização Atual:</span>
+            <span id="transfer-info-current-location" style="color: #CBD5E1;">--</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="color: #94A3B8;">Faixa Térmica Requerida (Bula / ANVISA):</span>
+            <span id="transfer-info-temp-range" style="color: #38BDF8; font-weight: 700; background: rgba(56, 189, 248, 0.12); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.25);">--</span>
+          </div>
+        </div>
+
+        <!-- Seleção da Câmara de Destino -->
+        <div class="form-group">
+          <label class="form-label">Câmara / Geladeira de Destino</label>
+          <select id="transfer-target-chamber-select" class="form-control" onchange="onTransferTargetChamberChange()" required style="font-weight: 600;">
+            <!-- Preenchido via JS -->
+          </select>
+        </div>
+
+        <!-- BANNER DE VALIDAÇÃO TÉRMICA EM TEMPO REAL (TRAVA METROLÓGICA) -->
+        <div id="transfer-thermal-feedback" style="display: none; border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; font-size: 12.5px; line-height: 1.45;">
+          <!-- Injetado dinamicamente via JS -->
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Nova Prateleira / Posição no Destino</label>
+          <input type="text" id="transfer-shelf-location" class="form-control" placeholder="Ex: Prateleira 2, Bandeja B" value="Prateleira Geral" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Motivo da Movimentação Regulatória</label>
+          <select id="transfer-reason" class="form-control" required>
+            <option value="Parada de Equipamento / Manutenção Preventiva">Parada de Equipamento / Manutenção Preventiva</option>
+            <option value="Descomissionamento de Câmara Fria / Geladeira">Descomissionamento de Câmara Fria / Geladeira</option>
+            <option value="Manutenção Corretiva / Falha do Sistema de Refrigeração">Manutenção Corretiva / Falha do Sistema de Refrigeração</option>
+            <option value="Redistribuição de Carga / Otimização de Espaço">Redistribuição de Carga / Otimização de Espaço</option>
+            <option value="Transferência para Doca / Preparação de Expedição">Transferência para Doca / Preparação de Expedição</option>
+            <option value="Outro Motivo Regulatório Documentado">Outro Motivo Regulatório Documentado</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Parecer Técnico / Justificativa</label>
+          <textarea id="transfer-justification" class="form-control" rows="2" placeholder="Descreva a finalidade da transferência e garantia de integridade da cadeia de frio..." required style="font-size: 13px;"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Confirmação de Senha (Assinatura Eletrônica 21 CFR Part 11)</label>
+          <input type="password" id="transfer-password" class="form-control" placeholder="Digite sua senha de acesso para assinar a transferência" required autocomplete="current-password">
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+          <button type="button" class="btn-action-secondary" onclick="closeTransferModal()">Cancelar</button>
+          <button type="submit" class="btn-action-entry" id="btn-submit-transfer" style="background: #2563EB;">
+            Confirmar Transferência
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- =========================================================================
        MODAL 3: LAUDO PERICIAL DE RASTREABILIDADE DO LOTE (TRACE COMPLETO)
        ========================================================================= -->
   <div id="modal-trace" class="modal-backdrop">
@@ -2557,6 +2671,19 @@
           <div>Faixa Operacional: <span id="decom-chamber-range" style="color: #60A5FA; font-weight: 600;">--</span></div>
           <div>Lotes Ativos: <span id="decom-chamber-lots" style="color: #10B981; font-weight: 600;">--</span></div>
           <div style="grid-column: span 2;">Sensores Vinculados: <span id="decom-chamber-sensors" style="color: #CBD5E1;">--</span></div>
+        </div>
+
+        <!-- ALERTA DE LOTES ATIVOS E BOTÃO DE TRANSFERÊNCIA DE CÂMARA -->
+        <div id="decom-transfer-alert" style="display: none; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; font-size: 12.5px; color: #FDE68A;">
+          <div style="font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Bloqueio Regulatório Ativo (ANVISA RDC 430/2020)
+          </div>
+          <div>Esta câmara possui medicamentos armazenados. Para garantir a rastreabilidade e integridade térmica, transfira a carga antes de efetivar o descomissionamento:</div>
+          <button type="button" class="btn-action-entry" id="btn-decom-open-transfer" style="margin-top: 10px; width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: #2563EB;" onclick="onDecomTransferButtonClick()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4"/></svg>
+            Transferir Medicamentos Desta Câmara
+          </button>
         </div>
 
         <div class="form-group">
