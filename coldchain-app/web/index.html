@@ -73,14 +73,15 @@
     }
 
     .login-card {
-      background: rgba(20, 30, 60, 0.85);
-      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(20, 30, 60, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.14);
       border-radius: 16px;
-      padding: 36px 32px;
+      padding: 40px 32px 34px 32px;
       width: 100%;
-      max-width: 440px;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
-      backdrop-filter: blur(12px);
+      max-width: 380px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(16px);
+      box-sizing: border-box;
     }
 
     .login-header {
@@ -1624,39 +1625,20 @@
   <div id="login-screen" class="login-overlay">
     <div class="login-card">
       <div class="login-header">
-        <div class="login-logo-badge">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
-        </div>
         <div class="login-title">ColdChain Pharma RT</div>
-        <div class="login-sub">Cadeia de Frio Farmacêutica • ANVISA RDC 430/2020 & RDC 197/2017</div>
       </div>
 
       <form id="form-login" onsubmit="event.preventDefault(); submitLogin();">
         <div class="form-group">
-          <label class="form-label">Usuário Hospitalar</label>
-          <input type="text" id="login-username" class="form-control" placeholder="ex: tecnico" required autocomplete="username">
+          <label class="form-label" for="login-username">Usuário Hospitalar</label>
+          <input type="text" id="login-username" class="form-control" placeholder="Digite seu usuário" required autocomplete="username">
         </div>
         <div class="form-group">
-          <label class="form-label">Senha de Acesso</label>
+          <label class="form-label" for="login-password">Senha de Acesso</label>
           <input type="password" id="login-password" class="form-control" placeholder="••••••••" required autocomplete="current-password">
         </div>
         <button type="submit" class="btn-login" id="btn-login-submit">Autenticar no Sistema</button>
       </form>
-
-      <div class="demo-accounts">
-        <div class="demo-accounts-title">Acesso Rápido por Perfil (Ambiente de Testes)</div>
-        <div class="demo-grid" style="grid-template-columns: repeat(3, 1fr);">
-          <div class="demo-badge" onclick="fillLogin('tecnico', 'tecnico123')">
-            <strong>Responsável Técnico (RT)</strong><br><span style="color:#64748B;">tecnico123</span>
-          </div>
-          <div class="demo-badge" onclick="fillLogin('enfermeiro', 'enfermeiro123')">
-            <strong>Enfermeiro</strong><br><span style="color:#64748B;">enfermeiro123</span>
-          </div>
-          <div class="demo-badge" onclick="fillLogin('admin', 'admin123')">
-            <strong>Administrador</strong><br><span style="color:#64748B;">admin123</span>
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 
@@ -2439,7 +2421,7 @@
   </div>
 
 
-  <script src="/static/app.js?v=clean_history_v29"></script>
+  <script src="/static/app.js?v=clean_login_v30"></script>
 
   <!-- =========================================================================
        MODAL 5: CADASTRO DE MEDICAMENTO (CATÁLOGO ANVISA)
@@ -2836,8 +2818,13 @@
         <strong style="color: #FBBF24;">Atenção:</strong> Salve sua chave em local seguro. A partir de agora, ela autenticará sua <strong>entrada no sistema</strong> e servirá como sua <strong>assinatura eletrônica regulatória</strong> em transferências de medicamentos, descomissionamento e encerramento de alarmes.
       </div>
 
-      <button type="button" onclick="acknowledgeCryptoKey()" style="width: 100%; height: 42px; display: flex; align-items: center; justify-content: center; font-size: 13.5px; font-weight: 700; background: #2563EB; border: 1px solid #3B82F6; color: #FFFFFF; border-radius: 6px; cursor: pointer;">
-        Compreendi e Salvei Minha Chave — Acessar Sistema
+      <div style="margin-bottom: 14px;">
+        <label class="form-label" style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #94A3B8; margin-bottom: 6px; display: block;">Validação Obrigatória: Confirme a Chave Criptográfica Gerada</label>
+        <input type="text" id="input-confirm-crypto-key" class="form-control" placeholder="Cole a chave CC-KEY-... para validar" style="font-family: monospace; font-size: 13.5px; text-align: center; letter-spacing: 1px; height: 42px;">
+      </div>
+
+      <button type="button" onclick="acknowledgeCryptoKey()" style="width: 100%; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 13.5px; font-weight: 700; background: #2563EB; border: 1px solid #3B82F6; color: #FFFFFF; border-radius: 6px; cursor: pointer; transition: all 0.2s;">
+        Validar Chave Criptográfica e Acessar Sistema
       </button>
     </div>
   </div>

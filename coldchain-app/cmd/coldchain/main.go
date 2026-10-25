@@ -276,10 +276,20 @@ func (a *App) getSession(r *http.Request) (*Session, bool) {
 }
 
 func seedUsers(db *sql.DB) error {
-	// Limpeza e migração: remove usuário 'gerente' e atualiza 'tecnico' para Responsável Técnico
-	_, _ = db.Exec("DELETE FROM users WHERE username = 'gerente' OR role = 'gerente'")
-	_, _ = db.Exec("DELETE FROM sessions WHERE username = 'gerente'")
-	_, _ = db.Exec("UPDATE users SET name = 'Dr. Lucas Silva (Responsável Técnico)' WHERE username = 'tecnico'")
+	// Limpeza e migração: remove trilha de auditoria e mantém exclusivamente o administrador geral
+	_, _ = db.Exec("DROP TRIGGER IF EXISTS trg_audit_logs_no_delete")
+	_, _ = db.Exec("DELETE FROM audit_logs")
+	_, _ = db.Exec(`
+		CREATE TRIGGER IF NOT EXISTS trg_audit_logs_no_delete
+		BEFORE DELETE ON audit_logs
+		BEGIN
+			SELECT RAISE(ABORT, 'Segurança: Logs de auditoria são estritamente append-only e não podem ser excluídos.');
+		END;
+	`)
+
+	_, _ = db.Exec("DELETE FROM users WHERE username != 'admin'")
+	_, _ = db.Exec("DELETE FROM sessions")
+	_, _ = db.Exec("UPDATE users SET first_login = 1, crypto_key_hash = '' WHERE username = 'admin'")
 
 	var count int
 	_ = db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
@@ -288,32 +298,27 @@ func seedUsers(db *sql.DB) error {
 	}
 
 	seeds := []struct {
-		username string
-		password string
-		name     string
-		role     string
+		username   string
+		password   string
+		name       string
+		role       string
+		firstLogin int
 	}{
-		{"admin", "admin123", "Administrador Geral", "admin"},
-		{"tecnico", "tecnico123", "Dr. Lucas Silva (Responsável Técnico)", "tecnico"},
-		{"enfermeiro", "enfermeiro123", "Enf. Carlos Mendes (Enfermeiro)", "enfermeiro"},
+		{"admin", "admin123", "Administrador Geral", "admin", 1},
 	}
 
 	for _, s := range seeds {
 		salt := generateSalt()
 		hash := hashPassword(s.password, salt)
 		_, err := db.Exec(`
-			INSERT INTO users (username, password_hash, salt, name, role, is_blocked)
-			VALUES (?, ?, ?, ?, ?, 0)
-		`, s.username, hash, salt, s.name, s.role)
+			INSERT INTO users (username, password_hash, salt, name, role, is_blocked, first_login, crypto_key_hash)
+			VALUES (?, ?, ?, ?, ?, 0, ?, '')
+		`, s.username, hash, salt, s.name, s.role, s.firstLogin)
 		if err != nil {
 			return err
 		}
 	}
 
-	_, _ = db.Exec(`
-		INSERT INTO audit_logs (username, role, action, details, ip_address)
-		VALUES ('SYSTEM', 'system', 'SYSTEM_INIT', 'Base de dados inicializada com usuários padrão RBAC', '127.0.0.1')
-	`)
 	return nil
 }
 
@@ -907,7 +912,7 @@ func (a *App) routes() http.Handler {
 
 		var targetUser string
 		_ = a.db.QueryRow("SELECT username FROM users WHERE id = ?", req.UserID).Scan(&targetUser)
-		if targetUser == "admin" || targetUser == "tecnico" || targetUser == "enfermeiro" {
+		if targetUser == "admin" {
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(map[string]any{"error": "Não é permitido excluir os perfis padrão do sistema."})
 			return

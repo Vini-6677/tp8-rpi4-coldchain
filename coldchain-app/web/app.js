@@ -2016,7 +2016,7 @@ async function loadUsers() {
         ? '<span class="badge-status em_quarentena" style="font-size:11px; padding:3px 9px;">Pendente (1º Acesso)</span>'
         : '<span class="badge-status liberado" style="font-size:11px; padding:3px 9px;">Chave Ativa</span>';
 
-      const isSeed = (u.username === 'admin' || u.username === 'tecnico' || u.username === 'enfermeiro');
+      const isSeed = (u.username === 'admin');
       const deleteBtn = isSeed ? '' : `
         <button type="button" class="btn-user-delete" onclick="deleteUser(${u.id}, '${u.username}')">
           Excluir
@@ -3392,10 +3392,18 @@ async function submitTransferStock() {
 // =============================================================================
 // GESTÃO DE USUÁRIO E ATIVAÇÃO DE CHAVE CRIPTOGRÁFICA (21 CFR PART 11)
 // =============================================================================
+let activeGeneratedCryptoKey = '';
+
 function openFirstLoginModal(cryptoKey) {
+  activeGeneratedCryptoKey = cryptoKey || '';
   const m = document.getElementById('modal-first-login-crypto');
   const disp = document.getElementById('first-login-key-display');
+  const inp = document.getElementById('input-confirm-crypto-key');
   if (disp) disp.innerText = cryptoKey;
+  if (inp) {
+    inp.value = '';
+    setTimeout(() => inp.focus(), 200);
+  }
   if (m) m.classList.add('active');
 }
 
@@ -3407,13 +3415,17 @@ function closeFirstLoginModal() {
 function copyCryptoKey() {
   const disp = document.getElementById('first-login-key-display');
   const btn = document.getElementById('btn-copy-crypto-key');
+  const inp = document.getElementById('input-confirm-crypto-key');
   if (disp) {
     const text = disp.innerText;
+    if (inp) {
+      inp.value = text;
+    }
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(() => {
         if (btn) {
           const orig = btn.innerText;
-          btn.innerText = 'Chave Copiada com Sucesso!';
+          btn.innerText = '✓ Chave Copiada e Preenchida!';
           btn.style.color = '#34D399';
           setTimeout(() => {
             btn.innerText = orig;
@@ -3422,15 +3434,30 @@ function copyCryptoKey() {
         }
         showToast('Chave copiada para a área de transferência!', 'success');
       }).catch(() => {
-        showToast('Selecione e copie a chave exibida.', 'info');
+        showToast('Chave copiada no campo de validação.', 'info');
       });
     } else {
-      showToast('Selecione e copie a chave exibida.', 'info');
+      showToast('Chave copiada no campo de validação.', 'info');
     }
   }
 }
 
 function acknowledgeCryptoKey() {
+  const inp = document.getElementById('input-confirm-crypto-key');
+  if (inp) {
+    const entered = inp.value.trim();
+    if (!entered) {
+      showToast('Por favor, informe a chave criptográfica exibida para validar o acesso.', 'warning');
+      inp.focus();
+      return;
+    }
+    if (entered !== activeGeneratedCryptoKey) {
+      showToast('A chave informada não confere com a chave gerada. Verifique e tente novamente.', 'error');
+      inp.focus();
+      return;
+    }
+  }
+  showToast('Chave criptográfica validada com sucesso! Acesso concedido.', 'success');
   closeFirstLoginModal();
 }
 
