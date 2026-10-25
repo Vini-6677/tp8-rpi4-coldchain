@@ -3,7 +3,7 @@
   "exec-root": "/run/docker",
   "pidfile": "/run/docker.pid",
   "storage-driver": "overlay2",
-  "userland-proxy": true,
+  "userland-proxy": false,
   "ip6tables": false,
   "log-driver": "local",
   "log-opts": {

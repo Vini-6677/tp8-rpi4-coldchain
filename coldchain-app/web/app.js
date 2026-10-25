@@ -126,9 +126,12 @@ function showLogin() {
 function showApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app-container').style.display = 'flex';
-  if (currentUser) {
-    activeGeneratedCryptoKey = localStorage.getItem('cc_key_' + currentUser.username) || sessionStorage.getItem('cc_key_' + currentUser.username) || '';
-  }
+  // Segurança estrita (21 CFR Part 11): a chave criptográfica de assinatura NUNCA é salva no navegador!
+  activeGeneratedCryptoKey = '';
+  try {
+    for (let k in localStorage) { if (k.startsWith('cc_key_')) localStorage.removeItem(k); }
+    for (let k in sessionStorage) { if (k.startsWith('cc_key_')) sessionStorage.removeItem(k); }
+  } catch(e) {}
 
   document.getElementById('app-user-name').innerText = currentUser.name || currentUser.username;
 
@@ -3659,93 +3662,7 @@ async function submitTransferStock() {
 let activeGeneratedCryptoKey = '';
 
 
-// -----------------------------------------------------------------------------
-// GESTÃO DE CHAVE CRIPTOGRÁFICA PESSOAL (21 CFR PART 11)
-// -----------------------------------------------------------------------------
-function getMyStoredCryptoKey() {
-  if (activeGeneratedCryptoKey) return activeGeneratedCryptoKey;
-  if (!currentUser) return '';
-  return localStorage.getItem('cc_key_' + currentUser.username) || sessionStorage.getItem('cc_key_' + currentUser.username) || '';
-}
-
-function setMyStoredCryptoKey(key) {
-  if (!key) return;
-  activeGeneratedCryptoKey = key;
-  if (currentUser) {
-    localStorage.setItem('cc_key_' + currentUser.username, key);
-    sessionStorage.setItem('cc_key_' + currentUser.username, key);
-  }
-}
-
-function openMyCryptoKeyModal() {
-  const m = document.getElementById('modal-my-crypto-key');
-  const disp = document.getElementById('my-crypto-key-display');
-  const key = getMyStoredCryptoKey();
-  if (disp) {
-    disp.textContent = key || 'Nenhuma chave salva localmente';
-  }
-  if (m) m.classList.add('active');
-}
-
-function closeMyCryptoKeyModal() {
-  const m = document.getElementById('modal-my-crypto-key');
-  if (m) m.classList.remove('active');
-}
-
-function copyMyActiveCryptoKey() {
-  const key = getMyStoredCryptoKey();
-  const btn = document.getElementById('btn-copy-my-key');
-  if (!key) {
-    showToast('Nenhuma chave criptográfica salva. Clique em "Gerar Nova Chave".', 'info');
-    return;
-  }
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(key).then(() => {
-      if (btn) {
-        const orig = btn.innerText;
-        btn.innerText = '✓ Chave Copiada!';
-        setTimeout(() => { btn.innerText = orig; }, 2000);
-      }
-      showToast('Chave criptográfica copiada com sucesso!', 'success');
-    }).catch(() => {
-      showToast(`Chave: ${key}`, 'info');
-    });
-  } else {
-    showToast(`Chave: ${key}`, 'info');
-  }
-}
-
-async function regenerateMyCryptoKey() {
-  if (!confirm('Deseja emitir uma nova Chave Criptográfica Pessoal? A chave anterior será invalidada imediatamente para novas assinaturas (21 CFR Part 11).')) {
-    return;
-  }
-  try {
-    const res = await fetch('/api/auth/regenerate-crypto-key', { method: 'POST' });
-    const data = await res.json();
-    if (!res.ok) {
-      showToast(data.error || 'Erro ao gerar nova chave criptográfica.', 'error');
-      return;
-    }
-    setMyStoredCryptoKey(data.crypto_key);
-    const disp = document.getElementById('my-crypto-key-display');
-    if (disp) disp.textContent = data.crypto_key;
-    showToast('Nova Chave Criptográfica emitida com sucesso e vinculada ao seu usuário!', 'success');
-  } catch (err) {
-    console.error('Erro ao regenerar chave:', err);
-    showToast('Erro de comunicação ao regenerar chave criptográfica.', 'error');
-  }
-}
-
-function insertMyCryptoKeyIntoInput(inputId) {
-  const inp = document.getElementById(inputId);
-  if (!inp) return;
-  const key = getMyStoredCryptoKey();
-  if (!key) {
-    showToast('Chave não encontrada no navegador. Clique no botão "🔑 Minha Chave Digital" no topo para consultar ou emitir sua chave.', 'info');
-    openMyCryptoKeyModal();
-    return;
-  }
-  inp.value = key;
+inp.value = key;
   showToast('Sua Chave Criptográfica foi preenchida para assinatura!', 'success');
 }
 
@@ -3765,6 +3682,11 @@ function openFirstLoginModal(cryptoKey) {
 function closeFirstLoginModal() {
   const m = document.getElementById('modal-first-login-crypto');
   if (m) m.classList.remove('active');
+  activeGeneratedCryptoKey = '';
+  const disp = document.getElementById('first-login-key-display');
+  if (disp) disp.innerText = '--';
+  const inp = document.getElementById('input-confirm-crypto-key');
+  if (inp) inp.value = '';
 }
 
 function copyCryptoKey() {
@@ -3812,8 +3734,16 @@ function acknowledgeCryptoKey() {
       return;
     }
   }
-  setMyStoredCryptoKey(activeGeneratedCryptoKey);
-  showToast('Chave criptográfica validada com sucesso! Acesso concedido.', 'success');
+  // A chave NUNCA é armazenada em localStorage/sessionStorage. O usuário deve guardá-la pessoalmente!
+  activeGeneratedCryptoKey = '';
+  if (inp) inp.value = '';
+  const disp = document.getElementById('first-login-key-display');
+  if (disp) disp.innerText = '--';
+  try {
+    for (let k in localStorage) { if (k.startsWith('cc_key_')) localStorage.removeItem(k); }
+    for (let k in sessionStorage) { if (k.startsWith('cc_key_')) sessionStorage.removeItem(k); }
+  } catch(e) {}
+  showToast('Chave criptográfica confirmada com sucesso! Guarde-a em segurança. Ela NUNCA MAIS será exibida.', 'success');
   closeFirstLoginModal();
 }
 

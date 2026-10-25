@@ -212,17 +212,39 @@ func generateToken() string {
 	return hex.EncodeToString(b)
 }
 
+// getClientIP extrai o IP real da estação cliente que realizou o acesso/operação.
+// Suporta detecção direta via socket TCP do kernel (net.SplitHostPort) e cabeçalhos
+// de proxy reverso / gateway (X-Real-IP, X-Forwarded-For, CF-Connecting-IP, True-Client-IP).
+// Remove prefixos IPv6 mapped IPv4 (::ffff:) para garantir formatação limpa.
 func getClientIP(r *http.Request) string {
-	xff := r.Header.Get("X-Forwarded-For")
-	if xff != "" {
-		parts := strings.Split(xff, ",")
-		return strings.TrimSpace(parts[0])
+	for _, h := range []string{"X-Real-IP", "X-Forwarded-For", "X-Client-IP", "CF-Connecting-IP", "True-Client-IP"} {
+		val := strings.TrimSpace(r.Header.Get(h))
+		if val != "" {
+			parts := strings.Split(val, ",")
+			candidate := strings.TrimSpace(parts[0])
+			if candidate != "" {
+				if host, _, err := net.SplitHostPort(candidate); err == nil {
+					candidate = host
+				}
+				if strings.HasPrefix(candidate, "::ffff:") {
+					candidate = strings.TrimPrefix(candidate, "::ffff:")
+				}
+				return candidate
+			}
+		}
 	}
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err == nil {
-		return ip
+		if strings.HasPrefix(host, "::ffff:") {
+			host = strings.TrimPrefix(host, "::ffff:")
+		}
+		return host
 	}
-	return r.RemoteAddr
+	raw := strings.TrimSpace(r.RemoteAddr)
+	if strings.HasPrefix(raw, "::ffff:") {
+		raw = strings.TrimPrefix(raw, "::ffff:")
+	}
+	return raw
 }
 
 func (a *App) logAudit(username, role, action, details, ip string) {
@@ -650,43 +672,7 @@ func (a *App) routes() http.Handler {
 		json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
 	})
 
-	// API Auth: Obter ou Regenerar Chave Criptográfica Pessoal (21 CFR Part 11)
-	mux.HandleFunc("/api/auth/regenerate-crypto-key", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if r.Method != http.MethodPost {
-			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
-			return
-		}
-		sess, ok := a.getSession(r)
-		if !ok {
-			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]any{"error": "Autenticação requerida."})
-			return
-		}
 
-		var salt string
-		if err := a.db.QueryRow("SELECT salt FROM users WHERE username = ?", sess.Username).Scan(&salt); err != nil {
-			http.Error(w, "Usuário não encontrado", http.StatusInternalServerError)
-			return
-		}
-
-		newKey := generateCryptoKey()
-		newHash := hashPassword(newKey, salt)
-		_, err := a.db.Exec("UPDATE users SET crypto_key_hash = ?, first_login = 0 WHERE username = ?", newHash, sess.Username)
-		if err != nil {
-			http.Error(w, "Erro ao atualizar chave criptográfica", http.StatusInternalServerError)
-			return
-		}
-
-		ip := getClientIP(r)
-		a.logAudit(sess.Username, sess.Role, "CRYPTO_KEY_REGENERATED", fmt.Sprintf("Nova chave criptográfica pessoal 21 CFR Part 11 emitida para '%s'.", sess.Username), ip)
-
-		json.NewEncoder(w).Encode(map[string]any{
-			"status":     "ok",
-			"crypto_key": newKey,
-			"message":    "Nova Chave Criptográfica Pessoal emitida com sucesso!",
-		})
-	})
 
 	// API Auth: Me
 	mux.HandleFunc("/api/auth/me", func(w http.ResponseWriter, r *http.Request) {

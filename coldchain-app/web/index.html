@@ -1673,10 +1673,7 @@
             <div class="user-meta-role" id="app-user-role">Perfil</div>
           </div>
         </div>
-        <button type="button" class="btn-action-secondary" id="btn-my-crypto-key" onclick="openMyCryptoKeyModal()" style="height: 32px; padding: 0 10px; font-size: 11px; display: inline-flex; align-items: center; gap: 5px; border-color: rgba(56, 189, 248, 0.4); color: #38BDF8; background: rgba(56, 189, 248, 0.12); margin-right: 8px;">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-2-2l2 2m0 0l-5 5m-2-2l2 2M3 21l6-6m2-2l2 2M3 21l3-3m-3 3v-4m0 4h4"/></svg>
-        Minha Chave Digital
-      </button>
+
       <button class="btn-logout" onclick="handleLogout()">Sair</button>
       </div>
     </header>
@@ -2186,7 +2183,7 @@
             <input type="password" id="entry-password" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...)" required style="height: 40px; padding: 0 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
               <span style="font-size: 10px; color: #94A3B8;">Apenas chave gerada (senha não aceita)</span>
-              <button type="button" class="btn-action-secondary" style="padding: 2px 7px; font-size: 10px; border-color: rgba(56, 189, 248, 0.35); color: #38BDF8; background: rgba(56, 189, 248, 0.1);" onclick="insertMyCryptoKeyIntoInput('entry-password')">🔑 Inserir Minha Chave</button>
+              
             </div>
           </div>
         </div>
@@ -2258,7 +2255,7 @@
             <input type="password" id="exit-password" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...)" required style="height: 40px; padding: 0 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
               <span style="font-size: 10px; color: #94A3B8;">Apenas chave gerada (senha não aceita)</span>
-              <button type="button" class="btn-action-secondary" style="padding: 2px 7px; font-size: 10px; border-color: rgba(56, 189, 248, 0.35); color: #38BDF8; background: rgba(56, 189, 248, 0.1);" onclick="insertMyCryptoKeyIntoInput('exit-password')">🔑 Inserir Minha Chave</button>
+              
             </div>
           </div>
         </div>
@@ -2368,7 +2365,7 @@
           <input type="password" id="transfer-password" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...) para assinar" required autocomplete="current-password" style="height: 40px; padding: 0 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
               <span style="font-size: 10px; color: #94A3B8;">Apenas chave gerada (senha não aceita)</span>
-              <button type="button" class="btn-action-secondary" style="padding: 2px 7px; font-size: 10px; border-color: rgba(56, 189, 248, 0.35); color: #38BDF8; background: rgba(56, 189, 248, 0.1);" onclick="insertMyCryptoKeyIntoInput('transfer-password')">🔑 Inserir Minha Chave</button>
+              
             </div>
         </div>
 
@@ -2428,10 +2425,7 @@
         </div>
 
         <div class="form-group">
-          <label class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
-            <span>Assinatura Digital (Chave Criptográfica Pessoal CC-KEY-...)</span>
-            <button type="button" class="btn-action-secondary" style="padding: 2px 7px; font-size: 10px; border-color: rgba(56, 189, 248, 0.35); color: #38BDF8; background: rgba(56, 189, 248, 0.1);" onclick="insertMyCryptoKeyIntoInput('dec-signature')">🔑 Inserir Minha Chave</button>
-          </label>
+          <label class="form-label">Assinatura Digital (Chave Criptográfica Pessoal CC-KEY-...)</label>
           <input type="password" id="dec-signature" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...)" required style="height: 40px; padding: 0 12px;">
           <div style="font-size: 11px; color: #94A3B8; margin-top: 4px;">Assinatura estrita: a senha de login não é aceita (21 CFR Part 11). Use sua chave gerada.</div>
         </div>
@@ -2467,10 +2461,7 @@
         </div>
 
         <div class="form-group" style="margin-top: 14px;">
-          <label class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
-            <span>Assinatura Digital (Chave Criptográfica Pessoal CC-KEY-...)</span>
-            <button type="button" class="btn-action-secondary" style="padding: 2px 7px; font-size: 10px; border-color: rgba(56, 189, 248, 0.35); color: #38BDF8; background: rgba(56, 189, 248, 0.1);" onclick="insertMyCryptoKeyIntoInput('resolve-alarm-signature')">🔑 Inserir Minha Chave</button>
-          </label>
+          <label class="form-label">Assinatura Digital (Chave Criptográfica Pessoal CC-KEY-...)</label>
           <input type="password" id="resolve-alarm-signature" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...)" required style="font-size: 13.5px; height: 40px; padding: 0 12px;">
           <div style="font-size: 11px; color: #94A3B8; margin-top: 4px;">Assinatura estrita: a senha de login não é aceita (21 CFR Part 11). Use sua chave gerada.</div>
         </div>
@@ -2559,7 +2550,7 @@
             <input type="password" id="new-product-password" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...)" required style="height: 40px; padding: 0 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
               <span style="font-size: 10px; color: #94A3B8;">Apenas chave gerada (senha não aceita)</span>
-              <button type="button" class="btn-action-secondary" style="padding: 2px 7px; font-size: 10px; border-color: rgba(56, 189, 248, 0.35); color: #38BDF8; background: rgba(56, 189, 248, 0.1);" onclick="insertMyCryptoKeyIntoInput('new-product-password')">🔑 Inserir Minha Chave</button>
+              
             </div>
           </div>
         </div>
@@ -2642,7 +2633,7 @@
             <input type="password" id="new-chamber-password" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...)" required style="height: 40px; padding: 0 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
               <span style="font-size: 10px; color: #94A3B8;">Apenas chave gerada (senha não aceita)</span>
-              <button type="button" class="btn-action-secondary" style="padding: 2px 7px; font-size: 10px; border-color: rgba(56, 189, 248, 0.35); color: #38BDF8; background: rgba(56, 189, 248, 0.1);" onclick="insertMyCryptoKeyIntoInput('new-chamber-password')">🔑 Inserir Minha Chave</button>
+              
             </div>
           </div>
         </div>
@@ -2725,7 +2716,7 @@
             <input type="password" id="sensor-password" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...)" required style="height: 40px; padding: 0 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
               <span style="font-size: 10px; color: #94A3B8;">Apenas chave gerada (senha não aceita)</span>
-              <button type="button" class="btn-action-secondary" style="padding: 2px 7px; font-size: 10px; border-color: rgba(56, 189, 248, 0.35); color: #38BDF8; background: rgba(56, 189, 248, 0.1);" onclick="insertMyCryptoKeyIntoInput('sensor-password')">🔑 Inserir Minha Chave</button>
+              
             </div>
           </div>
         </div>
@@ -2742,35 +2733,6 @@
     <!-- =========================================================================
        MODAL 8: DESCOMISSIONAMENTO DE CÂMARA / GELADEIRA
        ========================================================================= -->
-  <!-- =========================================================================
-       MODAL: CONSULTA / REGENERAÇÃO DE CHAVE CRIPTOGRÁFICA PESSOAL (21 CFR PART 11)
-       ========================================================================= -->
-  <div id="modal-my-crypto-key" class="modal-backdrop">
-    <div class="modal-box" style="max-width: 500px;">
-      <div class="modal-header" style="padding-bottom: 14px; margin-bottom: 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.08);">
-        <div class="modal-title" style="font-size: 16px; font-weight: 700; color: #FFFFFF;">Chave Criptográfica Pessoal (21 CFR Part 11)</div>
-        <button class="btn-close-modal" onclick="closeMyCryptoKeyModal()">&times;</button>
-      </div>
-      <div style="margin-top: 6px; font-size: 13px; color: #CBD5E1; line-height: 1.5;">
-        Esta é a sua chave exclusiva para <strong>assinatura digital</strong> de cadastros, recalibrações, entradas, baixas e transferências no sistema.
-        <div style="margin-top: 6px; color: #FCA5A5; font-size: 12px; font-weight: 600;">
-          ⚠ A senha de login não é permitida para firmar assinaturas digitais regulatórias.
-        </div>
-      </div>
-      <div style="margin: 18px 0; background: #0B1120; border: 1px dashed rgba(56, 189, 248, 0.5); border-radius: 8px; padding: 16px; text-align: center;">
-        <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #94A3B8; display: block; margin-bottom: 6px;">Sua Chave de Assinatura Ativa</span>
-        <div id="my-crypto-key-display" style="font-family: monospace; font-size: 17px; font-weight: 800; color: #38BDF8; letter-spacing: 1px;">--</div>
-      </div>
-      <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
-        <button type="button" class="btn-action-secondary" onclick="regenerateMyCryptoKey()" style="height: 38px; font-size: 12px; color: #FCA5A5; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.12);">
-          Gerar Nova Chave
-        </button>
-        <button type="button" class="btn-primary" id="btn-copy-my-key" onclick="copyMyActiveCryptoKey()" style="height: 38px; font-size: 12.5px;">
-          Copiar Chave
-        </button>
-      </div>
-    </div>
-  </div>
 
   <!-- =========================================================================
        MODAL: DESCOMISSIONAMENTO DE SENSOR METROLÓGICO (21 CFR PART 11)
@@ -2846,7 +2808,7 @@
             <input type="password" id="decom-sensor-password" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...)" required style="height: 40px; padding: 0 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
               <span style="font-size: 10px; color: #94A3B8;">Apenas chave gerada (senha não aceita)</span>
-              <button type="button" class="btn-action-secondary" style="padding: 2px 7px; font-size: 10px; border-color: rgba(56, 189, 248, 0.35); color: #38BDF8; background: rgba(56, 189, 248, 0.1);" onclick="insertMyCryptoKeyIntoInput('decom-sensor-password')">🔑 Inserir Minha Chave</button>
+              
             </div>
           </div>
         </div>
@@ -2951,7 +2913,7 @@
             <input type="password" id="decom-password" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...)" required style="height: 40px; padding: 0 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
               <span style="font-size: 10px; color: #94A3B8;">Apenas chave gerada (senha não aceita)</span>
-              <button type="button" class="btn-action-secondary" style="padding: 2px 7px; font-size: 10px; border-color: rgba(56, 189, 248, 0.35); color: #38BDF8; background: rgba(56, 189, 248, 0.1);" onclick="insertMyCryptoKeyIntoInput('decom-password')">🔑 Inserir Minha Chave</button>
+              
             </div>
           </div>
         </div>
@@ -3024,13 +2986,15 @@
         <div class="modal-title" style="font-size: 16px; font-weight: 700; color: #FFFFFF; letter-spacing: -0.2px;">Ativação de Primeiro Acesso</div>
       </div>
       
-      <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; font-size: 12.5px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid rgba(16, 185, 129, 0.25);">
-          <span style="font-weight: 700; color: #34D399; font-size: 11.5px; letter-spacing: 0.5px; text-transform: uppercase;">CHAVE CRIPTOGRÁFICA PESSOAL GERADA</span>
-          <span style="font-size: 10.5px; font-weight: 700; color: #A7F3D0; background: rgba(16, 185, 129, 0.25); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.4);">21 CFR PART 11</span>
+      <div style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; font-size: 12.5px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid rgba(239, 68, 68, 0.3);">
+          <span style="font-weight: 800; color: #F87171; font-size: 12px; letter-spacing: 0.5px; text-transform: uppercase;">⚠ EXIBIÇÃO ÚNICA — NUNCA MAIS SERÁ MOSTRADA</span>
+          <span style="font-size: 10.5px; font-weight: 700; color: #FCA5A5; background: rgba(239, 68, 68, 0.25); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(239, 68, 68, 0.4);">21 CFR PART 11</span>
         </div>
-        <div style="color: #D1FAE5; font-size: 12.5px; line-height: 1.5;">
-          Para garantir a não-rejeição e impedir vazamento da senha inicial cadastrada pelo administrador, o sistema gerou a sua <strong>Chave Criptográfica Pessoal</strong>. Esta chave é única, exclusiva e confidencial.
+        <div style="color: #FEE2E2; font-size: 12.5px; line-height: 1.5;">
+          Esta chave criptográfica é <strong>PESSOAL, INTRANSFERÍVEL E SECRETA</strong>. Copie e guarde-a agora em seu cofre seguro.
+          <strong>Ela NUNCA MAIS será exibida no sistema após fechar esta tela.</strong>
+          Se sua senha de acesso vazar, ninguém conseguirá realizar transferências, baixas ou assinar laudos sem esta chave.
         </div>
       </div>
 
