@@ -3,4 +3,5 @@ kernel=Image
 boot_delay=0
 disable_splash=1
 initial_turbo=30
+enable_uart=1
 dtoverlay=disable-bt

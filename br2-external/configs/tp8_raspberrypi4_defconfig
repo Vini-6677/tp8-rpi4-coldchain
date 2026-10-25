@@ -8,7 +8,7 @@ BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_AARCH64_GLIBC_STABLE=y
 
 BR2_ARM_FPU_VFPV4=y
 
-# Build determinístico e reprodutível
+# Build deterministico e reprodutivel
 BR2_REPRODUCIBLE=y
 
 # Hostname e Rede
@@ -16,11 +16,14 @@ BR2_TARGET_GENERIC_HOSTNAME="coldchain-rpi4"
 BR2_ROOTFS_USERS_TABLES="$(BR2_EXTERNAL_TP8_COLDCHAIN_PATH)/users_table.txt"
 BR2_SYSTEM_DHCP="eth0"
 
-# Sistema de inicialização
+# Sistema de inicializacao
 BR2_INIT_BUSYBOX=y
 
-# Overlays
+# Overlays e Scripts de Build
 BR2_ROOTFS_OVERLAY="$(BR2_EXTERNAL_TP8_COLDCHAIN_PATH)/board/common/overlay"
+BR2_ROOTFS_POST_BUILD_SCRIPT="$(BR2_EXTERNAL_TP8_COLDCHAIN_PATH)/board/common/post-build.sh"
+BR2_ROOTFS_POST_IMAGE_SCRIPT="support/scripts/genimage.sh"
+BR2_ROOTFS_POST_SCRIPT_ARGS="-c $(BR2_EXTERNAL_TP8_COLDCHAIN_PATH)/board/rpi4/genimage.cfg"
 
 # Kernel Raspberry Pi Oficial com fragmento Docker
 BR2_LINUX_KERNEL=y
@@ -35,8 +38,11 @@ BR2_LINUX_KERNEL_NEEDS_HOST_OPENSSL=y
 # Firmware da RPi4
 BR2_PACKAGE_RPI_FIRMWARE=y
 BR2_PACKAGE_RPI_FIRMWARE_VARIANT_PI4=y
+BR2_PACKAGE_RPI_FIRMWARE_CONFIG_FILE="$(BR2_EXTERNAL_TP8_COLDCHAIN_PATH)/board/rpi4/config.txt"
+BR2_PACKAGE_RPI_FIRMWARE_CMDLINE_FILE="$(BR2_EXTERNAL_TP8_COLDCHAIN_PATH)/board/rpi4/cmdline.txt"
+BR2_PACKAGE_RPI_FIRMWARE_INSTALL_DTB_OVERLAYS=y
 
-# Runtime Docker e Dependências Obrigatórias (Requisito 5)
+# Runtime Docker e Dependencias Obrigatorias (Requisito 5)
 BR2_PACKAGE_DOCKER_ENGINE=y
 BR2_PACKAGE_DOCKER_CLI=y
 BR2_PACKAGE_CONTAINERD=y
@@ -44,7 +50,7 @@ BR2_PACKAGE_RUNC=y
 BR2_PACKAGE_TINI=y
 BR2_PACKAGE_IPTABLES=y
 
-# Ferramentas de Sistema, Rede e Persistência
+# Ferramentas de Sistema, Rede e Persistencia
 BR2_PACKAGE_E2FSPROGS=y
 BR2_PACKAGE_DROPBEAR=y
 BR2_PACKAGE_CHRONY=y
@@ -52,7 +58,7 @@ BR2_PACKAGE_AVAHI=y
 BR2_PACKAGE_AVAHI_DAEMON=y
 BR2_PACKAGE_CA_CERTIFICATES=y
 
-# Partição RootFS ext4 (somente leitura)
+# Particao RootFS ext4 (somente leitura)
 BR2_TARGET_ROOTFS_EXT2=y
 BR2_TARGET_ROOTFS_EXT2_4=y
 BR2_TARGET_ROOTFS_EXT2_SIZE="400M"

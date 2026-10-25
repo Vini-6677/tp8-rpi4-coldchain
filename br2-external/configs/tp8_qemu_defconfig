@@ -20,6 +20,7 @@ BR2_INIT_BUSYBOX=y
 
 # Overlays e Tabelas de Usuários (será configurado no commit 03 e 04)
 BR2_ROOTFS_OVERLAY="$(BR2_EXTERNAL_TP8_COLDCHAIN_PATH)/board/common/overlay"
+BR2_ROOTFS_POST_BUILD_SCRIPT="$(BR2_EXTERNAL_TP8_COLDCHAIN_PATH)/board/common/post-build.sh"
 
 # Kernel Linux para QEMU virt AArch64 com fragmento Docker
 BR2_LINUX_KERNEL=y

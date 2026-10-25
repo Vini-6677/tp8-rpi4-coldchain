@@ -26,6 +26,10 @@ mkdir -p "${TARGET_DIR}/sys/fs/cgroup"
 mkdir -p "${TARGET_DIR}/home/coldadmin"
 chmod 0750 "${TARGET_DIR}/home/coldadmin"
 
+# Garante home dir de aluno
+mkdir -p "${TARGET_DIR}/home/aluno"
+chmod 0750 "${TARGET_DIR}/home/aluno"
+
 # Garante hash SHA-512 exato do coldadmin em /etc/shadow
 if [ -f "${TARGET_DIR}/etc/shadow" ]; then
   sed -i 's|^coldadmin:.*|coldadmin:$6$I07/L5VA68JPcX/m$abdKjucq2wH4ABkAsqvalL7GD8FatlceJvgVLqU3oG/cMX7uMXwz2IOLIAaREsloU3KsaRpsDTC1okM4gJh/10:19000:0:99999:7:::|' "${TARGET_DIR}/etc/shadow"
