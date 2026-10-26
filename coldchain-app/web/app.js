@@ -2036,6 +2036,16 @@ async function verifyLedgerLive() {
   }
 }
 
+function downloadLedgerCSV() {
+  const link = document.createElement('a');
+  link.href = '/api/pharma/reports/ledger.csv';
+  link.download = 'Ledger_WORM_Auditoria_ANVISA.csv';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  showToast('Baixando Trilha de Auditoria Forense CSV (ANVISA RDC 430/2020)...', 'success');
+}
+
 function exportLedgerJSON() {
   window.open('/api/v1/ledger/export', '_blank');
 }

@@ -49,6 +49,7 @@ func TestDossierDataAndReportsGeneration(t *testing.T) {
 		device_id TEXT NOT NULL,
 		seq INTEGER NOT NULL,
 		server_ts_ns INTEGER NOT NULL,
+		payload BLOB DEFAULT '',
 		prev_hash BLOB NOT NULL,
 		current_hash BLOB NOT NULL,
 		signature BLOB NOT NULL,
