@@ -1901,7 +1901,11 @@ function formatAuditAction(action) {
     'REGISTRO_QUALIFICACAO': 'Qualificação Térmica',
     'USER_CREATED': 'Criação de Usuário',
     'USER_STATUS_CHANGE': 'Alteração de Usuário',
-    'USER_ROLE_CHANGE': 'Alteração de Perfil'
+    'USER_ROLE_CHANGE': 'Alteração de Perfil',
+    'EXPORTACAO_LEDGER': 'Exportação de Trilha (CSV)',
+    'EXPORTACAO_LAUDO': 'Exportação de Laudo (JSON/PDF)',
+    'EXPORTACAO_SENSORES': 'Exportação de Sensores (CSV)',
+    'EXPORTACAO_SENSORES_PDF': 'Laudo Metrológico (PDF)'
   };
   return map[action] || (action ? action.replace(/_/g, ' ') : '-');
 }
@@ -1928,6 +1932,10 @@ function getAuditActionBadge(action) {
     bg = 'rgba(56, 189, 248, 0.1)';
     color = '#38BDF8';
     border = 'rgba(56, 189, 248, 0.3)';
+  } else if (action.startsWith('EXPORTACAO_')) {
+    bg = 'rgba(14, 165, 233, 0.14)';
+    color = '#38BDF8';
+    border = 'rgba(14, 165, 233, 0.4)';
   }
 
   return `<span style="display: inline-block; padding: 3px 9px; border-radius: 5px; font-size: 11.5px; font-weight: 600; background: ${bg}; color: ${color}; border: 1px solid ${border}; white-space: nowrap;">${label}</span>`;
@@ -2051,6 +2059,7 @@ async function downloadLedgerCSV() {
     document.body.removeChild(link);
     setTimeout(() => window.URL.revokeObjectURL(url), 5000);
     showToast('Download do CSV concluído! Salvo na sua pasta de Downloads.', 'success');
+    setTimeout(() => { if (typeof loadLedger === 'function') loadLedger(); }, 600);
   } catch (err) {
     console.error('Erro ao baixar CSV:', err);
     window.location.href = '/api/pharma/reports/ledger.csv';
@@ -2072,9 +2081,56 @@ async function exportLedgerJSON() {
     document.body.removeChild(link);
     setTimeout(() => window.URL.revokeObjectURL(url), 5000);
     showToast('Download do Laudo JSON concluído! Salvo na sua pasta de Downloads.', 'success');
+    setTimeout(() => { if (typeof loadLedger === 'function') loadLedger(); }, 600);
   } catch (err) {
     console.error('Erro ao baixar JSON:', err);
     window.location.href = '/api/v1/ledger/export';
+  }
+}
+
+async function downloadSensorsCSV() {
+  try {
+    const chamberId = selectedChamberId || 'CH-A';
+    showToast('Gerando Histórico Metrológico dos Sensores (CSV)...', 'info');
+    const res = await fetch('/api/pharma/reports/sensors.csv?chamber_id=' + encodeURIComponent(chamberId), { credentials: 'same-origin' });
+    if (!res.ok) throw new Error('Falha ao gerar CSV dos sensores: ' + res.status);
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'Historico_Sensores_ANVISA.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => window.URL.revokeObjectURL(url), 5000);
+    showToast('Download do Histórico dos Sensores CSV concluído!', 'success');
+    setTimeout(() => { if (typeof loadLedger === 'function') loadLedger(); }, 600);
+  } catch (err) {
+    console.error('Erro ao baixar CSV de sensores:', err);
+    window.location.href = '/api/pharma/reports/sensors.csv?chamber_id=' + encodeURIComponent(selectedChamberId || 'CH-A');
+  }
+}
+
+async function downloadSensorsPDF() {
+  try {
+    const chamberId = selectedChamberId || 'CH-A';
+    showToast('Emitindo Laudo Metrológico de Temperatura em PDF (ANVISA)...', 'info');
+    const res = await fetch('/api/pharma/reports/sensors.pdf?chamber_id=' + encodeURIComponent(chamberId), { credentials: 'same-origin' });
+    if (!res.ok) throw new Error('Falha ao gerar PDF de sensores: ' + res.status);
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'Laudo_Metrologico_Sensores_ANVISA.pdf');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => window.URL.revokeObjectURL(url), 5000);
+    showToast('Laudo Metrológico PDF gerado com sucesso!', 'success');
+    setTimeout(() => { if (typeof loadLedger === 'function') loadLedger(); }, 600);
+  } catch (err) {
+    console.error('Erro ao baixar PDF de sensores:', err);
+    window.location.href = '/api/pharma/reports/sensors.pdf?chamber_id=' + encodeURIComponent(selectedChamberId || 'CH-A');
   }
 }
 

@@ -1250,6 +1250,7 @@ func (a *App) routes() http.Handler {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		_ = enc.Encode(exportData)
+		a.logAudit(issuerUsername, issuerRole, "EXPORTACAO_LAUDO", fmt.Sprintf("Exportação do Laudo Pericial WORM em JSON (%d registros verificados)", total), getClientIP(r))
 	})
 
 	// API Ledger: Emissão Manual de Âncora Criptográfica
@@ -2418,9 +2419,64 @@ func (a *App) routes() http.Handler {
 			http.Error(w, "Falha ao exportar ledger: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		a.logAudit(issuerUsername, issuerRole, "EXPORTACAO_LEDGER", "Exportação regulamentar da Trilha WORM em CSV (ANVISA RDC 430/2020)", getClientIP(r))
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", "attachment; filename=\"Ledger_WORM_Auditoria_ANVISA.csv\"")
 		w.Write(csvBytes)
+	})
+
+	// 22. Exportação do Histórico de Sensores com MKT em CSV (Padrão ANVISA RDC 430/2020)
+	mux.HandleFunc("/api/pharma/reports/sensors.csv", func(w http.ResponseWriter, r *http.Request) {
+		var issuerRole, issuerName, issuerUsername string
+		if sess, ok := a.getSession(r); ok && sess != nil {
+			issuerRole = sess.Role
+			issuerName = sess.Name
+			issuerUsername = sess.Username
+		}
+
+		chamberID := r.URL.Query().Get("chamber_id")
+		data, err := pharma.FetchSensorHistoryReportData(a.db, a.signer, chamberID, 500, issuerRole, issuerName, issuerUsername)
+		if err != nil {
+			http.Error(w, "Falha ao compilar histórico de sensores: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		csvBytes, err := pharma.GenerateSensorHistoryCSV(data)
+		if err != nil {
+			http.Error(w, "Falha ao gerar CSV: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		a.logAudit(issuerUsername, issuerRole, "EXPORTACAO_SENSORES", fmt.Sprintf("Exportação do Histórico de Sensores em CSV (Câmara: %s, MKT: %.2f°C)", data.ChamberID, data.MKT), getClientIP(r))
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", "attachment; filename=\"Historico_Sensores_ANVISA.csv\"")
+		w.Write(csvBytes)
+	})
+
+	// 23. Emissão do Laudo Metrológico de Sensores em PDF 1.4 Oficial ANVISA (com MKT e Assinatura ECDSA)
+	mux.HandleFunc("/api/pharma/reports/sensors.pdf", func(w http.ResponseWriter, r *http.Request) {
+		var issuerRole, issuerName, issuerUsername string
+		if sess, ok := a.getSession(r); ok && sess != nil {
+			issuerRole = sess.Role
+			issuerName = sess.Name
+			issuerUsername = sess.Username
+		}
+
+		chamberID := r.URL.Query().Get("chamber_id")
+		data, err := pharma.FetchSensorHistoryReportData(a.db, a.signer, chamberID, 100, issuerRole, issuerName, issuerUsername)
+		if err != nil {
+			http.Error(w, "Falha ao compilar laudo de sensores: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		pdfBytes, err := pharma.GenerateSensorHistoryPDF(data)
+		if err != nil {
+			http.Error(w, "Falha ao gerar PDF: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		a.logAudit(issuerUsername, issuerRole, "EXPORTACAO_SENSORES_PDF", fmt.Sprintf("Emissão do Laudo Metrológico de Sensores em PDF (Câmara: %s, MKT: %.2f°C)", data.ChamberID, data.MKT), getClientIP(r))
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", "attachment; filename=\"Laudo_Metrologico_Sensores_ANVISA.pdf\"")
+		w.Header().Set("X-Report-SHA256", data.ReportSHA256)
+		w.Header().Set("X-Signature-ECDSA", data.SignatureHex)
+		w.Write(pdfBytes)
 	})
 
 	return mux
