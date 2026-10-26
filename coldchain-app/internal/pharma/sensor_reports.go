@@ -500,7 +500,7 @@ func GenerateSensorHistoryPDF(data *SensorHistoryReportData) ([]byte, error) {
 	p1.WriteString(fmt.Sprintf("BT /F2 9 Tf 160 720 Td (%s [%s]) Tj ET\n", toPDFASCII(data.ChamberName), toPDFASCII(data.ChamberID)))
 
 	p1.WriteString("BT /F1 9 Tf 40 705 Td (Faixa Regulamentar:) Tj ET\n")
-	p1.WriteString(fmt.Sprintf("BT /F2 9 Tf 160 705 Td (+%.1f oC a +%.1f oC [Termolabeis]) Tj ET\n", data.TargetMin, data.TargetMax))
+	p1.WriteString(fmt.Sprintf("BT /F2 9 Tf 160 705 Td (+%.1f \\260C a +%.1f \\260C [Termolabeis]) Tj ET\n", data.TargetMin, data.TargetMax))
 
 	p1.WriteString("BT /F1 9 Tf 40 690 Td (Responsavel Tecnico:) Tj ET\n")
 	p1.WriteString(fmt.Sprintf("BT /F2 9 Tf 160 690 Td (%s) Tj ET\n", toPDFASCII(data.TechnicalLead)))
@@ -520,25 +520,25 @@ func GenerateSensorHistoryPDF(data *SensorHistoryReportData) ([]byte, error) {
 	p1.WriteString("0.97 0.98 1.0 rg 0.75 0.82 0.92 RG 0.5 w\n")
 	p1.WriteString("30 575 125 50 re B\n")
 	p1.WriteString("0.4 0.45 0.55 rg BT /F1 8 Tf 40 610 Td (TEMPERATURA MINIMA) Tj ET\n")
-	p1.WriteString("0.02 0.50 0.80 rg BT /F1 14 Tf 40 590 Td (" + fmt.Sprintf("%.2f oC", data.TempMin) + ") Tj ET\n")
+	p1.WriteString("0.02 0.50 0.80 rg BT /F1 14 Tf 40 590 Td (" + fmt.Sprintf("%.2f \\260C", data.TempMin) + ") Tj ET\n")
 
 	// Card 2: Temp Máxima
 	p1.WriteString("0.97 0.98 1.0 rg 0.75 0.82 0.92 RG 0.5 w\n")
 	p1.WriteString("165 575 125 50 re B\n")
 	p1.WriteString("0.4 0.45 0.55 rg BT /F1 8 Tf 175 610 Td (TEMPERATURA MAXIMA) Tj ET\n")
-	p1.WriteString("0.90 0.20 0.10 rg BT /F1 14 Tf 175 590 Td (" + fmt.Sprintf("%.2f oC", data.TempMax) + ") Tj ET\n")
+	p1.WriteString("0.90 0.20 0.10 rg BT /F1 14 Tf 175 590 Td (" + fmt.Sprintf("%.2f \\260C", data.TempMax) + ") Tj ET\n")
 
 	// Card 3: Média Aritmética
 	p1.WriteString("0.97 0.98 1.0 rg 0.75 0.82 0.92 RG 0.5 w\n")
 	p1.WriteString("300 575 125 50 re B\n")
 	p1.WriteString("0.4 0.45 0.55 rg BT /F1 8 Tf 310 610 Td (MEDIA ARITMETICA) Tj ET\n")
-	p1.WriteString("0.10 0.60 0.30 rg BT /F1 14 Tf 310 590 Td (" + fmt.Sprintf("%.2f oC", data.TempAvg) + ") Tj ET\n")
+	p1.WriteString("0.10 0.60 0.30 rg BT /F1 14 Tf 310 590 Td (" + fmt.Sprintf("%.2f \\260C", data.TempAvg) + ") Tj ET\n")
 
 	// Card 4: MKT (Arrhenius) - Destaque Oficial
 	p1.WriteString("0.93 0.98 0.95 rg 0.20 0.70 0.40 RG 1 w\n")
 	p1.WriteString("435 575 130 50 re B\n")
 	p1.WriteString("0.05 0.45 0.20 rg BT /F1 8 Tf 445 610 Td (MKT (EQUACAO ARRHENIUS)) Tj ET\n")
-	p1.WriteString("0.05 0.55 0.25 rg BT /F1 14 Tf 445 590 Td (" + fmt.Sprintf("%.2f oC", data.MKT) + ") Tj ET\n")
+	p1.WriteString("0.05 0.55 0.25 rg BT /F1 14 Tf 445 590 Td (" + fmt.Sprintf("%.2f \\260C", data.MKT) + ") Tj ET\n")
 
 	// Linha explicativa da fórmula MKT da ANVISA
 	p1.WriteString("0.35 0.40 0.45 rg\n")
@@ -600,7 +600,7 @@ func GenerateSensorHistoryPDF(data *SensorHistoryReportData) ([]byte, error) {
 		p1.WriteString("0.15 0.20 0.25 rg\n")
 		p1.WriteString(fmt.Sprintf("BT /F2 7 Tf 35 %d Td (%s) Tj ET\n", yR+2, toPDFASCII(r.TimestampStr)))
 		p1.WriteString(fmt.Sprintf("BT /F1 7 Tf 175 %d Td (%s) Tj ET\n", yR+2, toPDFASCII(r.SensorID)))
-		p1.WriteString(fmt.Sprintf("BT /F1 7 Tf 240 %d Td (%.2f oC) Tj ET\n", yR+2, r.Temp))
+		p1.WriteString(fmt.Sprintf("BT /F1 7 Tf 240 %d Td (%.2f \\260C) Tj ET\n", yR+2, r.Temp))
 		p1.WriteString(fmt.Sprintf("BT /F2 7 Tf 330 %d Td (%.1f %%) Tj ET\n", yR+2, r.Humidity))
 		p1.WriteString(fmt.Sprintf("BT /F2 7 Tf 400 %d Td (%s) Tj ET\n", yR+2, toPDFASCII(r.DoorStatus)))
 
@@ -613,9 +613,19 @@ func GenerateSensorHistoryPDF(data *SensorHistoryReportData) ([]byte, error) {
 		yR -= 15
 	}
 
-	// Rodapé da Página 1
-	p1.WriteString("0.5 0.55 0.6 rg\n")
-	p1.WriteString("BT /F2 7.5 Tf 30 25 Td (ColdChain Pharma RT v3.3.0 | Sistema Computadorizado Validado Guia 33/2020 ANVISA | Pagina 1 de 2) Tj ET\n")
+	// Rodapé Oficial da Página 1 (Chancela Criptográfica e Integridade Pericial por Folha)
+	p1.WriteString("0.78 0.82 0.88 RG 0.5 w\n")
+	p1.WriteString("30 36 535.28 0.1 re S\n")
+	p1.WriteString("0.05 0.15 0.35 rg\n")
+	p1.WriteString("BT /F1 7 Tf 30 25 Td (Hash Forense SHA-256:) Tj ET\n")
+	p1.WriteString("0.20 0.25 0.35 rg\n")
+	p1.WriteString(fmt.Sprintf("BT /F2 7 Tf 135 25 Td (%s) Tj ET\n", data.ReportSHA256))
+	p1.WriteString("0.05 0.50 0.25 rg\n")
+	p1.WriteString("BT /F1 7 Tf 510 25 Td ([INTEGRO]) Tj ET\n")
+	p1.WriteString("0.50 0.55 0.60 rg\n")
+	p1.WriteString("BT /F2 7 Tf 30 13 Td (ColdChain Pharma RT v3.3.0 | Sistema Computadorizado Validado Guia 33/2020 ANVISA | Principios ALCOA+) Tj ET\n")
+	p1.WriteString("0.35 0.40 0.50 rg\n")
+	p1.WriteString("BT /F1 7.5 Tf 505 13 Td (Pagina 1 de 2) Tj ET\n")
 	p1.WriteString("Q\n")
 
 	// ==========================================
@@ -640,7 +650,7 @@ func GenerateSensorHistoryPDF(data *SensorHistoryReportData) ([]byte, error) {
 	p2.WriteString("0.85 0.92 0.98 rg\n")
 	p2.WriteString("BT /F2 7.5 Tf 45 715 Td (DOCUMENT TITLE:   LAUDO PERICIAL DE TEMPERATURA E ESTABILIDADE TERMICA) Tj ET\n")
 	p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 45 700 Td (EQUIPAMENTO:      %s [ID: %s]) Tj ET\n", toPDFASCII(data.ChamberName), toPDFASCII(data.ChamberID)))
-	p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 45 685 Td (TEMPERATURA MKT:  %.2f oC [CONFORME ESTUDO DE ESTABILIDADE ARRHENIUS]) Tj ET\n", data.MKT))
+	p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 45 685 Td (TEMPERATURA MKT:  %.2f \\260C [CONFORME ESTUDO DE ESTABILIDADE ARRHENIUS]) Tj ET\n", data.MKT))
 	p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 45 670 Td (HASH SHA-256:     %s) Tj ET\n", data.ReportSHA256))
 	p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 45 655 Td (ASSINADOR KEY ID: %s [%s]) Tj ET\n", data.SignerKeyID, toPDFASCII(data.SignerAlgorithm)))
 	p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 45 640 Td (ASSINATURA ECDSA: %s) Tj ET\n", toPDFASCII(data.SignatureHex)))
@@ -667,9 +677,19 @@ func GenerateSensorHistoryPDF(data *SensorHistoryReportData) ([]byte, error) {
 	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 165 210 Td (%s) Tj ET\n", toPDFASCII(data.CRF)))
 	p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 190 195 Td (Assinado Eletronicamente em %s) Tj ET\n", toPDFASCII(data.GeneratedAt)))
 
-	// Rodapé Página 2
-	p2.WriteString("0.5 0.55 0.6 rg\n")
-	p2.WriteString("BT /F2 7.5 Tf 30 25 Td (ColdChain Pharma RT v3.3.0 | Trilha de Auditoria Forense WORM | Pagina 2 de 2) Tj ET\n")
+	// Rodapé Oficial da Página 2 (Chancela Criptográfica e Integridade Pericial por Folha)
+	p2.WriteString("0.78 0.82 0.88 RG 0.5 w\n")
+	p2.WriteString("30 36 535.28 0.1 re S\n")
+	p2.WriteString("0.05 0.15 0.35 rg\n")
+	p2.WriteString("BT /F1 7 Tf 30 25 Td (Hash Forense SHA-256:) Tj ET\n")
+	p2.WriteString("0.20 0.25 0.35 rg\n")
+	p2.WriteString(fmt.Sprintf("BT /F2 7 Tf 135 25 Td (%s) Tj ET\n", data.ReportSHA256))
+	p2.WriteString("0.05 0.50 0.25 rg\n")
+	p2.WriteString("BT /F1 7 Tf 510 25 Td ([INTEGRO]) Tj ET\n")
+	p2.WriteString("0.50 0.55 0.60 rg\n")
+	p2.WriteString("BT /F2 7 Tf 30 13 Td (ColdChain Pharma RT v3.3.0 | Trilha Forense WORM Imutavel | 21 CFR Part 11 & RDC 430/2020) Tj ET\n")
+	p2.WriteString("0.35 0.40 0.50 rg\n")
+	p2.WriteString("BT /F1 7.5 Tf 505 13 Td (Pagina 2 de 2) Tj ET\n")
 	p2.WriteString("Q\n")
 
 	// ==========================================
@@ -701,11 +721,11 @@ func GenerateSensorHistoryPDF(data *SensorHistoryReportData) ([]byte, error) {
 
 	// 5: Font F1 (Helvetica-Bold)
 	offsets = append(offsets, pdf.Len())
-	pdf.WriteString("5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /StandardEncoding >>\nendobj\n")
+	pdf.WriteString("5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>\nendobj\n")
 
 	// 6: Font F2 (Helvetica)
 	offsets = append(offsets, pdf.Len())
-	pdf.WriteString("6 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /StandardEncoding >>\nendobj\n")
+	pdf.WriteString("6 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj\n")
 
 	// 7: Content Page 1
 	offsets = append(offsets, pdf.Len())

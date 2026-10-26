@@ -107,4 +107,10 @@ func TestSensorHistoryReportsGeneration(t *testing.T) {
 	if !strings.Contains(pdfStr, "CHANCELA CRIPTOGRAFICA E DECLARACAO ALCOA+") {
 		t.Errorf("chancela forense ausente no PDF")
 	}
+	if !strings.Contains(pdfStr, "Hash Forense SHA-256:") {
+		t.Errorf("hash forense ausente no rodapé do PDF")
+	}
+	if !strings.Contains(pdfStr, data.ReportSHA256) {
+		t.Errorf("SHA-256 do laudo ausente no rodapé das páginas")
+	}
 }

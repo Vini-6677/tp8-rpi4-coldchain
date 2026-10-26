@@ -647,10 +647,13 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 		lotRowY -= 13.0
 	}
 
-	// Footer Page 1
-	p1.WriteString("0.7 0.75 0.8 RG\n1 w\n40 45 m 555 45 l S\n")
-	p1.WriteString("BT /F1 8 Tf 0.5 0.55 0.6 rg 40 32 Td (ColdChain Pharma RT - Sistema de Gestao da Cadeia de Frio Hospitalar - Pagina 1 de 2) Tj ET\n")
-	p1.WriteString("BT /F3 7 Tf 0.5 0.55 0.6 rg 380 32 Td (" + toPDFASCII("Hash: "+data.ReportSHA256[:24]+"...") + ") Tj ET\n")
+	// Footer Page 1 (Chancela Criptográfica e Integridade Pericial por Folha)
+	p1.WriteString("0.78 0.82 0.88 RG\n0.5 w\n40 38 m 555 38 l S\n")
+	p1.WriteString("BT /F2 7 Tf 0.05 0.15 0.35 rg 40 26 Td (Hash Forense SHA-256:) Tj ET\n")
+	p1.WriteString(fmt.Sprintf("BT /F1 7 Tf 0.20 0.25 0.35 rg 140 26 Td (%s) Tj ET\n", data.ReportSHA256))
+	p1.WriteString("BT /F2 7.5 Tf 0.05 0.50 0.25 rg 500 26 Td ([INTEGRO]) Tj ET\n")
+	p1.WriteString("BT /F1 7 Tf 0.5 0.55 0.6 rg 40 14 Td (ColdChain Pharma RT - Dossie Sanitario Geral RDC 430/2020) Tj ET\n")
+	p1.WriteString("BT /F2 7.5 Tf 0.35 0.40 0.50 rg 505 14 Td (Pagina 1 de 2) Tj ET\n")
 
 	// ==========================================
 	// PÁGINA 2
@@ -767,10 +770,13 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 
 	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.05 0.9 0.5 rg 50 %.2f Td ([VERIFICADO] 100%% CONFORME COM A RDC 430/2020 E PRINCIPIOS ALCOA+ DO GUIA 38/2020 DA ANVISA) Tj ET\n", boxY+14))
 
-	// Footer Page 2
-	p2.WriteString("0.7 0.75 0.8 RG\n1 w\n40 45 m 555 45 l S\n")
-	p2.WriteString("BT /F1 8 Tf 0.5 0.55 0.6 rg 40 32 Td (ColdChain Pharma RT - Laudo Pericial Regulatório - Pagina 2 de 2) Tj ET\n")
-	p2.WriteString("BT /F2 8 Tf 0.1 0.4 0.8 rg 360 32 Td (VALIDADE JURIDICA: ICP-Brasil / MP 2.200-2 & RDC 430) Tj ET\n")
+	// Footer Page 2 (Chancela Criptográfica e Integridade Pericial por Folha)
+	p2.WriteString("0.78 0.82 0.88 RG\n0.5 w\n40 38 m 555 38 l S\n")
+	p2.WriteString("BT /F2 7 Tf 0.05 0.15 0.35 rg 40 26 Td (Hash Forense SHA-256:) Tj ET\n")
+	p2.WriteString(fmt.Sprintf("BT /F1 7 Tf 0.20 0.25 0.35 rg 140 26 Td (%s) Tj ET\n", data.ReportSHA256))
+	p2.WriteString("BT /F2 7.5 Tf 0.05 0.50 0.25 rg 500 26 Td ([INTEGRO]) Tj ET\n")
+	p2.WriteString("BT /F1 7 Tf 0.5 0.55 0.6 rg 40 14 Td (ColdChain Pharma RT - Laudo Pericial Regulatorio 21 CFR Part 11) Tj ET\n")
+	p2.WriteString("BT /F2 7.5 Tf 0.35 0.40 0.50 rg 505 14 Td (Pagina 2 de 2) Tj ET\n")
 
 	// ==========================================
 	// MONTAGEM DA ESTRUTURA DO PDF 1.4
