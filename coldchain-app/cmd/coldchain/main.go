@@ -1197,7 +1197,7 @@ func (a *App) routes() http.Handler {
 	// API Ledger: Exportação de Laudo Pericial Regulatório Completo (.JSON)
 	mux.HandleFunc("/api/v1/ledger/export", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Disposition", "attachment;filename=coldchain_laudo_pericial_anvisa.json")
+		w.Header().Set("Content-Disposition", "attachment; filename=\"coldchain_laudo_pericial_anvisa.json\"")
 		if a.ledger == nil || a.signer == nil {
 			http.Error(w, "Ledger não inicializado", http.StatusInternalServerError)
 			return

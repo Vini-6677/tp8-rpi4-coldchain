@@ -2047,7 +2047,13 @@ function downloadLedgerCSV() {
 }
 
 function exportLedgerJSON() {
-  window.open('/api/v1/ledger/export', '_blank');
+  const link = document.createElement('a');
+  link.href = '/api/v1/ledger/export';
+  link.download = 'coldchain_laudo_pericial_anvisa.json';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  showToast('Baixando Laudo Pericial Criptográfico (JSON)...', 'success');
 }
 
 async function createAnchorLive() {
