@@ -251,6 +251,20 @@ func (a *App) logAudit(username, role, action, details, ip string) {
 	if ip == "" {
 		ip = "127.0.0.1"
 	}
+	if username == "" || role == "" {
+		var dbRole, dbUsername string
+		_ = a.db.QueryRow("SELECT role, username FROM users WHERE role = 'admin' LIMIT 1").Scan(&dbRole, &dbUsername)
+		if dbUsername == "" {
+			dbUsername = "admin"
+			dbRole = "admin"
+		}
+		if username == "" {
+			username = dbUsername
+		}
+		if role == "" {
+			role = dbRole
+		}
+	}
 	_, err := a.db.Exec(`
 		INSERT INTO audit_logs (username, role, action, details, ip_address)
 		VALUES (?, ?, ?, ?, ?)
@@ -258,6 +272,17 @@ func (a *App) logAudit(username, role, action, details, ip string) {
 	if err != nil {
 		slog.Error("Falha ao registrar auditoria", "erro", err, "action", action)
 	}
+}
+
+func (a *App) getReportIssuer(r *http.Request) (role, name, username string) {
+	if sess, ok := a.getSession(r); ok && sess != nil {
+		return sess.Role, sess.Name, sess.Username
+	}
+	_ = a.db.QueryRow("SELECT role, name, username FROM users WHERE role = 'admin' LIMIT 1").Scan(&role, &name, &username)
+	if username == "" {
+		return "admin", "Administrador Geral", "admin"
+	}
+	return role, name, username
 }
 
 // writeSessionExpired responde 401 padronizado quando a sessão não existe ou expirou
@@ -2358,6 +2383,7 @@ func (a *App) routes() http.Handler {
 
 	// 18. Dossiê Sanitário Oficial em PDF 1.4 com Assinatura Digital ECDSA
 	mux.HandleFunc("/api/pharma/reports/dossier.pdf", func(w http.ResponseWriter, r *http.Request) {
+		issuerRole, _, issuerUsername := a.getReportIssuer(r)
 		data, err := pharma.FetchDossierReportData(a.db, a.signer)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -2368,8 +2394,13 @@ func (a *App) routes() http.Handler {
 			http.Error(w, "Falha ao gerar PDF: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		a.logAudit(issuerUsername, issuerRole, "EXPORTACAO_DOSSIE_PDF", "Emissão do Dossiê Sanitário Geral em PDF Oficial ANVISA (RDC 430/2020)", getClientIP(r))
 		w.Header().Set("Content-Type", "application/pdf")
-		w.Header().Set("Content-Disposition", "attachment; filename=Dossie_Sanitario_RDC430_ANVISA.pdf")
+		if r.URL.Query().Get("view") == "1" {
+			w.Header().Set("Content-Disposition", "inline; filename=\"Dossie_Sanitario_RDC430_ANVISA.pdf\"")
+		} else {
+			w.Header().Set("Content-Disposition", "attachment; filename=\"Dossie_Sanitario_RDC430_ANVISA.pdf\"")
+		}
 		w.Header().Set("X-Report-SHA256", data.ReportSHA256)
 		w.Header().Set("X-Signature-ECDSA", data.SignatureHex)
 		w.Write(pdfBytes)
@@ -2377,6 +2408,7 @@ func (a *App) routes() http.Handler {
 
 	// 19. Dossiê Sanitário Completo em CSV Sanitizado
 	mux.HandleFunc("/api/pharma/reports/dossier.csv", func(w http.ResponseWriter, r *http.Request) {
+		issuerRole, _, issuerUsername := a.getReportIssuer(r)
 		data, err := pharma.FetchDossierReportData(a.db, a.signer)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -2387,32 +2419,30 @@ func (a *App) routes() http.Handler {
 			http.Error(w, "Falha ao gerar CSV: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		a.logAudit(issuerUsername, issuerRole, "EXPORTACAO_DOSSIE_CSV", "Exportação do Dossiê Sanitário Geral em CSV (ANVISA)", getClientIP(r))
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Header().Set("Content-Disposition", "attachment; filename=Dossie_Sanitario_RDC430_ANVISA.csv")
+		w.Header().Set("Content-Disposition", "attachment; filename=\"Dossie_Sanitario_RDC430_ANVISA.csv\"")
 		w.Header().Set("X-Report-SHA256", data.ReportSHA256)
 		w.Write(csvBytes)
 	})
 
 	// 20. Laudo Pericial de Impressão HTML / Print-to-PDF
 	mux.HandleFunc("/api/pharma/reports/dossier.html", func(w http.ResponseWriter, r *http.Request) {
+		issuerRole, _, issuerUsername := a.getReportIssuer(r)
 		data, err := pharma.FetchDossierReportData(a.db, a.signer)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		htmlStr := pharma.GenerateDossierHTML(data)
+		a.logAudit(issuerUsername, issuerRole, "EXPORTACAO_DOSSIE_HTML", "Visualização do Laudo Pericial de Impressão HTML/PDF ANVISA", getClientIP(r))
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write([]byte(htmlStr))
 	})
 
 	// 21. Exportação do Ledger WORM em CSV para Auditoria Forense Externa
 	mux.HandleFunc("/api/pharma/reports/ledger.csv", func(w http.ResponseWriter, r *http.Request) {
-		var issuerRole, issuerName, issuerUsername string
-		if sess, ok := a.getSession(r); ok && sess != nil {
-			issuerRole = sess.Role
-			issuerName = sess.Name
-			issuerUsername = sess.Username
-		}
+		issuerRole, issuerName, issuerUsername := a.getReportIssuer(r)
 
 		csvBytes, err := pharma.GenerateLedgerCSVWithIssuer(a.db, a.signer, issuerRole, issuerName, issuerUsername)
 		if err != nil {
@@ -2427,12 +2457,7 @@ func (a *App) routes() http.Handler {
 
 	// 22. Exportação do Histórico de Sensores com MKT em CSV (Padrão ANVISA RDC 430/2020)
 	mux.HandleFunc("/api/pharma/reports/sensors.csv", func(w http.ResponseWriter, r *http.Request) {
-		var issuerRole, issuerName, issuerUsername string
-		if sess, ok := a.getSession(r); ok && sess != nil {
-			issuerRole = sess.Role
-			issuerName = sess.Name
-			issuerUsername = sess.Username
-		}
+		issuerRole, issuerName, issuerUsername := a.getReportIssuer(r)
 
 		chamberID := r.URL.Query().Get("chamber_id")
 		data, err := pharma.FetchSensorHistoryReportData(a.db, a.signer, chamberID, 500, issuerRole, issuerName, issuerUsername)
@@ -2453,12 +2478,7 @@ func (a *App) routes() http.Handler {
 
 	// 23. Emissão do Laudo Metrológico de Sensores em PDF 1.4 Oficial ANVISA (com MKT e Assinatura ECDSA)
 	mux.HandleFunc("/api/pharma/reports/sensors.pdf", func(w http.ResponseWriter, r *http.Request) {
-		var issuerRole, issuerName, issuerUsername string
-		if sess, ok := a.getSession(r); ok && sess != nil {
-			issuerRole = sess.Role
-			issuerName = sess.Name
-			issuerUsername = sess.Username
-		}
+		issuerRole, issuerName, issuerUsername := a.getReportIssuer(r)
 
 		chamberID := r.URL.Query().Get("chamber_id")
 		data, err := pharma.FetchSensorHistoryReportData(a.db, a.signer, chamberID, 100, issuerRole, issuerName, issuerUsername)
@@ -2473,7 +2493,11 @@ func (a *App) routes() http.Handler {
 		}
 		a.logAudit(issuerUsername, issuerRole, "EXPORTACAO_SENSORES_PDF", fmt.Sprintf("Emissão do Laudo Metrológico de Sensores em PDF (Câmara: %s, MKT: %.2f°C)", data.ChamberID, data.MKT), getClientIP(r))
 		w.Header().Set("Content-Type", "application/pdf")
-		w.Header().Set("Content-Disposition", "attachment; filename=\"Laudo_Metrologico_Sensores_ANVISA.pdf\"")
+		if r.URL.Query().Get("view") == "1" {
+			w.Header().Set("Content-Disposition", "inline; filename=\"Laudo_Metrologico_Sensores_ANVISA.pdf\"")
+		} else {
+			w.Header().Set("Content-Disposition", "attachment; filename=\"Laudo_Metrologico_Sensores_ANVISA.pdf\"")
+		}
 		w.Header().Set("X-Report-SHA256", data.ReportSHA256)
 		w.Header().Set("X-Signature-ECDSA", data.SignatureHex)
 		w.Write(pdfBytes)

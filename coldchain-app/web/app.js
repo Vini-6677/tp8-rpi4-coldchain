@@ -1905,7 +1905,10 @@ function formatAuditAction(action) {
     'EXPORTACAO_LEDGER': 'Exportação de Trilha (CSV)',
     'EXPORTACAO_LAUDO': 'Exportação de Laudo (JSON/PDF)',
     'EXPORTACAO_SENSORES': 'Exportação de Sensores (CSV)',
-    'EXPORTACAO_SENSORES_PDF': 'Laudo Metrológico (PDF)'
+    'EXPORTACAO_SENSORES_PDF': 'Laudo Metrológico (PDF)',
+    'EXPORTACAO_DOSSIE_PDF': 'Laudo de Auditoria (PDF)',
+    'EXPORTACAO_DOSSIE_CSV': 'Dossiê Sanitário (CSV)',
+    'EXPORTACAO_DOSSIE_HTML': 'Laudo de Impressão HTML'
   };
   return map[action] || (action ? action.replace(/_/g, ' ') : '-');
 }
@@ -1990,12 +1993,24 @@ async function loadLedger() {
         logs.forEach(l => {
           const dateFormatted = formatBrasiliaDateTime(l.timestamp);
           const actionBadge = getAuditActionBadge(l.action);
+          const safeUser = l.username || 'admin';
+          const safeRole = (l.role || 'admin').toUpperCase();
+          let actionCell = actionBadge;
+          if (l.action === 'EXPORTACAO_SENSORES_PDF') {
+            actionCell = `<a href="/api/pharma/reports/sensors.pdf?view=1" target="_blank" title="Clique para abrir e visualizar o Laudo Metrológico de Sensores em PDF" style="text-decoration: none; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">${actionBadge} <span style="font-size: 11px; color: #38BDF8;">↗</span></a>`;
+          } else if (l.action === 'EXPORTACAO_DOSSIE_PDF') {
+            actionCell = `<a href="/api/pharma/reports/dossier.pdf?view=1" target="_blank" title="Clique para abrir o Laudo de Auditoria em PDF em nova aba" style="text-decoration: none; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">${actionBadge} <span style="font-size: 11px; color: #38BDF8;">↗</span></a>`;
+          } else if (l.action === 'EXPORTACAO_SENSORES') {
+            actionCell = `<a href="/api/pharma/reports/sensors.csv" download="Historico_Sensores_ANVISA.csv" title="Clique para baixar o CSV dos Sensores" style="text-decoration: none; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">${actionBadge} <span style="font-size: 11px; color: #38BDF8;">⬇</span></a>`;
+          } else if (l.action === 'EXPORTACAO_LEDGER') {
+            actionCell = `<a href="/api/pharma/reports/ledger.csv" download="Ledger_WORM_Auditoria_ANVISA.csv" title="Clique para baixar a Trilha WORM CSV" style="text-decoration: none; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">${actionBadge} <span style="font-size: 11px; color: #38BDF8;">⬇</span></a>`;
+          }
           tbodyA.innerHTML += `
             <tr>
               <td style="text-align: center; font-size: 12px; color: #CBD5E1; font-family: monospace; white-space: nowrap;">${dateFormatted}</td>
-              <td style="text-align: center; white-space: nowrap;"><strong style="color: #F1F5F9; font-size: 13.5px;">${l.username}</strong></td>
-              <td style="text-align: center; white-space: nowrap;"><span class="badge-status liberado" style="font-size: 11px;">${l.role.toUpperCase()}</span></td>
-              <td style="text-align: center; white-space: nowrap;">${actionBadge}</td>
+              <td style="text-align: center; white-space: nowrap;"><strong style="color: #F1F5F9; font-size: 13.5px;">${safeUser}</strong></td>
+              <td style="text-align: center; white-space: nowrap;"><span class="badge-status liberado" style="font-size: 11px;">${safeRole}</span></td>
+              <td style="text-align: center; white-space: nowrap;">${actionCell}</td>
               <td style="font-size: 13px; color: #E2E8F0; line-height: 1.45; word-break: break-word;">${l.details}</td>
               <td style="text-align: center; font-size: 12px; color: #94A3B8; font-family: monospace; white-space: nowrap;">${l.ip_address}</td>
             </tr>
@@ -2111,10 +2126,39 @@ async function downloadSensorsCSV() {
   }
 }
 
+async function downloadLedgerPDF() {
+  try {
+    showToast('Emitindo Laudo Pericial de Auditoria e Conformidade Sanitária (PDF)...', 'info');
+    // Abre imediatamente em nova aba para visualização instantânea
+    window.open('/api/pharma/reports/dossier.pdf?view=1', '_blank');
+
+    const res = await fetch('/api/pharma/reports/dossier.pdf', { credentials: 'same-origin' });
+    if (res.ok) {
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'Dossie_Sanitario_RDC430_ANVISA.pdf');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => window.URL.revokeObjectURL(url), 5000);
+    }
+    showToast('Laudo de Auditoria PDF gerado e aberto em nova aba!', 'success');
+    setTimeout(() => { if (typeof loadLedger === 'function') loadLedger(); }, 600);
+  } catch (err) {
+    console.error('Erro ao emitir Laudo PDF:', err);
+    window.open('/api/pharma/reports/dossier.pdf?view=1', '_blank');
+  }
+}
+
 async function downloadSensorsPDF() {
   try {
     const chamberId = selectedChamberId || 'CH-A';
     showToast('Emitindo Laudo Metrológico de Temperatura em PDF (ANVISA)...', 'info');
+    // Abre imediatamente em nova aba para visualização instantânea
+    window.open('/api/pharma/reports/sensors.pdf?chamber_id=' + encodeURIComponent(chamberId) + '&view=1', '_blank');
+
     const res = await fetch('/api/pharma/reports/sensors.pdf?chamber_id=' + encodeURIComponent(chamberId), { credentials: 'same-origin' });
     if (!res.ok) throw new Error('Falha ao gerar PDF de sensores: ' + res.status);
     const blob = await res.blob();
@@ -2126,11 +2170,11 @@ async function downloadSensorsPDF() {
     link.click();
     document.body.removeChild(link);
     setTimeout(() => window.URL.revokeObjectURL(url), 5000);
-    showToast('Laudo Metrológico PDF gerado com sucesso!', 'success');
+    showToast('Laudo Metrológico PDF gerado e aberto em nova aba!', 'success');
     setTimeout(() => { if (typeof loadLedger === 'function') loadLedger(); }, 600);
   } catch (err) {
     console.error('Erro ao baixar PDF de sensores:', err);
-    window.location.href = '/api/pharma/reports/sensors.pdf?chamber_id=' + encodeURIComponent(selectedChamberId || 'CH-A');
+    window.open('/api/pharma/reports/sensors.pdf?chamber_id=' + encodeURIComponent(selectedChamberId || 'CH-A') + '&view=1', '_blank');
   }
 }
 
