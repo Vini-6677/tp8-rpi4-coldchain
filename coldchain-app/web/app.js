@@ -83,6 +83,51 @@ let chartHistory = {}; // chamberId -> { timestamp, sensorTemps: { S01: val, ...
 let activeGeneratedCryptoKey = '';
 
 // -----------------------------------------------------------------------------
+// INTERCEPTADOR GLOBAL DE SESSÃO EXPIRADA
+// Quando o servidor reinicia ou a sessão expira, o backend responde 401 com
+// { session_expired: true }. Em vez de exibir um erro de permissão enganoso,
+// fechamos os modais abertos e reabrimos a tela de login automaticamente.
+// -----------------------------------------------------------------------------
+let sessionExpiredHandled = false;
+const nativeFetch = window.fetch.bind(window);
+
+window.fetch = async function (input, init) {
+  const res = await nativeFetch(input, init);
+  try {
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    if (res.status === 401 && currentUser && !url.includes('/api/auth/')) {
+      let expired = false;
+      try {
+        const body = await res.clone().json();
+        expired = !!(body && body.session_expired);
+      } catch (e) {}
+      if (!expired) {
+        // 401 legado (ex.: "Autenticação requerida"): confirma no servidor se a sessão caiu.
+        // Assinatura digital inválida também é 401, mas a sessão continua válida.
+        try {
+          const me = await nativeFetch('/api/auth/me');
+          const meData = await me.json();
+          expired = !(meData && meData.authenticated);
+        } catch (e) {}
+      }
+      if (expired) handleSessionExpired();
+    }
+  } catch (e) {}
+  return res;
+};
+
+function handleSessionExpired() {
+  if (sessionExpiredHandled) return;
+  sessionExpiredHandled = true;
+  currentUser = null;
+  document.querySelectorAll('.modal-backdrop.active').forEach(m => {
+    if (m.id !== 'modal-first-login-crypto') m.classList.remove('active');
+  });
+  showLogin();
+  showToast('Sua sessão expirou (servidor reiniciado ou tempo esgotado). Faça login novamente.', 'info');
+}
+
+// -----------------------------------------------------------------------------
 // INICIALIZAÇÃO & AUTENTICAÇÃO RBAC
 // -----------------------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
@@ -125,6 +170,7 @@ function showLogin() {
 }
 
 function showApp() {
+  sessionExpiredHandled = false;
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app-container').style.display = 'flex';
   // Segurança estrita (21 CFR Part 11): a chave criptográfica de assinatura NUNCA é salva no navegador!
@@ -3196,7 +3242,7 @@ async function submitDecommissionChamber() {
     return;
   }
   if (!pwd) {
-    showToast('Digite sua senha para autenticar a assinatura digital (21 CFR Part 11).', 'info')
+    showToast('Digite sua Chave Criptográfica Pessoal (CC-KEY-...) para assinar digitalmente (21 CFR Part 11).', 'info')
     return;
   }
 
@@ -3876,38 +3922,10 @@ function togglePasswordVisibility(inputId, btnEl) {
   if (!inp) return;
   if (inp.type === 'password') {
     inp.type = 'text';
-    if (btnEl) btnEl.innerText = '🙈 Ocultar';
+    if (btnEl) btnEl.innerText = 'Ocultar';
   } else {
     inp.type = 'password';
-    if (btnEl) btnEl.innerText = '👁️ Mostrar';
+    if (btnEl) btnEl.innerText = 'Mostrar';
   }
 }
 
-async function openUserKeyResetModal() {
-  const pwd = prompt('Para redefinir sua Chave Criptográfica Pessoal (CC-KEY-...), confirme sua senha de login da conta:');
-  if (!pwd) return;
-
-  try {
-    const res = await fetch('/api/auth/reset-crypto-key', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: pwd })
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok && data.crypto_key) {
-      activeGeneratedCryptoKey = data.crypto_key;
-      // Preenche os campos de assinatura dos modais abertos automaticamente
-      const decInp = document.getElementById('decom-password');
-      if (decInp) decInp.value = data.crypto_key;
-      const decSensInp = document.getElementById('decom-sensor-password');
-      if (decSensInp) decSensInp.value = data.crypto_key;
-
-      openFirstLoginModal(data.crypto_key);
-      showToast('Nova chave gerada e vinculada à sua conta!', 'success');
-    } else {
-      showToast(data.error || 'Falha ao redefinir chave.', 'error');
-    }
-  } catch (e) {
-    showToast('Erro de conexão ao redefinir chave.', 'error');
-  }
-}

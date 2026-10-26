@@ -1,11 +1,11 @@
 package main
 
 import (
-	"coldchain-app/web"
 	"coldchain-app/internal/ledger"
 	"coldchain-app/internal/pharma"
-	"crypto/ecdsa"
+	"coldchain-app/web"
 	"context"
+	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -79,12 +79,12 @@ type App struct {
 	signer         ledger.Signer
 	telemetryCount uint64
 	mqttClient     mqtt.Client
-	mu          sync.Mutex
-	subscribers map[chan Telemetry]struct{}
-	latestSeq   map[string]int64
-	devicesSeen map[string]time.Time
-	batchQueue  []Telemetry
-	batchMu     sync.Mutex
+	mu             sync.Mutex
+	subscribers    map[chan Telemetry]struct{}
+	latestSeq      map[string]int64
+	devicesSeen    map[string]time.Time
+	batchQueue     []Telemetry
+	batchMu        sync.Mutex
 }
 
 func main() {
@@ -260,6 +260,18 @@ func (a *App) logAudit(username, role, action, details, ip string) {
 	}
 }
 
+// writeSessionExpired responde 401 padronizado quando a sessão não existe ou expirou
+// (ex.: reinício do servidor). O frontend detecta "session_expired" e reabre o login,
+// evitando confundir sessão expirada com falta de permissão de perfil (403).
+func (a *App) writeSessionExpired(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnauthorized)
+	json.NewEncoder(w).Encode(map[string]any{
+		"error":           "Sessão expirada ou inválida. Faça login novamente.",
+		"session_expired": true,
+	})
+}
+
 func (a *App) getSession(r *http.Request) (*Session, bool) {
 	cookie, err := r.Cookie("session_token")
 	if err != nil || cookie.Value == "" {
@@ -296,7 +308,6 @@ func (a *App) getSession(r *http.Request) (*Session, bool) {
 
 	return &sess, true
 }
-
 
 func (a *App) verifySignature(username, passwordOrKey string) bool {
 	key := strings.TrimSpace(passwordOrKey)
@@ -665,8 +676,6 @@ func (a *App) routes() http.Handler {
 		json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
 	})
 
-
-
 	// API Auth: Me
 	mux.HandleFunc("/api/auth/me", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -685,83 +694,16 @@ func (a *App) routes() http.Handler {
 		})
 	})
 
-	// API Auth: Redefinir Chave Criptográfica Pessoal (21 CFR Part 11)
-	mux.HandleFunc("/api/auth/reset-crypto-key", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		sess, ok := a.getSession(r)
-		if !ok {
-			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]any{"error": "Sessão expirada. Autentique-se novamente."})
-			return
-		}
-
-		var req struct {
-			Password string `json:"password"`
-			Username string `json:"username"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
-
-		targetUsername := sess.Username
-		if req.Username != "" && sess.Role == "admin" {
-			targetUsername = req.Username
-		}
-
-		var (
-			id           int64
-			passwordHash string
-			salt         string
-			name         string
-		)
-		err := a.db.QueryRow(`
-			SELECT id, password_hash, salt, name FROM users WHERE username = ?
-		`, targetUsername).Scan(&id, &passwordHash, &salt, &name)
-		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(map[string]any{"error": "Usuário não encontrado."})
-			return
-		}
-
-		if req.Password != "" && targetUsername == sess.Username {
-			if hashPassword(req.Password, salt) != passwordHash {
-				w.WriteHeader(http.StatusUnauthorized)
-				json.NewEncoder(w).Encode(map[string]any{"error": "Senha de login incorreta. Digite sua senha para redefinir a chave."})
-				return
-			}
-		}
-
-		newKey := generateCryptoKey()
-		newHash := hashPassword(newKey, salt)
-		_, err = a.db.Exec(`
-			UPDATE users SET crypto_key_hash = ?, first_login = 0 WHERE id = ?
-		`, newHash, id)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]any{"error": "Erro ao gravar chave criptográfica no banco."})
-			return
-		}
-
-		ip := getClientIP(r)
-		a.logAudit(sess.Username, sess.Role, "REDEFINICAO_CHAVE_CRIPTOGRAFICA", fmt.Sprintf("Nova Chave Criptográfica Pessoal (21 CFR Part 11) reemitida para '%s' (%s)", name, targetUsername), ip)
-
-		json.NewEncoder(w).Encode(map[string]any{
-			"status":     "ok",
-			"crypto_key": newKey,
-			"username":   targetUsername,
-			"message":    fmt.Sprintf("Nova chave gerada com sucesso para %s.", name),
-		})
-	})
-
-
 
 	// API Auditoria: Logs de Auditoria (Restrito a Gerente e Admin)
 	mux.HandleFunc("/api/audit/logs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		sess, ok := a.getSession(r)
-		if !ok || (sess.Role != "tecnico" && sess.Role != "admin") {
+		if !ok {
+			a.writeSessionExpired(w)
+			return
+		}
+		if sess.Role != "tecnico" && sess.Role != "admin" {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]any{
 				"error": "Acesso não autorizado. Apenas Gerente ou Administrador podem visualizar a trilha de auditoria.",
@@ -798,7 +740,11 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("/api/admin/users", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		sess, ok := a.getSession(r)
-		if !ok || sess.Role != "admin" {
+		if !ok {
+			a.writeSessionExpired(w)
+			return
+		}
+		if sess.Role != "admin" {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]any{"error": "Acesso restrito ao Administrador do Sistema."})
 			return
@@ -838,7 +784,11 @@ func (a *App) routes() http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		sess, ok := a.getSession(r)
-		if !ok || sess.Role != "admin" {
+		if !ok {
+			a.writeSessionExpired(w)
+			return
+		}
+		if sess.Role != "admin" {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]any{"error": "Apenas o Administrador pode cadastrar novos usuários."})
 			return
@@ -920,7 +870,11 @@ func (a *App) routes() http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		sess, ok := a.getSession(r)
-		if !ok || sess.Role != "admin" {
+		if !ok {
+			a.writeSessionExpired(w)
+			return
+		}
+		if sess.Role != "admin" {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]any{"error": "Acesso restrito ao Administrador."})
 			return
@@ -994,7 +948,7 @@ func (a *App) routes() http.Handler {
 	})
 
 	// API Admin: Alterar Grau de Permissão
-	
+
 	// API Admin: Excluir Usuário (apenas não-seed)
 	mux.HandleFunc("/api/admin/users/delete", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -1003,7 +957,11 @@ func (a *App) routes() http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		sess, ok := a.getSession(r)
-		if !ok || sess.Role != "admin" {
+		if !ok {
+			a.writeSessionExpired(w)
+			return
+		}
+		if sess.Role != "admin" {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]any{"error": "Acesso restrito ao Administrador."})
 			return
@@ -1039,14 +997,18 @@ func (a *App) routes() http.Handler {
 		json.NewEncoder(w).Encode(map[string]any{"status": "ok", "message": "Usuário excluído com sucesso."})
 	})
 
-mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		sess, ok := a.getSession(r)
-		if !ok || sess.Role != "admin" {
+		if !ok {
+			a.writeSessionExpired(w)
+			return
+		}
+		if sess.Role != "admin" {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]any{"error": "Acesso restrito ao Administrador."})
 			return
@@ -1158,7 +1120,6 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 			}
 		}
 	})
-
 
 	// =========================================================================
 	// ROTAS DE AUDITORIA CRIPTOGRÁFICA E LEDGER WORM (ANVISA RDC 430/2020)
@@ -1273,7 +1234,11 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 		}
 		w.Header().Set("Content-Type", "application/json")
 		sess, ok := a.getSession(r)
-		if !ok || (sess.Role != "tecnico" && sess.Role != "admin") {
+		if !ok {
+			a.writeSessionExpired(w)
+			return
+		}
+		if sess.Role != "tecnico" && sess.Role != "admin" {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]any{"error": "Acesso restrito ao Gerente ou Administrador."})
 			return
@@ -1297,7 +1262,6 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 		})
 	})
 
-
 	// =========================================================================
 	// ROTAS PHARMA & ANVISA (RDC 430/2020 & RDC 197/2017)
 	// =========================================================================
@@ -1308,7 +1272,11 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 
 		if r.Method == http.MethodPost {
 			sess, ok := a.getSession(r)
-			if !ok || (sess.Role != "tecnico" && sess.Role != "admin") {
+			if !ok {
+				a.writeSessionExpired(w)
+				return
+			}
+			if sess.Role != "tecnico" && sess.Role != "admin" {
 				w.WriteHeader(http.StatusForbidden)
 				json.NewEncoder(w).Encode(map[string]any{"error": "Cadastro de câmaras restrito a Farmacêutico RT / Gerente / Administrador."})
 				return
@@ -1341,7 +1309,11 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 
 		if r.Method == http.MethodPut {
 			sess, ok := a.getSession(r)
-			if !ok || (sess.Role != "tecnico" && sess.Role != "admin") {
+			if !ok {
+				a.writeSessionExpired(w)
+				return
+			}
+			if sess.Role != "tecnico" && sess.Role != "admin" {
 				w.WriteHeader(http.StatusForbidden)
 				json.NewEncoder(w).Encode(map[string]any{"error": "Edição de câmaras restrita a Farmacêutico RT / Gerente / Administrador."})
 				return
@@ -1364,7 +1336,11 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 
 		if r.Method == http.MethodDelete {
 			sess, ok := a.getSession(r)
-			if !ok || (sess.Role != "tecnico" && sess.Role != "admin") {
+			if !ok {
+				a.writeSessionExpired(w)
+				return
+			}
+			if sess.Role != "tecnico" && sess.Role != "admin" {
 				w.WriteHeader(http.StatusForbidden)
 				json.NewEncoder(w).Encode(map[string]any{"error": "Descomissionamento restrito a Gerente ou Administrador."})
 				return
@@ -1472,7 +1448,7 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 
 			ip := getClientIP(r)
 			a.logAudit(sess.Username, sess.Role, "CADASTRO_SENSOR", fmt.Sprintf("Novo sensor '%s' cadastrado na câmara '%s' (Série: %s, Cert: %s, Validade: %s)", created.ID, created.ChamberID, created.SerialNumber, created.CertNumber, created.CalibValidUntil), ip)
-			
+
 			if a.ledger != nil {
 				ledgerData, _ := json.Marshal(map[string]any{
 					"event":       "SENSOR_REGISTER",
@@ -1527,7 +1503,7 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 
 			ip := getClientIP(r)
 			a.logAudit(sess.Username, sess.Role, "RECALIBRACAO_SENSOR", fmt.Sprintf("Sensor '%s' recalibrado/atualizado por %s (Cert: %s, Nova Validade: %s, Status: %s)", payload.ID, sess.Name, payload.CertNumber, payload.CalibValidUntil, payload.Status), ip)
-			
+
 			if a.ledger != nil {
 				ledgerData, _ := json.Marshal(map[string]any{
 					"event":       "SENSOR_RECALIBRATION",
@@ -1568,7 +1544,11 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 
 		if r.Method == http.MethodPost {
 			sess, ok := a.getSession(r)
-			if !ok || (sess.Role != "tecnico" && sess.Role != "admin" && sess.Role != "enfermeiro") {
+			if !ok {
+				a.writeSessionExpired(w)
+				return
+			}
+			if sess.Role != "tecnico" && sess.Role != "admin" && sess.Role != "enfermeiro" {
 				w.WriteHeader(http.StatusForbidden)
 				json.NewEncoder(w).Encode(map[string]any{"error": "Cadastro de medicamentos restrito a Farmacêutico RT / Gerente / Administrador."})
 				return
@@ -1647,7 +1627,11 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 		}
 		w.Header().Set("Content-Type", "application/json")
 		sess, ok := a.getSession(r)
-		if !ok || (sess.Role != "tecnico" && sess.Role != "admin" && sess.Role != "enfermeiro") {
+		if !ok {
+			a.writeSessionExpired(w)
+			return
+		}
+		if sess.Role != "tecnico" && sess.Role != "admin" && sess.Role != "enfermeiro" {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]any{"error": "Acesso restrito ao Técnico, Gerente ou Administrador."})
 			return
@@ -1711,7 +1695,7 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 
 		ip := getClientIP(r)
 		a.logAudit(sess.Username, sess.Role, "RECEBIMENTO_ESTOQUE", fmt.Sprintf("Recebimento do lote %s (NF %s) por %s. Temp: %.1f°C. Status: %s", createdLot.LotNumber, entry.InvoiceNumber, sess.Name, entry.ArrivalTemp, createdLot.Status), ip)
-		
+
 		if a.ledger != nil {
 			ledgerMsg := fmt.Sprintf("ENTRY|LOT:%s|NF:%s|TEMP:%.1f|DEC:%s|BY:%s", createdLot.LotNumber, entry.InvoiceNumber, entry.ArrivalTemp, createdLot.Status, sess.Username)
 			_, _ = a.ledger.AppendData("PHARMA-GATEWAY", uint64(time.Now().UnixNano()), []byte(ledgerMsg), 1)
@@ -1771,7 +1755,7 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 
 		ip := getClientIP(r)
 		a.logAudit(sess.Username, sess.Role, "SAIDA_ESTOQUE", fmt.Sprintf("Saída de %d unidades do lote #%d. Motivo: %s. Destinatário: %s", exit.Quantity, exit.LotID, exit.Reason, exit.Recipient), ip)
-		
+
 		if a.ledger != nil {
 			ledgerMsg := fmt.Sprintf("EXIT|LOT_ID:%d|QTY:%d|REASON:%s|TO:%s|BY:%s", exit.LotID, exit.Quantity, exit.Reason, exit.Recipient, sess.Username)
 			_, _ = a.ledger.AppendData("PHARMA-GATEWAY", uint64(time.Now().UnixNano()), []byte(ledgerMsg), 1)
@@ -1788,7 +1772,11 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 		}
 		w.Header().Set("Content-Type", "application/json")
 		sess, ok := a.getSession(r)
-		if !ok || (sess.Role != "tecnico" && sess.Role != "admin" && sess.Role != "enfermeiro") {
+		if !ok {
+			a.writeSessionExpired(w)
+			return
+		}
+		if sess.Role != "tecnico" && sess.Role != "admin" && sess.Role != "enfermeiro" {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]any{"error": "Acesso não autorizado para transferência de medicamentos."})
 			return
@@ -1883,7 +1871,7 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 
 		var targetName string
 		var cMin, cMax float64
-		if err := a.db.QueryRow("SELECT name, temp_min, temp_max FROM chambers WHERE id = ?", targetChamberID).Scan(&targetName, &cMin, &cMax); err != nil {
+		if err := a.db.QueryRow("SELECT name, temp_min, temp_max FROM chambers WHERE id = ? AND COALESCE(decommissioned, 0) = 0", targetChamberID).Scan(&targetName, &cMin, &cMax); err != nil {
 			w.WriteHeader(http.StatusNotFound)
 			json.NewEncoder(w).Encode(map[string]any{"error": "Câmara de destino não encontrada."})
 			return
@@ -2095,7 +2083,11 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 		}
 		w.Header().Set("Content-Type", "application/json")
 		sess, ok := a.getSession(r)
-		if !ok || (sess.Role != "tecnico" && sess.Role != "admin" && sess.Role != "enfermeiro") {
+		if !ok {
+			a.writeSessionExpired(w)
+			return
+		}
+		if sess.Role != "tecnico" && sess.Role != "admin" && sess.Role != "enfermeiro" {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]any{"error": "Decisão pericial de excursão restrita ao Farmacêutico RT / Gerente / Administrador."})
 			return
@@ -2145,10 +2137,13 @@ mux.HandleFunc("/api/admin/users/update-role", func(w http.ResponseWriter, r *ht
 		}
 		w.Header().Set("Content-Type", "application/json")
 		sess, ok := a.getSession(r)
-		if !ok || (sess.Role != "tecnico" && sess.Role != "admin") {
+		if !ok {
+			a.writeSessionExpired(w)
+			return
+		}
+		if sess.Role != "tecnico" && sess.Role != "admin" {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]any{"error": "Simulação restrita a Gerente ou Administrador."})
-
 
 			return
 		}
@@ -2558,7 +2553,8 @@ func (a *App) pharmaSimulatorLoop(ctx context.Context) {
 			rows, err := a.db.Query(`
 				SELECT s.id, c.temp_min, c.temp_max, c.humidity_min, c.humidity_max 
 				FROM sensors s
-				JOIN chambers c ON s.chamber_id = c.id`)
+				JOIN chambers c ON s.chamber_id = c.id
+				WHERE COALESCE(c.decommissioned, 0) = 0`)
 			if err == nil {
 				type sUpdate struct {
 					id string

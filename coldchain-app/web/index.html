@@ -1674,7 +1674,6 @@
           </div>
         </div>
 
-      <button class="btn-secondary" style="height: 32px; padding: 0 12px; font-size: 11.5px; border-radius: 6px; display: inline-flex; align-items: center; gap: 5px; margin-right: 8px; border: 1px solid rgba(255,255,255,0.15);" onclick="openUserKeyResetModal()" title="Visualizar ou Redefinir sua Chave Criptográfica Pessoal">🔑 Minha Chave</button>
       <button class="btn-logout" onclick="handleLogout()">Sair</button>
       </div>
     </header>
@@ -2909,13 +2908,12 @@
           <div class="form-group" style="margin-bottom: 0;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
               <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 0;">Assinatura Digital (Chave Criptográfica)</label>
-              <button type="button" onclick="togglePasswordVisibility('decom-password', this)" style="background: transparent; border: none; color: #94A3B8; cursor: pointer; font-size: 12px; padding: 0;" title="Mostrar/Ocultar Chave">👁️ Mostrar</button>
+              <button type="button" onclick="togglePasswordVisibility('decom-password', this)" style="background: transparent; border: none; color: #94A3B8; cursor: pointer; font-size: 12px; padding: 0;" title="Mostrar/Ocultar Chave">Mostrar</button>
             </div>
             <input type="password" id="decom-password" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...)" required style="height: 40px; padding: 0 12px; font-family: monospace;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
               <span style="font-size: 10px; color: #94A3B8;">Apenas chave gerada (senha não aceita)</span>
-              <a href="#" onclick="openUserKeyResetModal(); return false;" style="font-size: 11px; color: #60A5FA; text-decoration: underline; font-weight: 600;">Esqueceu sua chave? Redefinir aqui</a>
-            </div>
+              </div>
           </div>
         </div>
 
@@ -2993,8 +2991,8 @@
           <span style="font-size: 10.5px; font-weight: 700; color: #FCA5A5; background: rgba(239, 68, 68, 0.25); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(239, 68, 68, 0.4);">21 CFR PART 11</span>
         </div>
         <div style="color: #FEE2E2; font-size: 12.5px; line-height: 1.5;">
-          Esta chave criptográfica é <strong>PESSOAL, INTRANSFERÍVEL E SECRETA</strong>. Copie e guarde-a agora em seu cofre seguro.
-          <strong>Ela NUNCA MAIS será exibida no sistema após fechar esta tela.</strong>
+          Esta chave criptográfica é <strong>PESSOAL, INTRANSFERÍVEL, SECRETA E DEFINITIVA</strong>. Copie e guarde-a agora em seu cofre seguro.
+          <strong>Ela NUNCA MAIS será exibida nem poderá ser redefinida no sistema após fechar esta tela.</strong>
           Se sua senha de acesso vazar, ninguém conseguirá realizar transferências, baixas ou assinar laudos sem esta chave.
         </div>
       </div>
@@ -3011,7 +3009,7 @@
       </button>
 
       <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 12px 14px; margin-bottom: 18px; font-size: 12px; color: #94A3B8; line-height: 1.45;">
-        <strong style="color: #FBBF24;">Atenção:</strong> Salve sua chave em local seguro. A partir de agora, ela autenticará sua <strong>entrada no sistema</strong> e servirá como sua <strong>assinatura eletrônica regulatória</strong> em transferências de medicamentos, descomissionamento e encerramento de alarmes.
+        <strong style="color: #FBBF24;">Atenção:</strong> Salve sua chave em local seguro. Por estrito cumprimento da norma 21 CFR Part 11, esta chave <strong>não poderá ser redefinida sob nenhuma hipótese</strong>. A partir de agora, ela autenticará sua <strong>entrada no sistema</strong> e servirá como sua <strong>assinatura eletrônica regulatória</strong> em transferências de medicamentos, descomissionamento e encerramento de alarmes.
       </div>
 
       <div style="margin-bottom: 14px;">

@@ -188,6 +188,14 @@ func InitPharmaSchema(db *sql.DB) error {
 	_, _ = db.Exec("ALTER TABLE alarms ADD COLUMN resolved_by TEXT;")
 	_, _ = db.Exec("ALTER TABLE alarms ADD COLUMN electronic_sig TEXT;")
 
+	// Migrações incrementais para descomissionamento lógico de câmaras (21 CFR Part 11 / RDC 430):
+	// a câmara NUNCA é apagada fisicamente, preservando a integridade referencial de lotes,
+	// excursões, sensores e laudos de qualificação vinculados (trilha de auditoria imutável).
+	_, _ = db.Exec("ALTER TABLE chambers ADD COLUMN decommissioned INTEGER NOT NULL DEFAULT 0;")
+	_, _ = db.Exec("ALTER TABLE chambers ADD COLUMN decommissioned_at DATETIME;")
+	_, _ = db.Exec("ALTER TABLE chambers ADD COLUMN decommissioned_by TEXT;")
+	_, _ = db.Exec("ALTER TABLE chambers ADD COLUMN decommission_reason TEXT;")
+
 	// Schema limpo para produção: sem câmaras, sensores, medicamentos ou histórico fictício
 	return seedQualityData(db)
 }
@@ -351,14 +359,14 @@ func SeedPharmaTestData(db *sql.DB) error {
 
 	// 4. Lotes de Estoque com Validades Variadas (para FEFO/PVPS)
 	lots := []struct {
-		pid      int
-		lotNum   string
-		exp      string
-		qty      int
-		chamber  string
-		shelf    string
-		status   string
-		price    float64
+		pid     int
+		lotNum  string
+		exp     string
+		qty     int
+		chamber string
+		shelf   string
+		status  string
+		price   float64
 	}{
 		{1, "VAC-MEN-2026-A1", "2026-11-15", 450, "CH-A", "Prateleira 1, Bandeja A", "liberado", 185.00},
 		{1, "VAC-MEN-2027-B2", "2027-03-20", 800, "CH-A", "Prateleira 1, Bandeja B", "liberado", 185.00},
@@ -448,6 +456,7 @@ func GetChambers(db *sql.DB) ([]Chamber, error) {
 		       COALESCE(MAX(s.last_seen), c.created_at) AS last_seen
 		FROM chambers c
 		LEFT JOIN sensors s ON s.chamber_id = c.id
+		WHERE COALESCE(c.decommissioned, 0) = 0
 		GROUP BY c.id
 		ORDER BY c.id ASC
 	`)
@@ -475,7 +484,7 @@ func GetChambers(db *sql.DB) ([]Chamber, error) {
 			if c.AvgTemp >= c.TempMin && c.AvgTemp <= c.TempMax {
 				if c.Status != "OK" {
 					c.Status = "OK"
-					_, _ = db.Exec("UPDATE chambers SET status = 'OK' WHERE id = ?", c.ID)
+					_, _ = db.Exec("UPDATE chambers SET status = 'OK' WHERE id = ? AND COALESCE(decommissioned, 0) = 0", c.ID)
 				}
 			} else if c.AvgTemp > c.TempMax || c.AvgTemp < c.TempMin {
 				c.Status = "EXCURSAO"
@@ -681,6 +690,10 @@ func GetLots(db *sql.DB, chamberID, status string) ([]Lot, error) {
 
 // RegisterStockEntry cadastra um novo lote e registra a conferência física e térmica de entrada.
 func RegisterStockEntry(db *sql.DB, entry StockEntry, lot Lot) (*Lot, error) {
+	if err := EnsureChamberActive(db, lot.ChamberID); err != nil {
+		return nil, err
+	}
+
 	tx, err := db.Begin()
 	if err != nil {
 		return nil, err
@@ -919,7 +932,7 @@ func TriggerExcursion(db *sql.DB, exc Excursion) (int64, error) {
 	// Atualiza a temperatura do sensor crítico para o pico da excursão
 	_, _ = tx.Exec("UPDATE sensors SET current_temp = ? WHERE id = ? AND chamber_id = ?", exc.PeakTemp, exc.SensorID, exc.ChamberID)
 	// Atualiza status da câmara
-	_, _ = tx.Exec("UPDATE chambers SET status = 'EXCURSAO' WHERE id = ?", exc.ChamberID)
+	_, _ = tx.Exec("UPDATE chambers SET status = 'EXCURSAO' WHERE id = ? AND COALESCE(decommissioned, 0) = 0", exc.ChamberID)
 
 	// Insere a ocorrência
 	res, err := tx.Exec(`INSERT INTO excursions (code, chamber_id, sensor_id, start_time, end_time, peak_temp, min_temp, accumulated_degree_minutes, cause, status, quarantined_lots_count, technical_report, manufacturer_notified)
@@ -977,7 +990,7 @@ func DecideExcursion(db *sql.DB, excID int64, decision, report, electronicSig, d
 	}
 
 	// Atualiza câmara se não houver outras excursões abertas e normaliza sensores
-	_, _ = tx.Exec("UPDATE chambers SET status = 'OK' WHERE id = ?", chamberID)
+	_, _ = tx.Exec("UPDATE chambers SET status = 'OK' WHERE id = ? AND COALESCE(decommissioned, 0) = 0", chamberID)
 	_, _ = tx.Exec("UPDATE sensors SET current_temp = 4.5 WHERE chamber_id = ?", chamberID)
 
 	// Atualiza a excursão
@@ -1083,7 +1096,7 @@ func ResolveAlarm(db *sql.DB, alarmID int64, username, resolvedBy, notes, electr
 		var activeAlarms int
 		_ = db.QueryRow("SELECT COUNT(*) FROM alarms WHERE chamber_id = ? AND status = 'ativo'", chamberID).Scan(&activeAlarms)
 		if activeAlarms == 0 {
-			_, _ = db.Exec("UPDATE chambers SET status = 'OK' WHERE id = ?", chamberID)
+			_, _ = db.Exec("UPDATE chambers SET status = 'OK' WHERE id = ? AND COALESCE(decommissioned, 0) = 0", chamberID)
 			_, _ = db.Exec("UPDATE sensors SET current_temp = 4.5 WHERE chamber_id = ? AND current_temp > 8.0", chamberID)
 		}
 	}
@@ -1227,6 +1240,7 @@ func GetQualityDossier(db *sql.DB) (QualityDossier, error) {
 		       q.executed_by, q.execution_date, q.valid_until, q.thermal_autonomy, q.status
 		FROM chamber_qualifications q
 		LEFT JOIN chambers c ON q.chamber_id = c.id
+		WHERE COALESCE(c.decommissioned, 0) = 0
 		ORDER BY q.id ASC`)
 	if err == nil {
 		defer qRows.Close()
@@ -1344,8 +1358,6 @@ func RegisterChamberQualification(db *sql.DB, q QualificationItem) (*Qualificati
 	return &q, nil
 }
 
-
-
 // RegisterProduct valida e cadastra um novo medicamento no catálogo ANVISA.
 func RegisterProduct(db *sql.DB, p Product) (*Product, error) {
 	if p.TradeName == "" {
@@ -1409,6 +1421,14 @@ func RegisterChamber(db *sql.DB, c Chamber) (*Chamber, error) {
 		c.Type = "refrigerado"
 	}
 
+	var existingDecom int
+	if err := db.QueryRow("SELECT COALESCE(decommissioned, 0) FROM chambers WHERE id = ?", c.ID).Scan(&existingDecom); err == nil {
+		if existingDecom == 1 {
+			return nil, fmt.Errorf("o ID '%s' pertenceu a uma câmara descomissionada e está bloqueado para preservar a rastreabilidade histórica (21 CFR Part 11). Utilize um novo ID", c.ID)
+		}
+		return nil, fmt.Errorf("já existe uma câmara cadastrada com o ID '%s'", c.ID)
+	}
+
 	_, err := db.Exec(`
 		INSERT INTO chambers (id, name, type, temp_min, temp_max, humidity_min, humidity_max, alarm_delay_min, status, qualification_status, qualification_valid_until)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1434,7 +1454,7 @@ func UpdateChamber(db *sql.DB, c Chamber) error {
 	res, err := db.Exec(`
 		UPDATE chambers
 		SET name = ?, type = ?, temp_min = ?, temp_max = ?, humidity_min = ?, humidity_max = ?, alarm_delay_min = ?, qualification_status = ?, qualification_valid_until = ?
-		WHERE id = ?`,
+		WHERE id = ? AND COALESCE(decommissioned, 0) = 0`,
 		c.Name, c.Type, c.TempMin, c.TempMax, c.HumidityMin, c.HumidityMax, c.AlarmDelayMin, c.QualStatus, c.QualValidUntil, c.ID,
 	)
 	if err != nil {
@@ -1448,17 +1468,15 @@ func UpdateChamber(db *sql.DB, c Chamber) error {
 	return nil
 }
 
-
 // RegisterSensor cadastra um novo sensor metrológico e valida a conformidade RBC.
 func RegisterSensor(db *sql.DB, s Sensor) (*Sensor, error) {
 	if s.ID == "" || s.ChamberID == "" || s.SerialNumber == "" || s.ThermalPosition == "" || s.CertNumber == "" || s.CalibratedBy == "" || s.CalibValidUntil == "" {
 		return nil, fmt.Errorf("todos os campos metrológicos são obrigatórios")
 	}
 
-	// 1. Valida se a câmara vinculada existe
-	var chCount int
-	if err := db.QueryRow("SELECT COUNT(*) FROM chambers WHERE id = ?", s.ChamberID).Scan(&chCount); err != nil || chCount == 0 {
-		return nil, fmt.Errorf("câmara vinculada '%s' não existe", s.ChamberID)
+	// 1. Valida se a câmara vinculada existe e está ativa
+	if err := EnsureChamberActive(db, s.ChamberID); err != nil {
+		return nil, err
 	}
 
 	// 2. Calcula status regulatório com base na data de validade
@@ -1513,9 +1531,8 @@ func UpdateSensor(db *sql.DB, s Sensor) error {
 	}
 
 	if s.ChamberID != "" {
-		var chCount int
-		if err := db.QueryRow("SELECT COUNT(*) FROM chambers WHERE id = ?", s.ChamberID).Scan(&chCount); err != nil || chCount == 0 {
-			return fmt.Errorf("câmara vinculada '%s' não existe", s.ChamberID)
+		if err := EnsureChamberActive(db, s.ChamberID); err != nil {
+			return err
 		}
 	}
 
@@ -1556,7 +1573,6 @@ func UpdateSensor(db *sql.DB, s Sensor) error {
 
 	return nil
 }
-
 
 func seedQualityData(db *sql.DB) error {
 	var count int
@@ -1599,7 +1615,6 @@ func seedQualityData(db *sql.DB) error {
 		}
 	}
 
-
 	// Laudos de Qualificação para os testes unitários
 	quals := []QualificationItem{
 		{ChamberID: "CH-A", Stage: "DQ / IQ / OQ / PQ", ReportNumber: "QUAL-2025-089A", ExecutedBy: "LabMetrologia RBC Cert nº 412", ExecutionDate: "2025-08-15", ValidUntil: "2027-08-30", ThermalAutonomy: "6h 30min sem energia (limite 8.0°C)", Status: "Aprovado"},
@@ -1616,16 +1631,37 @@ func seedQualityData(db *sql.DB) error {
 	return nil
 }
 
-// DecommissionChamber valida travas de segurança regulatórias e remove o equipamento do inventário ativo.
+// EnsureChamberActive garante que a câmara existe e não foi descomissionada.
+func EnsureChamberActive(db *sql.DB, chamberID string) error {
+	if strings.TrimSpace(chamberID) == "" {
+		return fmt.Errorf("câmara é obrigatória")
+	}
+	var decom int
+	if err := db.QueryRow("SELECT COALESCE(decommissioned, 0) FROM chambers WHERE id = ?", chamberID).Scan(&decom); err != nil {
+		return fmt.Errorf("câmara '%s' não existe", chamberID)
+	}
+	if decom == 1 {
+		return fmt.Errorf("câmara '%s' está DESCOMISSIONADA e não pode receber medicamentos ou sensores", chamberID)
+	}
+	return nil
+}
+
+// DecommissionChamber valida travas de segurança regulatórias e retira o equipamento do inventário ativo.
+// O registro é mantido (descomissionamento lógico) para preservar a integridade referencial e a
+// trilha de auditoria de lotes, excursões, sensores e laudos (21 CFR Part 11 / RDC 430/2020).
 func DecommissionChamber(db *sql.DB, chamberID, reason, justification, signatureName, sensorAction string) error {
 	if chamberID == "" {
 		return fmt.Errorf("id da câmara é obrigatório")
 	}
 
-	// 1. Verifica se a câmara existe
+	// 1. Verifica se a câmara existe e ainda está ativa
 	var chName string
-	if err := db.QueryRow("SELECT name FROM chambers WHERE id = ?", chamberID).Scan(&chName); err != nil {
+	var alreadyDecom int
+	if err := db.QueryRow("SELECT name, COALESCE(decommissioned, 0) FROM chambers WHERE id = ?", chamberID).Scan(&chName, &alreadyDecom); err != nil {
 		return fmt.Errorf("câmara '%s' não encontrada", chamberID)
+	}
+	if alreadyDecom == 1 {
+		return fmt.Errorf("câmara '%s' já foi descomissionada anteriormente", chName)
 	}
 
 	// 2. Trava de Segurança Regulatória: Não permite exclusão se houver lotes com saldo ativo armazenados nela!
@@ -1648,23 +1684,35 @@ func DecommissionChamber(db *sql.DB, chamberID, reason, justification, signature
 	}
 	defer tx.Rollback()
 
-	// 4. Desvincula lotes históricos / esgotados para não violar integridade
-	_, _ = tx.Exec("UPDATE lots SET chamber_id = NULL WHERE chamber_id = ?", chamberID)
+	// 4. Lotes históricos (esgotados/descartados) permanecem vinculados à câmara original:
+	//    a rastreabilidade de onde o medicamento esteve armazenado é exigência da RDC 430/2020.
 
 	// 5. Trata os sensores vinculados
 	if sensorAction == "descartar" {
-		_, _ = tx.Exec("DELETE FROM sensors WHERE chamber_id = ?", chamberID)
+		if _, err := tx.Exec("DELETE FROM sensors WHERE chamber_id = ?", chamberID); err != nil {
+			return fmt.Errorf("erro ao descartar sensores da câmara: %w", err)
+		}
 	} else {
-		_, _ = tx.Exec("UPDATE sensors SET chamber_id = NULL, thermal_position = 'Bancada Metrológica / Avulso' WHERE chamber_id = ?", chamberID)
+		if _, err := tx.Exec("UPDATE sensors SET status = 'Recolhido (Bancada RBC)', thermal_position = 'Bancada Metrológica / Avulso' WHERE chamber_id = ?", chamberID); err != nil {
+			return fmt.Errorf("erro ao recolher sensores da câmara: %w", err)
+		}
 	}
 
-	// 5. Remove histórico de qualificação associado
-	_, _ = tx.Exec("DELETE FROM chamber_qualifications WHERE chamber_id = ?", chamberID)
-
-	// 6. Remove a câmara da tabela de equipamentos
-	_, err = tx.Exec("DELETE FROM chambers WHERE id = ?", chamberID)
+	// 6. Descomissionamento lógico: retira do inventário ativo preservando o histórico
+	res, err := tx.Exec(`UPDATE chambers
+		SET decommissioned = 1,
+		    status = 'DESCOMISSIONADA',
+		    qualification_status = 'Descomissionada',
+		    decommissioned_at = CURRENT_TIMESTAMP,
+		    decommissioned_by = ?,
+		    decommission_reason = ?
+		WHERE id = ? AND COALESCE(decommissioned, 0) = 0`,
+		signatureName, strings.TrimSpace(reason+" | "+justification), chamberID)
 	if err != nil {
-		return fmt.Errorf("erro ao excluir câmara: %w", err)
+		return fmt.Errorf("erro ao descomissionar câmara: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("câmara '%s' não pôde ser descomissionada (já baixada ou inexistente)", chName)
 	}
 
 	return tx.Commit()
@@ -1701,14 +1749,14 @@ func TransferLot(db *sql.DB, lotID int64, targetChamberID, targetShelfLocation, 
 	}
 
 	var (
-		lotNumber string
-		curQty int
-		status string
-		sourceChamberID string
+		lotNumber         string
+		curQty            int
+		status            string
+		sourceChamberID   string
 		sourceChamberName string
-		productID int64
-		prodTradeName string
-		pMin, pMax float64
+		productID         int64
+		prodTradeName     string
+		pMin, pMax        float64
 	)
 
 	err := db.QueryRow(`
@@ -1732,11 +1780,11 @@ func TransferLot(db *sql.DB, lotID int64, targetChamberID, targetShelfLocation, 
 	}
 
 	var (
-		targetName string
-		cMin, cMax float64
+		targetName   string
+		cMin, cMax   float64
 		targetStatus string
 	)
-	err = db.QueryRow("SELECT name, temp_min, temp_max, status FROM chambers WHERE id = ?", targetChamberID).Scan(&targetName, &cMin, &cMax, &targetStatus)
+	err = db.QueryRow("SELECT name, temp_min, temp_max, CASE WHEN COALESCE(decommissioned, 0) = 1 THEN 'DESCOMISSIONADA' ELSE status END FROM chambers WHERE id = ?", targetChamberID).Scan(&targetName, &cMin, &cMax, &targetStatus)
 	if err != nil {
 		return fmt.Errorf("câmara de destino '%s' não encontrada: %w", targetChamberID, err)
 	}
@@ -1784,15 +1832,15 @@ func TransferChamberLots(db *sql.DB, sourceChamberID, targetChamberID, defaultSh
 	}
 
 	var (
-		sourceName string
-		targetName string
+		sourceName   string
+		targetName   string
 		targetStatus string
-		cMin, cMax float64
+		cMin, cMax   float64
 	)
 	if err := db.QueryRow("SELECT name FROM chambers WHERE id = ?", sourceChamberID).Scan(&sourceName); err != nil {
 		return 0, fmt.Errorf("câmara de origem não encontrada")
 	}
-	if err := db.QueryRow("SELECT name, temp_min, temp_max, status FROM chambers WHERE id = ?", targetChamberID).Scan(&targetName, &cMin, &cMax, &targetStatus); err != nil {
+	if err := db.QueryRow("SELECT name, temp_min, temp_max, CASE WHEN COALESCE(decommissioned, 0) = 1 THEN 'DESCOMISSIONADA' ELSE status END FROM chambers WHERE id = ?", targetChamberID).Scan(&targetName, &cMin, &cMax, &targetStatus); err != nil {
 		return 0, fmt.Errorf("câmara de destino não encontrada")
 	}
 	if targetStatus == "DESCOMISSIONADA" || targetStatus == "INATIVA" {
@@ -1811,9 +1859,9 @@ func TransferChamberLots(db *sql.DB, sourceChamberID, targetChamberID, defaultSh
 	defer rows.Close()
 
 	type lotItem struct {
-		id int64
-		lotNumber string
-		tradeName string
+		id         int64
+		lotNumber  string
+		tradeName  string
 		pMin, pMax float64
 	}
 	var items []lotItem

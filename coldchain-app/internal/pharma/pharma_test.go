@@ -761,11 +761,30 @@ func TestPharmaDecommissionChamber(t *testing.T) {
 		t.Fatalf("erro ao descomissionar câmara vazia: %v", err)
 	}
 
-	// 4. Confirma que a câmara foi removida
-	var count int
-	_ = db.QueryRow("SELECT COUNT(*) FROM chambers WHERE id = 'TEMP-TEST'").Scan(&count)
-	if count != 0 {
-		t.Errorf("esperava 0 câmaras com ID TEMP-TEST após descomissionamento, obteve %d", count)
+	// 4. Confirma que a câmara foi descomissionada logicamente (preservando integridade 21 CFR Part 11)
+	var decom int
+	_ = db.QueryRow("SELECT COALESCE(decommissioned, 0) FROM chambers WHERE id = 'TEMP-TEST'").Scan(&decom)
+	if decom != 1 {
+		t.Errorf("esperava decommissioned=1 para câmara TEMP-TEST após descomissionamento, obteve %d", decom)
+	}
+
+	// 5. Confirma que a câmara não aparece na listagem ativa do inventário
+	activeChambers, err := GetChambers(db)
+	if err != nil {
+		t.Fatalf("erro ao obter câmaras ativas: %v", err)
+	}
+	for _, c := range activeChambers {
+		if c.ID == "TEMP-TEST" {
+			t.Errorf("câmara descomissionada TEMP-TEST não deveria constar na lista de câmaras ativas")
+		}
+	}
+
+	// 6. Confirma que tentar reutilizar ou descomissionar novamente é bloqueado
+	if err := EnsureChamberActive(db, "TEMP-TEST"); err == nil {
+		t.Errorf("esperava erro ao chamar EnsureChamberActive para câmara descomissionada, obteve nil")
+	}
+	if err := DecommissionChamber(db, "TEMP-TEST", "Tentativa", "Duplicada", "Dra. Mariana", "descartar"); err == nil {
+		t.Errorf("esperava erro ao tentar descomissionar novamente câmara já baixada, obteve nil")
 	}
 }
 

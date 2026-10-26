@@ -24,10 +24,15 @@ if [ -n "$BUILDROOT_DIR" ] && [ -d "$BUILDROOT_DIR" ]; then
 elif [ -d "$HOME/buildroot-2026.05.1" ]; then
   BUILDROOT_DIR="$HOME/buildroot-2026.05.1"
   echo "[+] Usando Buildroot do host em: $BUILDROOT_DIR"
-elif [ -d "/home/vini/buildroot-2026.05.1" ]; then
-  BUILDROOT_DIR="/home/vini/buildroot-2026.05.1"
-  echo "[+] Usando Buildroot do host em: $BUILDROOT_DIR"
-else
+elif ls -d "$HOME"/buildroot* 1> /dev/null 2>&1; then
+  DETECTED=$(ls -d "$HOME"/buildroot* 2>/dev/null | grep -v '\.tar' | head -n 1)
+  if [ -n "$DETECTED" ] && [ -d "$DETECTED" ]; then
+    BUILDROOT_DIR="$DETECTED"
+    echo "[+] Usando Buildroot detectado no host em: $BUILDROOT_DIR"
+  fi
+fi
+
+if [ -z "$BUILDROOT_DIR" ] || [ ! -d "$BUILDROOT_DIR" ]; then
   BUILDROOT_DIR="${PROJECT_ROOT}/buildroot"
   if [ ! -d "$BUILDROOT_DIR" ]; then
     echo "[!] Buildroot não encontrado em caminhos locais."
