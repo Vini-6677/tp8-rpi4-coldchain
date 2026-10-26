@@ -1216,10 +1216,18 @@ func GetPharmaKPIs(db *sql.DB) (PharmaKPIs, error) {
 
 // GetQualityDossier retorna a estrutura completa de POPs, Qualificação DQ/IQ/OQ/PQ e Treinamentos a partir do banco de dados relacional SQLite.
 func GetQualityDossier(db *sql.DB) (QualityDossier, error) {
+	var adminName, adminUsername string
+	_ = db.QueryRow("SELECT name, username FROM users WHERE role = 'admin' LIMIT 1").Scan(&adminName, &adminUsername)
+	if adminName == "" {
+		adminName = "Administrador Geral"
+	}
+	if adminUsername == "" {
+		adminUsername = "admin"
+	}
 	dossier := QualityDossier{
 		GeneratedAt:   time.Now().Format("2006-01-02 15:04:05"),
-		TechnicalLead: "Dra. Mariana Vasconcelos",
-		CRF:           "CRF-SP nº 48.912",
+		TechnicalLead: fmt.Sprintf("%s (%s)", adminName, adminUsername),
+		CRF:           "Administração e Garantia da Qualidade",
 	}
 
 	// 1. POPs cadastrados

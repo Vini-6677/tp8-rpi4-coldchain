@@ -78,10 +78,20 @@ func FetchDossierReportData(db *sql.DB, signer SignerInterface) (*DossierReportD
 		return nil, fmt.Errorf("erro ao obter dossiê de qualidade: %w", err)
 	}
 
+	var adminName, adminUsername string
+	_ = db.QueryRow("SELECT name, username FROM users WHERE role = 'admin' LIMIT 1").Scan(&adminName, &adminUsername)
+	if adminName == "" {
+		adminName = "Administrador Geral"
+	}
+	if adminUsername == "" {
+		adminUsername = "admin"
+	}
+	techLead := fmt.Sprintf("%s (%s)", adminName, adminUsername)
+
 	data := &DossierReportData{
 		GeneratedAt:     time.Now().Format("2006-01-02 15:04:05"),
-		TechnicalLead:   "Dra. Mariana Vasconcelos",
-		CRF:             "CRF-SP nº 48.912",
+		TechnicalLead:   techLead,
+		CRF:             "Administração e Garantia da Qualidade",
 		Company:         "ColdChain Pharma Distribuidora e Logística Hospitalar Ltda",
 		CNPJ:            "33.247.743/0001-10",
 		KPIs:            kpi,
@@ -314,20 +324,28 @@ func GenerateLedgerCSV(db *sql.DB, signer SignerInterface) ([]byte, error) {
 	// 1. Escreve UTF-8 BOM para abertura nativa e perfeita de acentos e formatação no Microsoft Excel (Brasil)
 	buf.Write([]byte{0xEF, 0xBB, 0xBF})
 
-	// 2. Diretiva padrão do Microsoft Excel para abertura automática em colunas com delimitador ';'
-	buf.WriteString("sep=;\r\n")
-
 	writer := csv.NewWriter(&buf)
 	writer.Comma = ';'
 
 	loc := time.FixedZone("BRT", -3*3600)
 	nowStr := time.Now().In(loc).Format("02/01/2006 15:04:05")
 
+	// Consulta o administrador ativo no banco de dados
+	var adminName, adminUsername string
+	_ = db.QueryRow("SELECT name, username FROM users WHERE role = 'admin' LIMIT 1").Scan(&adminName, &adminUsername)
+	if adminName == "" {
+		adminName = "Administrador Geral"
+	}
+	if adminUsername == "" {
+		adminUsername = "admin"
+	}
+	respLead := fmt.Sprintf("%s (%s)", adminName, adminUsername)
+
 	// Cabeçalho Institucional Regulatório com 10 colunas uniformes (alinhamento simétrico no Excel)
 	_ = writer.Write([]string{"COLDCHAIN PHARMA RT - LEDGER CRIPTOGRAFICO FORENSE WORM", "", "", "", "", "", "", "", "", ""})
 	_ = writer.Write([]string{"Marco Regulatório:", "ANVISA RDC 430/2020 | Guia 36/2020 | FDA 21 CFR Part 11 (Princípios ALCOA+)", "", "", "", "", "", "", "", ""})
 	_ = writer.Write([]string{"Data e Hora da Emissão:", nowStr + " (Horário de Brasília)", "", "", "", "", "", "", "", ""})
-	_ = writer.Write([]string{"Responsável Técnica:", "Dra. Mariana Vasconcelos — CRF-SP nº 48.912", "", "", "", "", "", "", "", ""})
+	_ = writer.Write([]string{"Responsável Técnico / Administrador:", respLead, "", "", "", "", "", "", "", ""})
 	_ = writer.Write([]string{"Garantia Criptográfica:", "Encadeamento Hash SHA-256 e Assinatura Digital ECDSA P-256 (Imutabilidade WORM)", "", "", "", "", "", "", "", ""})
 	_ = writer.Write([]string{"", "", "", "", "", "", "", "", "", ""})
 
@@ -406,14 +424,22 @@ func GenerateLedgerCSV(db *sql.DB, signer SignerInterface) ([]byte, error) {
 
 			payloadStr := formatLedgerPayload(payload)
 
+			// Formata dataHora e seq com ="..." para o Excel exibir diretamente sem ######## ou notação científica 1,79E+18
+			dataHoraCell := fmt.Sprintf("=\"%s\"", dataHora)
+			seqCell := fmt.Sprintf("=\"%d\"", seq)
+			prevHex := hex.EncodeToString(prev)
+			if len(prevHex) == 0 || strings.Repeat("0", len(prevHex)) == prevHex {
+				prevHex = strings.Repeat("0", 64)
+			}
+
 			_ = writer.Write([]string{
 				strconv.FormatInt(id, 10),
-				dataHora,
+				dataHoraCell,
 				tipoEvento,
 				sanitizeCSV(dev),
 				payloadStr,
-				strconv.FormatInt(seq, 10),
-				hex.EncodeToString(prev),
+				seqCell,
+				prevHex,
 				hex.EncodeToString(curr),
 				hex.EncodeToString(sig),
 				"VÁLIDO (ALCOA+)",
