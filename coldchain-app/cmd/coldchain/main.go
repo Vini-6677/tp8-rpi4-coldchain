@@ -1196,7 +1196,7 @@ func (a *App) routes() http.Handler {
 
 	// API Ledger: Exportação de Laudo Pericial Regulatório Completo (.JSON)
 	mux.HandleFunc("/api/v1/ledger/export", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.Header().Set("Content-Disposition", "attachment; filename=\"coldchain_laudo_pericial_anvisa.json\"")
 		if a.ledger == nil || a.signer == nil {
 			http.Error(w, "Ledger não inicializado", http.StatusInternalServerError)
@@ -1208,11 +1208,37 @@ func (a *App) routes() http.Handler {
 		pemStr, _ := a.signer.PublicKeyPEM()
 		kid := a.signer.KeyID()
 
+		var issuerRole, issuerName, issuerUsername string
+		if sess, ok := a.getSession(r); ok && sess != nil {
+			issuerRole = sess.Role
+			issuerName = sess.Name
+			issuerUsername = sess.Username
+		} else {
+			var dbRole, dbName, dbUsername string
+			_ = a.db.QueryRow("SELECT role, name, username FROM users WHERE role = 'tecnico' LIMIT 1").Scan(&dbRole, &dbName, &dbUsername)
+			if dbName == "" {
+				_ = a.db.QueryRow("SELECT role, name, username FROM users WHERE role = 'admin' LIMIT 1").Scan(&dbRole, &dbName, &dbUsername)
+			}
+			if dbName == "" {
+				dbName = "Administrador Geral"
+				dbUsername = "admin"
+				dbRole = "admin"
+			}
+			issuerRole = dbRole
+			issuerName = dbName
+			issuerUsername = dbUsername
+		}
+
 		exportData := map[string]any{
 			"regulatory_standard": "ANVISA RDC 430/2020, RDC 304/2019 & 21 CFR Part 11",
 			"document_title":      "Laudo Pericial Criptográfico de Cadeia de Frio (Ledger WORM)",
 			"generated_at":        time.Now().UTC().Format(time.RFC3339Nano),
 			"total_records":       total,
+			"issued_by": map[string]string{
+				"name":     issuerName,
+				"username": issuerUsername,
+				"role":     issuerRole,
+			},
 			"verification_report": report,
 			"server_authority": map[string]any{
 				"algorithm":      "ECDSA P-256 + SHA-256",
@@ -2380,13 +2406,20 @@ func (a *App) routes() http.Handler {
 
 	// 21. Exportação do Ledger WORM em CSV para Auditoria Forense Externa
 	mux.HandleFunc("/api/pharma/reports/ledger.csv", func(w http.ResponseWriter, r *http.Request) {
-		csvBytes, err := pharma.GenerateLedgerCSV(a.db, a.signer)
+		var issuerRole, issuerName, issuerUsername string
+		if sess, ok := a.getSession(r); ok && sess != nil {
+			issuerRole = sess.Role
+			issuerName = sess.Name
+			issuerUsername = sess.Username
+		}
+
+		csvBytes, err := pharma.GenerateLedgerCSVWithIssuer(a.db, a.signer, issuerRole, issuerName, issuerUsername)
 		if err != nil {
 			http.Error(w, "Falha ao exportar ledger: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Header().Set("Content-Disposition", "attachment; filename=Ledger_WORM_Auditoria_ANVISA.csv")
+		w.Header().Set("Content-Disposition", "attachment; filename=\"Ledger_WORM_Auditoria_ANVISA.csv\"")
 		w.Write(csvBytes)
 	})
 

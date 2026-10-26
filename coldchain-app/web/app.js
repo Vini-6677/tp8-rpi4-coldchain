@@ -2039,18 +2039,18 @@ async function verifyLedgerLive() {
 async function downloadLedgerCSV() {
   try {
     showToast('Gerando Trilha de Auditoria Forense CSV (ANVISA)...', 'info');
-    const res = await fetch('/api/pharma/reports/ledger.csv');
-    if (!res.ok) throw new Error('Falha ao gerar relatório CSV');
+    const res = await fetch('/api/pharma/reports/ledger.csv', { credentials: 'same-origin' });
+    if (!res.ok) throw new Error('Falha ao gerar relatório CSV: ' + res.status);
     const blob = await res.blob();
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'Ledger_WORM_Auditoria_ANVISA.csv';
+    link.setAttribute('download', 'Ledger_WORM_Auditoria_ANVISA.csv');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    setTimeout(() => window.URL.revokeObjectURL(url), 2000);
-    showToast('Download do CSV concluído com sucesso!', 'success');
+    setTimeout(() => window.URL.revokeObjectURL(url), 5000);
+    showToast('Download do CSV concluído! Salvo na sua pasta de Downloads.', 'success');
   } catch (err) {
     console.error('Erro ao baixar CSV:', err);
     window.location.href = '/api/pharma/reports/ledger.csv';
@@ -2060,18 +2060,18 @@ async function downloadLedgerCSV() {
 async function exportLedgerJSON() {
   try {
     showToast('Gerando Laudo Pericial Criptográfico JSON...', 'info');
-    const res = await fetch('/api/v1/ledger/export');
-    if (!res.ok) throw new Error('Falha ao exportar Laudo JSON');
+    const res = await fetch('/api/v1/ledger/export', { credentials: 'same-origin' });
+    if (!res.ok) throw new Error('Falha ao exportar Laudo JSON: ' + res.status);
     const blob = await res.blob();
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'coldchain_laudo_pericial_anvisa.json';
+    link.setAttribute('download', 'coldchain_laudo_pericial_anvisa.json');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    setTimeout(() => window.URL.revokeObjectURL(url), 2000);
-    showToast('Download do Laudo JSON concluído com sucesso!', 'success');
+    setTimeout(() => window.URL.revokeObjectURL(url), 5000);
+    showToast('Download do Laudo JSON concluído! Salvo na sua pasta de Downloads.', 'success');
   } catch (err) {
     console.error('Erro ao baixar JSON:', err);
     window.location.href = '/api/v1/ledger/export';

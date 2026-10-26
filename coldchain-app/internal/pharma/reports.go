@@ -317,8 +317,13 @@ func formatLedgerPayload(p []byte) string {
 	return sanitizeCSV(s)
 }
 
-// GenerateLedgerCSV exporta todos os blocos do Ledger WORM em formato CSV perfeitamente planilhado para auditoria ANVISA.
+// GenerateLedgerCSV exporta todos os blocos do Ledger WORM em formato CSV com fallback
 func GenerateLedgerCSV(db *sql.DB, signer SignerInterface) ([]byte, error) {
+	return GenerateLedgerCSVWithIssuer(db, signer, "", "", "")
+}
+
+// GenerateLedgerCSVWithIssuer exporta o Ledger WORM em CSV identificando dinamicamente quem emitiu o laudo (RT, Admin, etc.)
+func GenerateLedgerCSVWithIssuer(db *sql.DB, signer SignerInterface, issuerRole, issuerName, issuerUsername string) ([]byte, error) {
 	var buf bytes.Buffer
 
 	// 1. Escreve UTF-8 BOM para abertura nativa e perfeita de acentos e formatação no Microsoft Excel (Brasil)
@@ -330,22 +335,46 @@ func GenerateLedgerCSV(db *sql.DB, signer SignerInterface) ([]byte, error) {
 	loc := time.FixedZone("BRT", -3*3600)
 	nowStr := time.Now().In(loc).Format("02/01/2006 15:04:05")
 
-	// Consulta o administrador ativo no banco de dados
-	var adminName, adminUsername string
-	_ = db.QueryRow("SELECT name, username FROM users WHERE role = 'admin' LIMIT 1").Scan(&adminName, &adminUsername)
-	if adminName == "" {
-		adminName = "Administrador Geral"
+	// Se não foi passado emissor da sessão, busca no banco o usuário com perfil mais relevante
+	if issuerName == "" || issuerRole == "" {
+		var dbRole, dbName, dbUsername string
+		// 1º: Responsável Técnico (role = 'tecnico')
+		_ = db.QueryRow("SELECT role, name, username FROM users WHERE role = 'tecnico' LIMIT 1").Scan(&dbRole, &dbName, &dbUsername)
+		if dbName == "" {
+			// 2º: Administrador do Sistema (role = 'admin')
+			_ = db.QueryRow("SELECT role, name, username FROM users WHERE role = 'admin' LIMIT 1").Scan(&dbRole, &dbName, &dbUsername)
+		}
+		if dbName == "" {
+			dbName = "Administrador Geral"
+			dbUsername = "admin"
+			dbRole = "admin"
+		}
+		issuerRole = dbRole
+		issuerName = dbName
+		issuerUsername = dbUsername
 	}
-	if adminUsername == "" {
-		adminUsername = "admin"
+
+	var labelResponsavel, valorResponsavel string
+	switch strings.ToLower(issuerRole) {
+	case "tecnico":
+		labelResponsavel = "Responsável Técnico (RT):"
+		valorResponsavel = fmt.Sprintf("%s (%s) — Farmacêutico(a) RT", issuerName, issuerUsername)
+	case "admin":
+		labelResponsavel = "Responsável pela Emissão / Administrador:"
+		valorResponsavel = fmt.Sprintf("%s (%s) — Administrador Geral", issuerName, issuerUsername)
+	case "enfermeiro":
+		labelResponsavel = "Operador Sanitário Responsável:"
+		valorResponsavel = fmt.Sprintf("%s (%s) — Enfermagem / Operação", issuerName, issuerUsername)
+	default:
+		labelResponsavel = "Responsável pela Emissão:"
+		valorResponsavel = fmt.Sprintf("%s (%s)", issuerName, issuerUsername)
 	}
-	respLead := fmt.Sprintf("%s (%s)", adminName, adminUsername)
 
 	// Cabeçalho Institucional Regulatório com 10 colunas uniformes (alinhamento simétrico no Excel)
 	_ = writer.Write([]string{"COLDCHAIN PHARMA RT - LEDGER CRIPTOGRAFICO FORENSE WORM", "", "", "", "", "", "", "", "", ""})
 	_ = writer.Write([]string{"Marco Regulatório:", "ANVISA RDC 430/2020 | Guia 36/2020 | FDA 21 CFR Part 11 (Princípios ALCOA+)", "", "", "", "", "", "", "", ""})
 	_ = writer.Write([]string{"Data e Hora da Emissão:", nowStr + " (Horário de Brasília)", "", "", "", "", "", "", "", ""})
-	_ = writer.Write([]string{"Responsável Técnico / Administrador:", respLead, "", "", "", "", "", "", "", ""})
+	_ = writer.Write([]string{labelResponsavel, valorResponsavel, "", "", "", "", "", "", "", ""})
 	_ = writer.Write([]string{"Garantia Criptográfica:", "Encadeamento Hash SHA-256 e Assinatura Digital ECDSA P-256 (Imutabilidade WORM)", "", "", "", "", "", "", "", ""})
 	_ = writer.Write([]string{"", "", "", "", "", "", "", "", "", ""})
 
