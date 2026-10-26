@@ -118,16 +118,16 @@ func FetchSensorHistoryReportData(db *sql.DB, signer SignerInterface, chamberID 
 	switch strings.ToLower(issuerRole) {
 	case "tecnico":
 		leadStr = fmt.Sprintf("%s (%s)", issuerName, issuerUsername)
-		crfStr = "Farmacêutico(a) RT — Responsabilidade Técnica Farmacêutica"
+		crfStr = "Farmacêutico(a) RT - Responsabilidade Técnica Farmacêutica"
 	case "admin":
 		leadStr = fmt.Sprintf("%s (%s)", issuerName, issuerUsername)
-		crfStr = "Administrador Geral do Sistema — Gestão da Qualidade"
+		crfStr = "Administrador Geral do Sistema - Gestão da Qualidade"
 	case "enfermeiro":
 		leadStr = fmt.Sprintf("%s (%s)", issuerName, issuerUsername)
-		crfStr = "Operador Sanitário — Equipe de Enfermagem / Operação"
+		crfStr = "Operador Sanitário - Equipe de Enfermagem / Operação"
 	default:
 		leadStr = fmt.Sprintf("%s (%s)", issuerName, issuerUsername)
-		crfStr = "Emissor Autorizado — 21 CFR Part 11"
+		crfStr = "Emissor Autorizado - 21 CFR Part 11"
 	}
 
 	// 1. Busca dados da câmara
@@ -467,6 +467,16 @@ func GenerateSensorHistoryCSV(data *SensorHistoryReportData) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// pdfCenterText calcula a coordenada horizontal X para centralizar perfeitamente o texto em Helvetica.
+func pdfCenterText(text string, fontSize float64, pageWidth float64) float64 {
+	approxWidth := float64(len(text)) * fontSize * 0.52
+	x := (pageWidth - approxWidth) / 2.0
+	if x < 30 {
+		x = 30
+	}
+	return math.Round(x*10) / 10
+}
+
 // GenerateSensorHistoryPDF gera o Laudo de Monitoramento Térmico em formato binário PDF 1.4 oficial ANVISA.
 func GenerateSensorHistoryPDF(data *SensorHistoryReportData) ([]byte, error) {
 	// Dimensões A4 padrão: 595.28 x 841.89 pt
@@ -486,10 +496,9 @@ func GenerateSensorHistoryPDF(data *SensorHistoryReportData) ([]byte, error) {
 
 	// Título Principal
 	p1.WriteString("1 1 1 rg\n")
-	p1.WriteString("BT /F1 16 Tf 30 805 Td (COLDCHAIN PHARMA RT - LAUDO DE MONITORAMENTO TERMICO) Tj ET\n")
+	p1.WriteString("BT /F1 15 Tf 30 805 Td (COLDCHAIN PHARMA RT - LAUDO DE MONITORAMENTO TERMICO) Tj ET\n")
 	p1.WriteString("0.85 0.92 0.98 rg\n")
-	p1.WriteString("BT /F1 9 Tf 30 790 Td (Auditoria e Rastreabilidade Metrologica - ANVISA RDC 430/2020 & 21 CFR Part 11) Tj ET\n")
-	p1.WriteString("BT /F2 8 Tf 30 770 Td (Conformidade Rigorosa com Guia no 36/2020 e USP <1160> - Monitoramento Continuo) Tj ET\n")
+	p1.WriteString("BT /F1 10 Tf 30 782 Td (Auditoria e Rastreabilidade) Tj ET\n")
 
 	// Caixa de Identificação Regulamentar
 	p1.WriteString("0.96 0.97 0.99 rg 0.82 0.86 0.92 RG 0.75 w\n")
@@ -617,7 +626,7 @@ func GenerateSensorHistoryPDF(data *SensorHistoryReportData) ([]byte, error) {
 	p1.WriteString("0.78 0.82 0.88 RG 0.5 w\n")
 	p1.WriteString("30 36 535.28 0.1 re S\n")
 	p1.WriteString("0.05 0.15 0.35 rg\n")
-	p1.WriteString("BT /F1 7 Tf 30 25 Td (Hash Forense SHA-256:) Tj ET\n")
+	p1.WriteString("BT /F1 7 Tf 30 25 Td (Hash Criptografico SHA-256:) Tj ET\n")
 	p1.WriteString("0.20 0.25 0.35 rg\n")
 	p1.WriteString(fmt.Sprintf("BT /F2 7 Tf 135 25 Td (%s) Tj ET\n", data.ReportSHA256))
 	p1.WriteString("0.05 0.50 0.25 rg\n")
@@ -669,25 +678,36 @@ func GenerateSensorHistoryPDF(data *SensorHistoryReportData) ([]byte, error) {
 	p2.WriteString("BT /F2 8 Tf 30 455 Td (4. Original: Dado capturado diretamente do conversor AD dos sensores metrologicos.) Tj ET\n")
 	p2.WriteString("BT /F2 8 Tf 30 435 Td (5. Preciso: Sensores calibrados pela Rede Brasileira de Calibracao (RBC/INMETRO).) Tj ET\n")
 
-	// Campo de Assinatura do Responsável Técnico
+	// Campo de Assinatura do Responsável Técnico (Perfeitamente Alinhado e Centralizado)
+	sigLineW := 320.0
+	sigLineX := (595.28 - sigLineW) / 2.0 // 137.64
 	p2.WriteString("0.70 0.75 0.80 RG 0.75 w\n")
-	p2.WriteString("150 240 295 0.1 re S\n")
+	p2.WriteString(fmt.Sprintf("%.1f 240 %.1f 0.1 re S\n", sigLineX, sigLineW))
+
+	sigName := toPDFASCII(data.TechnicalLead)
+	sigRole := toPDFASCII(data.CRF)
+	sigDate := fmt.Sprintf("Assinado Eletronicamente em %s", toPDFASCII(data.GeneratedAt))
+
+	nameX := pdfCenterText(sigName, 9.5, 595.28)
+	roleX := pdfCenterText(sigRole, 8.5, 595.28)
+	dateX := pdfCenterText(sigDate, 7.5, 595.28)
+
 	p2.WriteString("0.05 0.15 0.30 rg\n")
-	p2.WriteString(fmt.Sprintf("BT /F1 9 Tf 180 225 Td (%s) Tj ET\n", toPDFASCII(data.TechnicalLead)))
-	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 165 210 Td (%s) Tj ET\n", toPDFASCII(data.CRF)))
-	p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 190 195 Td (Assinado Eletronicamente em %s) Tj ET\n", toPDFASCII(data.GeneratedAt)))
+	p2.WriteString(fmt.Sprintf("BT /F1 9.5 Tf %.1f 224 Td (%s) Tj ET\n", nameX, sigName))
+	p2.WriteString(fmt.Sprintf("BT /F2 8.5 Tf %.1f 208 Td (%s) Tj ET\n", roleX, sigRole))
+	p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf %.1f 193 Td (%s) Tj ET\n", dateX, sigDate))
 
 	// Rodapé Oficial da Página 2 (Chancela Criptográfica e Integridade Pericial por Folha)
 	p2.WriteString("0.78 0.82 0.88 RG 0.5 w\n")
 	p2.WriteString("30 36 535.28 0.1 re S\n")
 	p2.WriteString("0.05 0.15 0.35 rg\n")
-	p2.WriteString("BT /F1 7 Tf 30 25 Td (Hash Forense SHA-256:) Tj ET\n")
+	p2.WriteString("BT /F1 7 Tf 30 25 Td (Hash Criptografico SHA-256:) Tj ET\n")
 	p2.WriteString("0.20 0.25 0.35 rg\n")
 	p2.WriteString(fmt.Sprintf("BT /F2 7 Tf 135 25 Td (%s) Tj ET\n", data.ReportSHA256))
 	p2.WriteString("0.05 0.50 0.25 rg\n")
 	p2.WriteString("BT /F1 7 Tf 510 25 Td ([INTEGRO]) Tj ET\n")
 	p2.WriteString("0.50 0.55 0.60 rg\n")
-	p2.WriteString("BT /F2 7 Tf 30 13 Td (ColdChain Pharma RT v3.3.0 | Trilha Forense WORM Imutavel | 21 CFR Part 11 & RDC 430/2020) Tj ET\n")
+	p2.WriteString("BT /F2 7 Tf 30 13 Td (ColdChain Pharma RT v3.3.0 | Auditoria e Rastreabilidade | 21 CFR Part 11 & RDC 430/2020) Tj ET\n")
 	p2.WriteString("0.35 0.40 0.50 rg\n")
 	p2.WriteString("BT /F1 7.5 Tf 505 13 Td (Pagina 2 de 2) Tj ET\n")
 	p2.WriteString("Q\n")

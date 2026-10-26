@@ -649,7 +649,7 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 
 	// Footer Page 1 (Chancela Criptográfica e Integridade Pericial por Folha)
 	p1.WriteString("0.78 0.82 0.88 RG\n0.5 w\n40 38 m 555 38 l S\n")
-	p1.WriteString("BT /F2 7 Tf 0.05 0.15 0.35 rg 40 26 Td (Hash Forense SHA-256:) Tj ET\n")
+	p1.WriteString("BT /F2 7 Tf 0.05 0.15 0.35 rg 40 26 Td (Hash Criptografico SHA-256:) Tj ET\n")
 	p1.WriteString(fmt.Sprintf("BT /F1 7 Tf 0.20 0.25 0.35 rg 140 26 Td (%s) Tj ET\n", data.ReportSHA256))
 	p1.WriteString("BT /F2 7.5 Tf 0.05 0.50 0.25 rg 500 26 Td ([INTEGRO]) Tj ET\n")
 	p1.WriteString("BT /F1 7 Tf 0.5 0.55 0.6 rg 40 14 Td (ColdChain Pharma RT - Dossie Sanitario Geral RDC 430/2020) Tj ET\n")
@@ -772,7 +772,7 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 
 	// Footer Page 2 (Chancela Criptográfica e Integridade Pericial por Folha)
 	p2.WriteString("0.78 0.82 0.88 RG\n0.5 w\n40 38 m 555 38 l S\n")
-	p2.WriteString("BT /F2 7 Tf 0.05 0.15 0.35 rg 40 26 Td (Hash Forense SHA-256:) Tj ET\n")
+	p2.WriteString("BT /F2 7 Tf 0.05 0.15 0.35 rg 40 26 Td (Hash Criptografico SHA-256:) Tj ET\n")
 	p2.WriteString(fmt.Sprintf("BT /F1 7 Tf 0.20 0.25 0.35 rg 140 26 Td (%s) Tj ET\n", data.ReportSHA256))
 	p2.WriteString("BT /F2 7.5 Tf 0.05 0.50 0.25 rg 500 26 Td ([INTEGRO]) Tj ET\n")
 	p2.WriteString("BT /F1 7 Tf 0.5 0.55 0.6 rg 40 14 Td (ColdChain Pharma RT - Laudo Pericial Regulatorio 21 CFR Part 11) Tj ET\n")
