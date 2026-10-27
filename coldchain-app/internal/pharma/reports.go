@@ -115,7 +115,7 @@ func FetchDossierReportDataWithIssuer(db *sql.DB, signer SignerInterface, issuer
 	case "tecnico":
 		crfStr = "Farmacêutico(a) RT - Responsabilidade Técnica Farmacêutica"
 	case "admin":
-		crfStr = "Administrador Geral do Sistema - Gestão da Qualidade"
+		crfStr = "Gestão da Qualidade e Integridade de Dados (21 CFR Part 11)"
 	case "enfermeiro":
 		crfStr = "Operador Sanitário - Equipe de Enfermagem / Operação"
 	default:
@@ -716,10 +716,10 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 	p1.WriteString("BT /F2 8 Tf 0.05 0.50 0.25 rg 425 746 Td (Status: 100% CONFORME) Tj ET\n")
 	p1.WriteString("BT /F1 8.5 Tf 0.3 0.35 0.4 rg 50 732 Td (" + toPDFASCII("CNPJ: "+data.CNPJ+" | Unidade: Almoxarifado Central e Camaras Frias Qualificadas") + ") Tj ET\n")
 	respLine := "Responsavel pela Emissao: " + data.TechnicalLead + " | " + data.CRF
-	if len(respLine) > 95 {
-		respLine = respLine[:95]
+	if len(respLine) > 108 {
+		respLine = respLine[:108]
 	}
-	p1.WriteString("BT /F2 8.5 Tf 0.05 0.45 0.30 rg 50 718 Td (" + toPDFASCII(respLine) + ") Tj ET\n")
+	p1.WriteString("BT /F2 8 Tf 0.05 0.45 0.30 rg 50 718 Td (" + toPDFASCII(respLine) + ") Tj ET\n")
 
 	// SEÇÃO 1: INDICADORES TÉRMICOS E OPERACIONAIS (Grid de 4 caixas com MKT)
 	p1.WriteString("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 686 Td (1. MONITORAMENTO TERMICO E INDICADORES DE DESEMPENHO [RDC 430/2020]) Tj ET\n")
@@ -750,14 +750,14 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 	p1.WriteString("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 596 Td (2. LEITURAS DE TEMPERATURA E SENSORES CALIBRADOS [RBC/INMETRO]) Tj ET\n")
 	p1.WriteString("0.2 0.4 0.8 RG\n1 w\n40 590 m 555 590 l S\n")
 
-	// Table Sensor Header
+	// Table Sensor Header (Colunas espaçadas sem sobreposição para nomes longos como CH-FREEZER)
 	p1.WriteString("0.88 0.92 0.96 rg\n40 572 515.28 15 re f\n")
 	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 45 576 Td (Sensor) Tj ET\n")
-	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 82 576 Td (Camara) Tj ET\n")
-	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 125 576 Td (Temp / Umid) Tj ET\n")
-	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 205 576 Td (Posicao Termica) Tj ET\n")
-	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 345 576 Td (Certificado RBC) Tj ET\n")
-	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 440 576 Td (Validade) Tj ET\n")
+	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 88 576 Td (Camara) Tj ET\n")
+	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 162 576 Td (Temp / Umid) Tj ET\n")
+	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 232 576 Td (Posicao Termica) Tj ET\n")
+	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 350 576 Td (Certificado RBC) Tj ET\n")
+	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 442 576 Td (Validade) Tj ET\n")
 	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 505 576 Td (Status) Tj ET\n")
 
 	sensY := 558.0
@@ -768,17 +768,25 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 		if i%2 == 1 {
 			p1.WriteString(fmt.Sprintf("0.97 0.98 0.99 rg\n40 %.2f 515.28 13 re f\n", sensY-2))
 		}
-		p1.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 0.1 0.15 0.2 rg 45 %.2f Td (%s) Tj ET\n", sensY, toPDFASCII(s.ID)))
-		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.2 0.25 0.3 rg 82 %.2f Td (%s) Tj ET\n", sensY, toPDFASCII(s.ChamberID)))
-		tempHumStr := fmt.Sprintf("%.1f \\260C / %.0f%%", s.CurrentTemp, s.CurrentHumidity)
-		p1.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 0.05 0.35 0.65 rg 125 %.2f Td (%s) Tj ET\n", sensY, tempHumStr))
-		posText := s.ThermalPosition
-		if len(posText) > 24 {
-			posText = posText[:22] + ".."
+		sID := s.ID
+		if len(sID) > 8 {
+			sID = sID[:8]
 		}
-		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.2 0.25 0.3 rg 205 %.2f Td (%s) Tj ET\n", sensY, toPDFASCII(posText)))
-		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.2 0.25 0.3 rg 345 %.2f Td (%s) Tj ET\n", sensY, toPDFASCII(s.CertNumber)))
-		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.2 0.25 0.3 rg 440 %.2f Td (%s) Tj ET\n", sensY, toPDFASCII(s.CalibValidUntil)))
+		chID := s.ChamberID
+		if len(chID) > 14 {
+			chID = chID[:14]
+		}
+		p1.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 0.1 0.15 0.2 rg 45 %.2f Td (%s) Tj ET\n", sensY, toPDFASCII(sID)))
+		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.2 0.25 0.3 rg 88 %.2f Td (%s) Tj ET\n", sensY, toPDFASCII(chID)))
+		tempHumStr := fmt.Sprintf("%.1f \\260C / %.0f%%", s.CurrentTemp, s.CurrentHumidity)
+		p1.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 0.05 0.35 0.65 rg 162 %.2f Td (%s) Tj ET\n", sensY, tempHumStr))
+		posText := s.ThermalPosition
+		if len(posText) > 22 {
+			posText = posText[:20] + ".."
+		}
+		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.2 0.25 0.3 rg 232 %.2f Td (%s) Tj ET\n", sensY, toPDFASCII(posText)))
+		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.2 0.25 0.3 rg 350 %.2f Td (%s) Tj ET\n", sensY, toPDFASCII(s.CertNumber)))
+		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.2 0.25 0.3 rg 442 %.2f Td (%s) Tj ET\n", sensY, toPDFASCII(s.CalibValidUntil)))
 		statusColor := "0.05 0.5 0.2"
 		if strings.Contains(s.Status, "Vencendo") || strings.Contains(s.Status, "Vencido") {
 			statusColor = "0.75 0.45 0.05"
@@ -786,7 +794,7 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 		p1.WriteString(fmt.Sprintf("BT /F2 7.5 Tf %s rg 505 %.2f Td (%s) Tj ET\n", statusColor, sensY, toPDFASCII(s.Status)))
 		sensY -= 13.0
 	}
-	p1.WriteString(fmt.Sprintf("BT /F1 7 Tf 0.5 0.55 0.6 rg 45 %.2f Td (Nota: Exibindo %d sensores RBC calibrados e monitorados continuamente) Tj ET\n", sensY-2, len(data.Sensors)))
+	p1.WriteString(fmt.Sprintf("BT /F1 7 Tf 0.5 0.55 0.6 rg 45 %.2f Td (Nota: Inventario metrologico ativo com %d sensores RBC calibrados e monitorados continuamente) Tj ET\n", sensY-2, len(data.Sensors)))
 
 	// SEÇÃO 3: RASTREABILIDADE DE LOTES (FEFO/PVPS)
 	lotsTopY := sensY - 22.0
