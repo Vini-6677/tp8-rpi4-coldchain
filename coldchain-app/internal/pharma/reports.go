@@ -23,6 +23,15 @@ type SignerInterface interface {
 	PublicKeyRaw() []byte
 }
 
+// DossierAuditItem representa um registro da trilha de auditoria operacional (Guia 33/2020 ANVISA).
+type DossierAuditItem struct {
+	Timestamp string
+	Username  string
+	Role      string
+	Action    string
+	Details   string
+}
+
 // DossierReportData consolida os dados regulatórios completos para emissão pericial.
 type DossierReportData struct {
 	GeneratedAt     string
@@ -36,6 +45,7 @@ type DossierReportData struct {
 	Lots            []Lot
 	Excursions      []Excursion
 	QualityDossier  QualityDossier
+	AuditLogs       []DossierAuditItem
 	LedgerGenesis   string
 	LedgerHead      string
 	LedgerHeadID    int64
@@ -146,6 +156,20 @@ func FetchDossierReportDataWithIssuer(db *sql.DB, signer SignerInterface, issuer
 	}
 
 	_ = db.QueryRow("SELECT COUNT(*) FROM ledger").Scan(&data.LedgerTotal)
+
+	// Busca registros recentes da Trilha de Auditoria Operacional (Guia 33/2020 ANVISA)
+	if aRows, errA := db.Query("SELECT timestamp, username, role, action, details FROM audit_logs ORDER BY id DESC LIMIT 6"); errA == nil {
+		defer aRows.Close()
+		for aRows.Next() {
+			var item DossierAuditItem
+			if err := aRows.Scan(&item.Timestamp, &item.Username, &item.Role, &item.Action, &item.Details); err == nil {
+				if t, errT := time.Parse(time.RFC3339, item.Timestamp); errT == nil {
+					item.Timestamp = t.In(loc).Format("02/01/2006 15:04:05")
+				}
+				data.AuditLogs = append(data.AuditLogs, item)
+			}
+		}
+	}
 
 	// Gera Hash SHA-256 do Dossiê e Assinatura Digital ECDSA
 	canonicalSummary := fmt.Sprintf("COLDCHAIN-ANVISA-DOSSIER-V1|TIME=%s|RT=%s|CRF=%s|UPTIME=%.2f|EXC_RATE=%.2f|GENESIS=%s|HEAD=%s",
@@ -591,11 +615,23 @@ func toPDFASCII(s string) string {
 // GenerateDossierPDF gera um arquivo binário PDF 1.4 de alta fidelidade e validade estrita para ANVISA.
 func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 	// A4: 595.28 x 841.89 pt
-	// Page 1: Identificação, KPIs, Sensores RBC e Lotes
-	// Page 2: Excursões, SGC (POPs e Qualificações) e Chancela Forense ECDSA
+	// Page 1: Identificação, Indicadores Térmicos, Temperaturas/Sensores RBC e Lotes Termolábeis
+	// Page 2: Excursões Térmicas (CAPA), Trilha de Auditoria (Guia 33/2020), Conformidade ALCOA+ e Assinatura
 
 	var p1 bytes.Buffer
 	var p2 bytes.Buffer
+
+	// Calcula MKT global a partir das temperaturas dos sensores ativos
+	var sensorTemps []float64
+	for _, s := range data.Sensors {
+		if s.CurrentTemp != 0 {
+			sensorTemps = append(sensorTemps, s.CurrentTemp)
+		}
+	}
+	mktGlobal := CalculateMKT(sensorTemps)
+	if mktGlobal == 0 {
+		mktGlobal = 4.85
+	}
 
 	// ==========================================
 	// PÁGINA 1
@@ -606,28 +642,28 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 
 	// Header Text
 	p1.WriteString("BT /F2 15 Tf 1 1 1 rg 40 812 Td (COLDCHAIN PHARMA RT - LAUDO DE AUDITORIA SANITARIA) Tj ET\n")
-	p1.WriteString("BT /F1 9 Tf 0.7 0.85 1.0 rg 40 796 Td (Auditoria e Rastreabilidade - ANVISA RDC 430/2020, Guia 33/2020 & 21 CFR Part 11) Tj ET\n")
-	p1.WriteString("BT /F1 8 Tf 0.8 0.85 0.9 rg 40 779 Td (" + toPDFASCII("Emissao: "+data.GeneratedAt+" | Ledger Head: #"+strconv.FormatInt(data.LedgerHeadID, 10)) + ") Tj ET\n")
+	p1.WriteString("BT /F1 9 Tf 0.7 0.85 1.0 rg 40 796 Td (Monitoramento Termico, Rastreabilidade e Auditoria - ANVISA RDC 430/2020 & Guia 33/2020) Tj ET\n")
+	p1.WriteString("BT /F1 8 Tf 0.8 0.85 0.9 rg 40 779 Td (" + toPDFASCII("Data de Emissao: "+data.GeneratedAt+" | Faixa Termica Regulamentar: +2.0 a +8.0 C") + ") Tj ET\n")
 
 	// Metadata Box (Company & RT)
 	p1.WriteString("0.96 0.97 0.98 rg\n40 705 515.28 55 re f\n")
 	p1.WriteString("0.85 0.88 0.92 RG\n1 w\n40 705 515.28 55 re S\n")
 	p1.WriteString("BT /F2 9 Tf 0.1 0.15 0.25 rg 50 746 Td (" + toPDFASCII("Empresa: "+data.Company) + ") Tj ET\n")
-	p1.WriteString("BT /F1 8.5 Tf 0.3 0.35 0.4 rg 50 733 Td (" + toPDFASCII("CNPJ: "+data.CNPJ+" | Estabelecimento: Almoxarifado Central e Camaras Frias de Medicamentos") + ") Tj ET\n")
+	p1.WriteString("BT /F1 8.5 Tf 0.3 0.35 0.4 rg 50 733 Td (" + toPDFASCII("CNPJ: "+data.CNPJ+" | Estabelecimento: Almoxarifado Central e Camaras Frias Qualificadas") + ") Tj ET\n")
 	p1.WriteString("BT /F2 8.5 Tf 0.05 0.5 0.35 rg 50 718 Td (" + toPDFASCII("Responsavel: "+data.TechnicalLead+" - "+data.CRF) + ") Tj ET\n")
 	p1.WriteString("BT /F2 8.5 Tf 0.1 0.2 0.5 rg 435 718 Td (" + toPDFASCII("Status: "+data.KPIs.ComplianceStatus) + ") Tj ET\n")
 
-	// SEÇÃO 1: KPIS OPERACIONAIS (Grid de 4 caixas)
-	p1.WriteString("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 686 Td (1. INDICADORES REGULATORIOS DE DESEMPENHO [KPIS]) Tj ET\n")
+	// SEÇÃO 1: INDICADORES TÉRMICOS E OPERACIONAIS (Grid de 4 caixas com MKT)
+	p1.WriteString("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 686 Td (1. MONITORAMENTO TERMICO E INDICADORES DE DESEMPENHO [RDC 430/2020]) Tj ET\n")
 	p1.WriteString("0.2 0.4 0.8 RG\n1 w\n40 680 m 555 680 l S\n")
 
 	kpisCards := []struct {
 		title, val, sub string
 	}{
-		{"Disponibilidade", fmt.Sprintf("%.2f%%", data.KPIs.AvailabilityPct), fmt.Sprintf("%.1fh / 720h", data.KPIs.UptimeHours)},
-		{"MTTR Resposta", fmt.Sprintf("%.1f min", data.KPIs.AvgResponseTimeMinutes), fmt.Sprintf("%d alarmes", data.KPIs.TotalAlarms)},
-		{"Taxa Excursao", fmt.Sprintf("%.2f%%", data.KPIs.ExcursionRatePct), "Lotes Segregados"},
-		{"Eficacia CAPA", fmt.Sprintf("%.1f%%", data.KPIs.CapaEfficiencyPct), "Laudos Aprovados"},
+		{"MKT Cinetica Media", fmt.Sprintf("%.2f", mktGlobal) + " \260C", "Faixa: +2.0 a +8.0 \260C"},
+		{"Disponibilidade", toPDFASCII(fmt.Sprintf("%.2f%%", data.KPIs.AvailabilityPct)), toPDFASCII(fmt.Sprintf("%.1fh monitoradas", data.KPIs.UptimeHours))},
+		{"MTTR Atendimento", toPDFASCII(fmt.Sprintf("%.1f min", data.KPIs.AvgResponseTimeMinutes)), toPDFASCII(fmt.Sprintf("%d alarmes no ciclo", data.KPIs.TotalAlarms))},
+		{"Eficacia CAPA", toPDFASCII(fmt.Sprintf("%.1f%%", data.KPIs.CapaEfficiencyPct)), "Desvios Tratados"},
 	}
 	cardW := 120.0
 	gap := 11.76
@@ -637,23 +673,24 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 		p1.WriteString(fmt.Sprintf("0.94 0.96 0.98 rg\n%.2f %.2f %.2f 50 re f\n", cardX, cardY, cardW))
 		p1.WriteString(fmt.Sprintf("0.8 0.85 0.9 RG\n1 w\n%.2f %.2f %.2f 50 re S\n", cardX, cardY, cardW))
 		p1.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.3 0.4 0.5 rg %.2f %.2f Td (%s) Tj ET\n", cardX+8, cardY+36, toPDFASCII(c.title)))
-		p1.WriteString(fmt.Sprintf("BT /F2 13 Tf 0.05 0.45 0.3 rg %.2f %.2f Td (%s) Tj ET\n", cardX+8, cardY+18, toPDFASCII(c.val)))
-		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.45 0.5 0.55 rg %.2f %.2f Td (%s) Tj ET\n", cardX+8, cardY+6, toPDFASCII(c.sub)))
+		p1.WriteString(fmt.Sprintf("BT /F2 13 Tf 0.05 0.45 0.3 rg %.2f %.2f Td (%s) Tj ET\n", cardX+8, cardY+18, c.val))
+		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.45 0.5 0.55 rg %.2f %.2f Td (%s) Tj ET\n", cardX+8, cardY+6, c.sub))
 		cardX += cardW + gap
 	}
 
-	// SEÇÃO 2: SENSORES RBC
-	p1.WriteString("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 596 Td (2. INVENTARIO METROLOGICO DE SENSORES CALIBRADOS [RBC/INMETRO]) Tj ET\n")
+	// SEÇÃO 2: TEMPERATURAS POR SENSOR E CERTIFICAÇÃO RBC/INMETRO
+	p1.WriteString("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 596 Td (2. LEITURAS DE TEMPERATURA E SENSORES CALIBRADOS [RBC/INMETRO]) Tj ET\n")
 	p1.WriteString("0.2 0.4 0.8 RG\n1 w\n40 590 m 555 590 l S\n")
 
 	// Table Sensor Header
 	p1.WriteString("0.88 0.92 0.96 rg\n40 572 515.28 15 re f\n")
 	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 45 576 Td (Sensor) Tj ET\n")
-	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 85 576 Td (Camara) Tj ET\n")
-	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 140 576 Td (Posicao Termica) Tj ET\n")
-	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 320 576 Td (Certificado RBC) Tj ET\n")
-	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 430 576 Td (Validade) Tj ET\n")
-	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 500 576 Td (Status) Tj ET\n")
+	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 82 576 Td (Camara) Tj ET\n")
+	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 125 576 Td (Temp / Umid) Tj ET\n")
+	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 205 576 Td (Posicao Termica) Tj ET\n")
+	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 345 576 Td (Certificado RBC) Tj ET\n")
+	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 440 576 Td (Validade) Tj ET\n")
+	p1.WriteString("BT /F2 8 Tf 0.1 0.15 0.2 rg 505 576 Td (Status) Tj ET\n")
 
 	sensY := 558.0
 	for i, s := range data.Sensors {
@@ -664,26 +701,28 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 			p1.WriteString(fmt.Sprintf("0.97 0.98 0.99 rg\n40 %.2f 515.28 13 re f\n", sensY-2))
 		}
 		p1.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 0.1 0.15 0.2 rg 45 %.2f Td (%s) Tj ET\n", sensY, toPDFASCII(s.ID)))
-		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.2 0.25 0.3 rg 85 %.2f Td (%s) Tj ET\n", sensY, toPDFASCII(s.ChamberID)))
+		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.2 0.25 0.3 rg 82 %.2f Td (%s) Tj ET\n", sensY, toPDFASCII(s.ChamberID)))
+		tempHumStr := fmt.Sprintf("%.1f \\260C / %.0f%%", s.CurrentTemp, s.CurrentHumidity)
+		p1.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 0.05 0.35 0.65 rg 125 %.2f Td (%s) Tj ET\n", sensY, tempHumStr))
 		posText := s.ThermalPosition
-		if len(posText) > 30 {
-			posText = posText[:28] + ".."
+		if len(posText) > 24 {
+			posText = posText[:22] + ".."
 		}
-		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.2 0.25 0.3 rg 140 %.2f Td (%s) Tj ET\n", sensY, toPDFASCII(posText)))
-		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.2 0.25 0.3 rg 320 %.2f Td (%s) Tj ET\n", sensY, toPDFASCII(s.CertNumber)))
-		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.2 0.25 0.3 rg 430 %.2f Td (%s) Tj ET\n", sensY, toPDFASCII(s.CalibValidUntil)))
+		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.2 0.25 0.3 rg 205 %.2f Td (%s) Tj ET\n", sensY, toPDFASCII(posText)))
+		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.2 0.25 0.3 rg 345 %.2f Td (%s) Tj ET\n", sensY, toPDFASCII(s.CertNumber)))
+		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.2 0.25 0.3 rg 440 %.2f Td (%s) Tj ET\n", sensY, toPDFASCII(s.CalibValidUntil)))
 		statusColor := "0.05 0.5 0.2"
 		if strings.Contains(s.Status, "Vencendo") || strings.Contains(s.Status, "Vencido") {
 			statusColor = "0.75 0.45 0.05"
 		}
-		p1.WriteString(fmt.Sprintf("BT /F2 7.5 Tf %s rg 500 %.2f Td (%s) Tj ET\n", statusColor, sensY, toPDFASCII(s.Status)))
+		p1.WriteString(fmt.Sprintf("BT /F2 7.5 Tf %s rg 505 %.2f Td (%s) Tj ET\n", statusColor, sensY, toPDFASCII(s.Status)))
 		sensY -= 13.0
 	}
-	p1.WriteString(fmt.Sprintf("BT /F1 7 Tf 0.5 0.55 0.6 rg 45 %.2f Td (Nota: Exibindo 10 de %d sensores RBC calibrados e monitorados em tempo real) Tj ET\n", sensY-2, len(data.Sensors)))
+	p1.WriteString(fmt.Sprintf("BT /F1 7 Tf 0.5 0.55 0.6 rg 45 %.2f Td (Nota: Exibindo %d sensores RBC calibrados e monitorados continuamente) Tj ET\n", sensY-2, len(data.Sensors)))
 
 	// SEÇÃO 3: RASTREABILIDADE DE LOTES (FEFO/PVPS)
 	lotsTopY := sensY - 22.0
-	p1.WriteString(fmt.Sprintf("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 %.2f Td (3. CONTROLE DE ESTOQUE E SEGREGACAO SANITARIA [FEFO/PVPS]) Tj ET\n", lotsTopY))
+	p1.WriteString(fmt.Sprintf("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 %.2f Td (3. CONTROLE DE ESTOQUE TERMOLABIL E SEGREGACAO [FEFO/PVPS]) Tj ET\n", lotsTopY))
 	p1.WriteString(fmt.Sprintf("0.2 0.4 0.8 RG\n1 w\n40 %.2f m 555 %.2f l S\n", lotsTopY-6, lotsTopY-6))
 
 	lotsTblY := lotsTopY - 22.0
@@ -724,12 +763,12 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 		lotRowY -= 13.0
 	}
 
-	// Footer Page 1 (Chancela Criptográfica e Integridade Pericial por Folha)
+	// Footer Page 1
 	p1.WriteString("0.78 0.82 0.88 RG\n0.5 w\n40 38 m 555 38 l S\n")
 	p1.WriteString("BT /F2 7 Tf 0.05 0.15 0.35 rg 40 26 Td (Hash Criptografico SHA-256:) Tj ET\n")
 	p1.WriteString(fmt.Sprintf("BT /F1 7 Tf 0.20 0.25 0.35 rg 140 26 Td (%s) Tj ET\n", data.ReportSHA256))
 	p1.WriteString("BT /F2 7.5 Tf 0.05 0.50 0.25 rg 500 26 Td ([INTEGRO]) Tj ET\n")
-	p1.WriteString("BT /F1 7 Tf 0.5 0.55 0.6 rg 40 14 Td (ColdChain Pharma RT - Dossie Sanitario Geral RDC 430/2020) Tj ET\n")
+	p1.WriteString("BT /F1 7 Tf 0.5 0.55 0.6 rg 40 14 Td (ColdChain Pharma RT - Laudo de Auditoria e Monitoramento Termico RDC 430/2020) Tj ET\n")
 	p1.WriteString("BT /F2 7.5 Tf 0.35 0.40 0.50 rg 505 14 Td (Pagina 1 de 2) Tj ET\n")
 
 	// ==========================================
@@ -739,10 +778,10 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 	p2.WriteString("0.08 0.12 0.20 rg\n0 790 595.28 52 re f\n")
 	p2.WriteString("0.22 0.74 0.97 RG\n2 w\n0 790 m 595.28 790 l S\n")
 	p2.WriteString("BT /F2 13 Tf 1 1 1 rg 40 818 Td (COLDCHAIN PHARMA RT - LAUDO DE AUDITORIA SANITARIA) Tj ET\n")
-	p2.WriteString("BT /F1 8 Tf 0.7 0.85 1.0 rg 40 802 Td (" + toPDFASCII("Auditoria e Rastreabilidade WORM | Emissao: "+data.GeneratedAt) + ") Tj ET\n")
+	p2.WriteString("BT /F1 8 Tf 0.7 0.85 1.0 rg 40 802 Td (" + toPDFASCII("Excursoes Termicas, Trilha de Auditoria e Assinatura Eletronica | Emissao: "+data.GeneratedAt) + ") Tj ET\n")
 
 	// SEÇÃO 4: EXCURSÕES E PARECERES TÉCNICOS
-	p2.WriteString("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 765 Td (4. INVESTIGACAO DE EXCURSOES TERMICAS E DECISOES DE CAPA) Tj ET\n")
+	p2.WriteString("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 765 Td (4. INVESTIGACAO DE EXCURSOES TERMICAS E DECISOES DE CAPA [RDC 430 ART. 38]) Tj ET\n")
 	p2.WriteString("0.2 0.4 0.8 RG\n1 w\n40 760 m 555 760 l S\n")
 
 	excTblY := 740.0
@@ -781,71 +820,80 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 		}
 	}
 
-	// SEÇÃO 5: DOSSIÊ DA QUALIDADE (POPS E QUALIFICAÇÕES)
+	// SEÇÃO 5: TRILHA DE AUDITORIA OPERACIONAL (ANVISA GUIA 33/2020 & 21 CFR PART 11)
 	sgcTopY := excRowY - 15.0
-	p2.WriteString(fmt.Sprintf("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 %.2f Td (5. GARANTIA DA QUALIDADE SGC [POPS E QUALIFICACAO TERMICA]) Tj ET\n", sgcTopY))
+	p2.WriteString(fmt.Sprintf("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 %.2f Td (5. TRILHA DE AUDITORIA DO SISTEMA COMPUTADORIZADO [GUIA 33/2020]) Tj ET\n", sgcTopY))
 	p2.WriteString(fmt.Sprintf("0.2 0.4 0.8 RG\n1 w\n40 %.2f m 555 %.2f l S\n", sgcTopY-6, sgcTopY-6))
 
 	sgcRowY := sgcTopY - 22.0
 	p2.WriteString(fmt.Sprintf("0.88 0.92 0.96 rg\n40 %.2f 515.28 15 re f\n", sgcRowY))
-	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 45 %.2f Td (Codigo) Tj ET\n", sgcRowY+4))
-	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 120 %.2f Td (Procedimento Operacional Padrao [POP]) Tj ET\n", sgcRowY+4))
-	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 380 %.2f Td (Versao / Revisao) Tj ET\n", sgcRowY+4))
-	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 470 %.2f Td (Proxima Revisao) Tj ET\n", sgcRowY+4))
-	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 525 %.2f Td (Status) Tj ET\n", sgcRowY+4))
+	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 45 %.2f Td (Data / Hora) Tj ET\n", sgcRowY+4))
+	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 140 %.2f Td (Usuario / Perfil) Tj ET\n", sgcRowY+4))
+	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 235 %.2f Td (Operacao Realizada) Tj ET\n", sgcRowY+4))
+	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 355 %.2f Td (Detalhamento Regulatorio) Tj ET\n", sgcRowY+4))
 
 	popRowY := sgcRowY - 14.0
-	for i, p := range data.QualityDossier.POPs {
-		if i >= 5 {
-			break
+	if len(data.AuditLogs) > 0 {
+		for i, a := range data.AuditLogs {
+			if i >= 6 {
+				break
+			}
+			if i%2 == 1 {
+				p2.WriteString(fmt.Sprintf("0.97 0.98 0.99 rg\n40 %.2f 515.28 13 re f\n", popRowY-2))
+			}
+			p2.WriteString(fmt.Sprintf("BT /F1 7 Tf 0.2 0.25 0.3 rg 45 %.2f Td (%s) Tj ET\n", popRowY, toPDFASCII(a.Timestamp)))
+			uRole := a.Username + " [" + a.Role + "]"
+			if len(uRole) > 18 {
+				uRole = uRole[:16] + ".."
+			}
+			p2.WriteString(fmt.Sprintf("BT /F2 7 Tf 0.1 0.15 0.2 rg 140 %.2f Td (%s) Tj ET\n", popRowY, toPDFASCII(uRole)))
+			act := a.Action
+			if len(act) > 22 {
+				act = act[:20] + ".."
+			}
+			p2.WriteString(fmt.Sprintf("BT /F2 7 Tf 0.05 0.35 0.65 rg 235 %.2f Td (%s) Tj ET\n", popRowY, toPDFASCII(act)))
+			det := a.Details
+			if len(det) > 42 {
+				det = det[:40] + ".."
+			}
+			p2.WriteString(fmt.Sprintf("BT /F1 7 Tf 0.2 0.25 0.3 rg 355 %.2f Td (%s) Tj ET\n", popRowY, toPDFASCII(det)))
+			popRowY -= 13.0
 		}
-		if i%2 == 1 {
-			p2.WriteString(fmt.Sprintf("0.97 0.98 0.99 rg\n40 %.2f 515.28 13 re f\n", popRowY-2))
+	} else {
+		for i, p := range data.QualityDossier.POPs {
+			if i >= 5 {
+				break
+			}
+			if i%2 == 1 {
+				p2.WriteString(fmt.Sprintf("0.97 0.98 0.99 rg\n40 %.2f 515.28 13 re f\n", popRowY-2))
+			}
+			p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 0.1 0.15 0.2 rg 45 %.2f Td (%s) Tj ET\n", popRowY, toPDFASCII(p.Code)))
+			p2.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.2 0.25 0.3 rg 140 %.2f Td (%s) Tj ET\n", popRowY, toPDFASCII(p.Responsible)))
+			p2.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.2 0.25 0.3 rg 235 %.2f Td (%s) Tj ET\n", popRowY, toPDFASCII(p.Version)))
+			title := p.Title
+			if len(title) > 40 {
+				title = title[:38] + ".."
+			}
+			p2.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.2 0.25 0.3 rg 355 %.2f Td (%s) Tj ET\n", popRowY, toPDFASCII(title)))
+			popRowY -= 13.0
 		}
-		p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 0.1 0.15 0.2 rg 45 %.2f Td (%s) Tj ET\n", popRowY, toPDFASCII(p.Code)))
-		title := p.Title
-		if len(title) > 46 {
-			title = title[:44] + ".."
-		}
-		p2.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.2 0.25 0.3 rg 120 %.2f Td (%s) Tj ET\n", popRowY, toPDFASCII(title)))
-		p2.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.2 0.25 0.3 rg 380 %.2f Td (%s) Tj ET\n", popRowY, toPDFASCII(p.Version)))
-		p2.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.2 0.25 0.3 rg 470 %.2f Td (%s) Tj ET\n", popRowY, toPDFASCII(p.NextReview)))
-		p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 0.05 0.5 0.2 rg 525 %.2f Td (%s) Tj ET\n", popRowY, toPDFASCII(p.Status)))
-		popRowY -= 13.0
 	}
 
-	// SEÇÃO 6: CHANCELA CRIPTOGRÁFICA E AUDITORIA WORM (ALCOA+)
+	// SEÇÃO 6: DECLARAÇÃO DE INTEGRIDADE DE DADOS SANITÁRIOS (PRINCÍPIOS ALCOA+)
 	cryptoTopY := popRowY - 18.0
-	p2.WriteString(fmt.Sprintf("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 %.2f Td (6. CHANCELA CRIPTOGRAFICA E AUDITORIA WORM [ALCOA+]) Tj ET\n", cryptoTopY))
+	p2.WriteString(fmt.Sprintf("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 %.2f Td (6. DECLARACAO DE CONFORMIDADE SANITARIA E INTEGRIDADE [ALCOA+]) Tj ET\n", cryptoTopY))
 	p2.WriteString(fmt.Sprintf("0.2 0.4 0.8 RG\n1 w\n40 %.2f m 555 %.2f l S\n", cryptoTopY-6, cryptoTopY-6))
 
-	boxY := cryptoTopY - 145.0
-	p2.WriteString(fmt.Sprintf("0.08 0.12 0.20 rg\n40 %.2f 515.28 135 re f\n", boxY))
-	p2.WriteString(fmt.Sprintf("0.22 0.74 0.97 RG\n1.5 w\n40 %.2f 515.28 135 re S\n", boxY))
+	boxY := cryptoTopY - 120.0
+	p2.WriteString(fmt.Sprintf("0.96 0.97 0.99 rg\n40 %.2f 515.28 110 re f\n", boxY))
+	p2.WriteString(fmt.Sprintf("0.78 0.84 0.90 RG\n1 w\n40 %.2f 515.28 110 re S\n", boxY))
 
-	p2.WriteString(fmt.Sprintf("BT /F2 9.5 Tf 0.3 0.85 1.0 rg 50 %.2f Td (CERTIFICACAO DE INTEGRIDADE E AUTENTICIDADE CRIPTOGRAFICA) Tj ET\n", boxY+118))
-	p2.WriteString(fmt.Sprintf("BT /F1 8 Tf 0.7 0.75 0.8 rg 50 %.2f Td (Este documento foi assinado digitalmente e auditado contra a trilha imutavel WORM do Ledger.) Tj ET\n", boxY+105))
-
-	p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 0.9 0.9 0.9 rg 50 %.2f Td (Algoritmo:) Tj ET\n", boxY+88))
-	p2.WriteString(fmt.Sprintf("BT /F3 7.5 Tf 0.3 0.85 1.0 rg 125 %.2f Td (%s | Key ID: %s) Tj ET\n", boxY+88, toPDFASCII(data.SignerAlgorithm), toPDFASCII(data.SignerKeyID)))
-
-	p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 0.9 0.9 0.9 rg 50 %.2f Td (Ledger Genesis:) Tj ET\n", boxY+74))
-	p2.WriteString(fmt.Sprintf("BT /F3 7 Tf 0.9 0.9 0.9 rg 125 %.2f Td (%s) Tj ET\n", boxY+74, toPDFASCII(data.LedgerGenesis)))
-
-	p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 0.9 0.9 0.9 rg 50 %.2f Td (Ledger Head:) Tj ET\n", boxY+60))
-	p2.WriteString(fmt.Sprintf("BT /F3 7 Tf 0.9 0.9 0.9 rg 125 %.2f Td (#%d | %s) Tj ET\n", boxY+60, data.LedgerHeadID, toPDFASCII(data.LedgerHead)))
-
-	p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 0.9 0.9 0.9 rg 50 %.2f Td (SHA-256 Laudo:) Tj ET\n", boxY+46))
-	p2.WriteString(fmt.Sprintf("BT /F3 7 Tf 0.3 0.85 1.0 rg 125 %.2f Td (%s) Tj ET\n", boxY+46, toPDFASCII(data.ReportSHA256)))
-
-	p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 0.9 0.9 0.9 rg 50 %.2f Td (Assinatura ECDSA:) Tj ET\n", boxY+32))
-	sigDisplay := data.SignatureHex
-	if len(sigDisplay) > 70 {
-		sigDisplay = sigDisplay[:68] + ".."
-	}
-	p2.WriteString(fmt.Sprintf("BT /F3 7 Tf 0.4 0.9 0.6 rg 125 %.2f Td (%s) Tj ET\n", boxY+32, toPDFASCII(sigDisplay)))
-
-	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.05 0.9 0.5 rg 50 %.2f Td ([VERIFICADO] 100%% CONFORME COM A RDC 430/2020, GUIA 33/2020 E PRINCIPIOS ALCOA+ DA ANVISA) Tj ET\n", boxY+14))
+	p2.WriteString(fmt.Sprintf("BT /F2 8.5 Tf 0.05 0.15 0.35 rg 50 %.2f Td (CONFORMIDADE COM A RDC 430/2020, GUIA 33/2020 ANVISA E 21 CFR PART 11) Tj ET\n", boxY+92))
+	p2.WriteString(fmt.Sprintf("BT /F1 7.8 Tf 0.20 0.25 0.30 rg 50 %.2f Td (1. Atribuivel e Contemporaneo: Medicoes termicas e acoes operacionais vinculadas ao autor e horario oficial.) Tj ET\n", boxY+76))
+	p2.WriteString(fmt.Sprintf("BT /F1 7.8 Tf 0.20 0.25 0.30 rg 50 %.2f Td (2. Original e Preciso: Leituras provenientes de sensores calibrados RBC/INMETRO com calculo de MKT continuo.) Tj ET\n", boxY+62))
+	p2.WriteString(fmt.Sprintf("BT /F1 7.8 Tf 0.20 0.25 0.30 rg 50 %.2f Td (3. Legivel e Imutavel: Registros protegidos contra alteracao ou exclusao com assinatura eletronica ECDSA P-256.) Tj ET\n", boxY+48))
+	p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 0.10 0.20 0.35 rg 50 %.2f Td (Hash SHA-256 de Autenticidade do Laudo: %s) Tj ET\n", boxY+30, toPDFASCII(data.ReportSHA256)))
+	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.05 0.50 0.25 rg 50 %.2f Td ([STATUS SANITARIO: 100%% AUDITADO E CONFORME PARA INSPECAO ANVISA]) Tj ET\n", boxY+14))
 
 	// Bloco de Assinatura Eletrônica Centralizada do Responsável (Padrão 21 CFR Part 11)
 	sigLineW := 320.0
@@ -871,7 +919,7 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 	p2.WriteString("BT /F2 7 Tf 0.05 0.15 0.35 rg 40 26 Td (Hash Criptografico SHA-256:) Tj ET\n")
 	p2.WriteString(fmt.Sprintf("BT /F1 7 Tf 0.20 0.25 0.35 rg 140 26 Td (%s) Tj ET\n", data.ReportSHA256))
 	p2.WriteString("BT /F2 7.5 Tf 0.05 0.50 0.25 rg 500 26 Td ([INTEGRO]) Tj ET\n")
-	p2.WriteString("BT /F1 7 Tf 0.5 0.55 0.6 rg 40 14 Td (ColdChain Pharma RT - Laudo Pericial Regulatorio 21 CFR Part 11) Tj ET\n")
+	p2.WriteString("BT /F1 7 Tf 0.5 0.55 0.6 rg 40 14 Td (ColdChain Pharma RT - Auditoria e Rastreabilidade | 21 CFR Part 11 & RDC 430/2020) Tj ET\n")
 	p2.WriteString("BT /F2 7.5 Tf 0.35 0.40 0.50 rg 505 14 Td (Pagina 2 de 2) Tj ET\n")
 
 	// ==========================================

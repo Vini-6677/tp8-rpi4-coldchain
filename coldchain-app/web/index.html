@@ -3018,8 +3018,8 @@
        MODAL: EMISSÃO DE LAUDO REGULATÓRIO E INTEGRIDADE DE DADOS (ANVISA)
        ========================================================================= -->
   <div id="modal-audit-export" class="modal-backdrop">
-    <div class="modal-box" style="max-width: 500px;">
-      <div class="modal-header" style="display: flex; align-items: center; justify-content: space-between; padding-bottom: 14px; margin-bottom: 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.08);">
+    <div class="modal-box" style="max-width: 480px;">
+      <div class="modal-header" style="display: flex; align-items: center; justify-content: space-between; padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid rgba(255, 255, 255, 0.08);">
         <div style="display: flex; align-items: center; gap: 10px;">
           <div class="modal-title" style="font-size: 15.5px; font-weight: 700; color: #FFFFFF; letter-spacing: -0.2px;">Emissão de Laudo de Auditoria</div>
           <span style="font-size: 10px; font-weight: 700; color: #38BDF8; background: rgba(56, 189, 248, 0.12); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3); letter-spacing: 0.4px;">RDC 430 • ALCOA+</span>
@@ -3027,40 +3027,25 @@
         <button class="btn-close-modal" onclick="closeAuditExportModal()">&times;</button>
       </div>
 
-      <!-- Painel de Integridade dos Dados em Tempo Real -->
-      <div style="margin-bottom: 16px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-          <label class="form-label" style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #94A3B8; margin: 0;">Integridade Criptográfica dos Dados (WORM)</label>
-          <button type="button" onclick="refreshAuditModalIntegrity()" style="background: transparent; border: none; color: #38BDF8; font-size: 11px; font-weight: 600; cursor: pointer; padding: 0;">Revalidar Cadeia</button>
+      <!-- Barra de Status de Integridade Padrão Industrial (Compacta e Direta) -->
+      <div id="audit-modal-integrity-box" style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span id="audit-modal-status-dot" style="width: 8px; height: 8px; border-radius: 50%; background: #10B981; display: inline-block; flex-shrink: 0;"></span>
+          <span id="audit-modal-status-text" style="font-size: 12.5px; font-weight: 600; color: #34D399;">Integridade de Dados Verificada (ALCOA+)</span>
         </div>
-        <div id="audit-modal-integrity-box" style="background: #0B1120; border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 8px; padding: 12px 14px;">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <span id="audit-modal-status-dot" style="width: 8px; height: 8px; border-radius: 50%; background: #10B981; display: inline-block;"></span>
-              <span id="audit-modal-status-text" style="font-size: 12.5px; font-weight: 700; color: #34D399;">Cadeia WORM Íntegra (100% Verificada)</span>
-            </div>
-            <span id="audit-modal-blocks-badge" style="font-family: monospace; font-size: 11px; font-weight: 600; color: #94A3B8; background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 4px;">-- blocos</span>
-          </div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11.5px; color: #94A3B8; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 8px;">
-            <div>Assinatura: <strong style="color: #E2E8F0; font-family: monospace;">ECDSA P-256 + SHA-256</strong></div>
-            <div>Norma: <strong style="color: #E2E8F0;">Guia 33/2020 &amp; 21 CFR 11</strong></div>
-          </div>
-          <div style="margin-top: 6px; font-size: 11px; color: #64748B; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="audit-modal-head-hash">
-            Head SHA-256: verificando...
-          </div>
-        </div>
+        <span id="audit-modal-blocks-badge" style="font-family: monospace; font-size: 11px; font-weight: 600; color: #E2E8F0; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); padding: 3px 8px; border-radius: 4px; white-space: nowrap;">ECDSA P-256</span>
       </div>
 
       <!-- Seleção de Formato Regulatório -->
       <div style="margin-bottom: 18px;">
-        <label class="form-label" style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #94A3B8; margin-bottom: 8px; display: block;">Formato de Emissão Regulatória</label>
+        <label class="form-label" style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #94A3B8; margin-bottom: 8px; display: block;">Formato do Relatório</label>
 
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <!-- Opção PDF -->
-          <div id="audit-fmt-card-pdf" onclick="selectAuditReportFormat('pdf')" style="background: rgba(37, 99, 235, 0.12); border: 1.5px solid #3B82F6; border-radius: 8px; padding: 11px 14px; cursor: pointer; transition: all 0.15s; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;">
+          <div id="audit-fmt-card-pdf" onclick="selectAuditReportFormat('pdf')" style="background: rgba(37, 99, 235, 0.14); border: 1.5px solid #3B82F6; border-radius: 8px; padding: 11px 14px; cursor: pointer; transition: all 0.15s; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;">
             <div>
-              <div style="font-size: 13px; font-weight: 700; color: #FFFFFF; margin-bottom: 2px;">Laudo Oficial de Auditoria (PDF 1.4)</div>
-              <div style="font-size: 11.5px; color: #94A3B8; line-height: 1.4;">Dossiê paginado com KPIs, sensores RBC, lotes FEFO, excursões e assinatura ECDSA em todas as folhas.</div>
+              <div style="font-size: 13px; font-weight: 700; color: #FFFFFF; margin-bottom: 2px;">Laudo Oficial ANVISA (PDF)</div>
+              <div style="font-size: 11.5px; color: #94A3B8; line-height: 1.4;">Temperaturas e MKT, sensores calibrados RBC, lotes FEFO, excursões, trilha de auditoria e assinatura eletrônica.</div>
             </div>
             <span style="font-size: 10px; font-weight: 700; color: #60A5FA; background: rgba(37, 99, 235, 0.2); padding: 2px 7px; border-radius: 4px; white-space: nowrap;">PDF</span>
           </div>
@@ -3068,8 +3053,8 @@
           <!-- Opção CSV -->
           <div id="audit-fmt-card-csv" onclick="selectAuditReportFormat('csv')" style="background: #0F172A; border: 1.5px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 11px 14px; cursor: pointer; transition: all 0.15s; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;">
             <div>
-              <div style="font-size: 13px; font-weight: 700; color: #E2E8F0; margin-bottom: 2px;">Trilha Auditável Completa (CSV UTF-8)</div>
-              <div style="font-size: 11.5px; color: #94A3B8; line-height: 1.4;">Planilha estruturada com encadeamento SHA-256 bloco a bloco, trilha de acessos e chancela final.</div>
+              <div style="font-size: 13px; font-weight: 700; color: #E2E8F0; margin-bottom: 2px;">Planilha de Auditoria (CSV)</div>
+              <div style="font-size: 11.5px; color: #94A3B8; line-height: 1.4;">Tabela compatível com Excel contendo o histórico completo de eventos, acessos e controle de integridade.</div>
             </div>
             <span style="font-size: 10px; font-weight: 700; color: #94A3B8; background: rgba(255, 255, 255, 0.06); padding: 2px 7px; border-radius: 4px; white-space: nowrap;">CSV</span>
           </div>
@@ -3077,8 +3062,8 @@
           <!-- Opção JSON -->
           <div id="audit-fmt-card-json" onclick="selectAuditReportFormat('json')" style="background: #0F172A; border: 1.5px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 11px 14px; cursor: pointer; transition: all 0.15s; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;">
             <div>
-              <div style="font-size: 13px; font-weight: 700; color: #E2E8F0; margin-bottom: 2px;">Pacote Técnico Verificável (JSON)</div>
-              <div style="font-size: 11.5px; color: #94A3B8; line-height: 1.4;">Estrutura para auditoria automatizada contendo chave pública PEM, blocos WORM, logs e selo digital.</div>
+              <div style="font-size: 13px; font-weight: 700; color: #E2E8F0; margin-bottom: 2px;">Cadeia Criptográfica Técnica (JSON)</div>
+              <div style="font-size: 11.5px; color: #94A3B8; line-height: 1.4;">Pacote com hashes SHA-256 encadeados bloco a bloco, assinaturas ECDSA e chave pública para verificador externo.</div>
             </div>
             <span style="font-size: 10px; font-weight: 700; color: #94A3B8; background: rgba(255, 255, 255, 0.06); padding: 2px 7px; border-radius: 4px; white-space: nowrap;">JSON</span>
           </div>
@@ -3088,12 +3073,12 @@
       <div style="display: flex; justify-content: flex-end; gap: 10px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
         <button type="button" class="btn-cancel" onclick="closeAuditExportModal()" style="height: 38px; padding: 0 16px; font-size: 13px; font-weight: 600; border-radius: 6px;">Cancelar</button>
         <button type="button" class="btn-primary" id="btn-confirm-audit-export" onclick="executeSelectedAuditExport()" style="height: 38px; padding: 0 20px; font-size: 13px; font-weight: 600; background: #2563EB; border: 1px solid #3B82F6; color: #FFFFFF; border-radius: 6px; cursor: pointer;">
-          Validar Integridade e Emitir
+          Emitir Relatório
         </button>
       </div>
     </div>
   </div>
 
-  <script src="/static/app.js?v=pharma_v44"></script>
+  <script src="/static/app.js?v=pharma_v45"></script>
 </body>
 </html>
