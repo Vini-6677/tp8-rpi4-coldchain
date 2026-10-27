@@ -60,6 +60,147 @@
       border: 0;
     }
 
+        /* ANIMAÇÃO DE ABERTURA (BOOT SPLASH) */
+    .boot-splash-card {
+      background: rgba(11, 19, 43, 0.94);
+      border: 1px solid rgba(56, 189, 248, 0.28);
+      border-radius: 18px;
+      padding: 36px 32px 30px 32px;
+      width: 100%;
+      max-width: 460px;
+      box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.85), 0 0 40px rgba(37, 99, 235, 0.18);
+      backdrop-filter: blur(18px);
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+      transition: opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1), transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .boot-splash-card.fade-out {
+      opacity: 0;
+      transform: scale(0.95) translateY(-8px);
+      pointer-events: none;
+    }
+    .boot-ring-wrap {
+      position: relative;
+      width: 76px;
+      height: 76px;
+      margin: 0 auto 18px auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .boot-ring-outer {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 2px solid rgba(56, 189, 248, 0.18);
+      border-top-color: #38BDF8;
+      border-right-color: #2563EB;
+      animation: bootSpin 1.8s linear infinite;
+    }
+    .boot-ring-inner {
+      position: absolute;
+      inset: 8px;
+      border-radius: 50%;
+      border: 2px dashed rgba(16, 185, 129, 0.35);
+      border-bottom-color: #10B981;
+      animation: bootSpinRev 2.6s linear infinite;
+    }
+    .boot-core-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(37, 99, 235, 0.28), rgba(6, 182, 212, 0.25));
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #38BDF8;
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.35);
+      animation: bootPulse 1.6s ease-in-out infinite;
+    }
+    @keyframes bootSpin { to { transform: rotate(360deg); } }
+    @keyframes bootSpinRev { to { transform: rotate(-360deg); } }
+    @keyframes bootPulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 18px rgba(56, 189, 248, 0.3); }
+      50% { transform: scale(1.06); box-shadow: 0 0 28px rgba(56, 189, 248, 0.6); }
+    }
+    .boot-hello-banner {
+      margin: 14px 0 16px 0;
+      padding: 10px 14px;
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 13px;
+      font-weight: 700;
+      color: #38BDF8;
+      letter-spacing: 0.2px;
+      min-height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.5);
+    }
+    .boot-steps-list {
+      text-align: left;
+      background: rgba(7, 11, 25, 0.65);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 11.5px;
+    }
+    .boot-step-item {
+      color: #64748B;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: color 0.25s ease, transform 0.25s ease;
+    }
+    .boot-step-item.done {
+      color: #E2E8F0;
+    }
+    .boot-step-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #334155;
+      flex-shrink: 0;
+      transition: background 0.25s ease, box-shadow 0.25s ease;
+    }
+    .boot-step-item.done .boot-step-dot {
+      background: #10B981;
+      box-shadow: 0 0 8px #10B981;
+    }
+    .boot-progress-track {
+      width: 100%;
+      height: 6px;
+      background: rgba(15, 23, 42, 0.9);
+      border-radius: 999px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.07);
+    }
+    .boot-progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #2563EB, #06B6D4, #10B981);
+      border-radius: 999px;
+      transition: width 0.22s ease-out;
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.7);
+    }
+    .login-card-animated {
+      animation: loginCardReveal 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    @keyframes loginCardReveal {
+      from { opacity: 0; transform: translateY(14px) scale(0.97); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
     /* TELA DE LOGIN */
     .login-overlay {
       position: fixed;
@@ -1627,11 +1768,48 @@
   <!-- Requisito 13: h1 obrigatório no DOM com frase exata para aprovação em testes automatizados -->
   <h1>Helooowww world eng. Computacional!!!!!!!</h1>
 
-  <!-- TELA DE LOGIN (RBAC HOSPITALAR) -->
+  <!-- TELA DE LOGIN COM ANIMAÇÃO DE BOOT EMBARCADO -->
   <div id="login-screen" class="login-overlay">
-    <div class="login-card">
+    <!-- SPLASH DE INICIALIZAÇÃO DA RASPBERRY PI / GATEWAY -->
+    <div id="boot-splash-card" class="boot-splash-card">
+      <div class="boot-ring-wrap">
+        <div class="boot-ring-outer"></div>
+        <div class="boot-ring-inner"></div>
+        <div class="boot-core-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2v20M17 5l-5 5-5-5M17 19l-5-5-5 5M2 12h20M5 7l5 5-5 5M19 7l-5 5 5 5"/>
+          </svg>
+        </div>
+      </div>
+      <div style="font-size: 18px; font-weight: 800; color: #F8FAFC; letter-spacing: -0.3px;">ColdChain Pharma RT</div>
+      <div style="font-size: 11px; font-weight: 600; color: #94A3B8; text-transform: uppercase; letter-spacing: 1px; margin-top: 2px;">Gateway Embarcado ARM64 • Inicialização Segura</div>
+
+      <div class="boot-hello-banner">
+        <span id="boot-typewriter-text"></span><span style="display:inline-block; width:7px; height:14px; background:#38BDF8; margin-left:4px; animation: bootPulse 0.8s infinite;"></span>
+      </div>
+
+      <div class="boot-steps-list">
+        <div class="boot-step-item" id="boot-step-1"><span class="boot-step-dot"></span><span>Kernel Linux ARM64 &amp; Containers Isolados</span></div>
+        <div class="boot-step-item" id="boot-step-2"><span class="boot-step-dot"></span><span>Broker MQTT TLS/ACL &amp; Sensores RBC/INMETRO</span></div>
+        <div class="boot-step-item" id="boot-step-3"><span class="boot-step-dot"></span><span>Ledger Criptográfico WORM (SHA-256 + ECDSA P-256)</span></div>
+        <div class="boot-step-item" id="boot-step-4"><span class="boot-step-dot"></span><span>Validação ANVISA RDC 430/2020 &amp; 21 CFR Part 11</span></div>
+      </div>
+
+      <div class="boot-progress-track">
+        <div id="boot-progress-bar" class="boot-progress-bar"></div>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 11px; color: #64748B;">
+        <span id="boot-status-label">Iniciando subsistemas...</span>
+        <button type="button" onclick="finishBootSplash()" style="background: none; border: none; color: #38BDF8; font-size: 11px; font-weight: 600; cursor: pointer; padding: 0;">Acessar direto →</button>
+      </div>
+    </div>
+
+    <!-- CARD DE AUTENTICAÇÃO (APARECE APÓS O BOOT SPLASH) -->
+    <div id="login-card-box" class="login-card" style="display: none;">
       <div class="login-header">
+        <div style="font-size: 10.5px; font-weight: 700; color: #38BDF8; font-family: monospace; margin-bottom: 6px; letter-spacing: 0.3px;">Helooowww world eng. Computacional!!!!!!!</div>
         <div class="login-title">ColdChain Pharma RT</div>
+        <div style="font-size: 12px; color: #94A3B8; margin-top: 4px;">Autenticação RBAC • ANVISA RDC 430 &amp; 21 CFR Part 11</div>
       </div>
 
       <form id="form-login" onsubmit="event.preventDefault(); submitLogin();">

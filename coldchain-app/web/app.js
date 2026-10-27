@@ -164,9 +164,81 @@ async function checkSession() {
   }
 }
 
+let bootSplashPlayed = false;
+let bootSplashTimers = [];
+
+function finishBootSplash() {
+  bootSplashTimers.forEach(t => clearTimeout(t));
+  bootSplashTimers = [];
+  bootSplashPlayed = true;
+  const splash = document.getElementById('boot-splash-card');
+  const loginCard = document.getElementById('login-card-box');
+  if (splash) {
+    splash.classList.add('fade-out');
+    setTimeout(() => {
+      splash.style.display = 'none';
+      if (loginCard) {
+        loginCard.style.display = 'block';
+        loginCard.classList.add('login-card-animated');
+        const userInp = document.getElementById('login-username');
+        if (userInp) userInp.focus();
+      }
+    }, 260);
+  } else if (loginCard) {
+    loginCard.style.display = 'block';
+  }
+}
+
+function runBootSplashAnimation() {
+  const splash = document.getElementById('boot-splash-card');
+  const loginCard = document.getElementById('login-card-box');
+  if (!splash || !loginCard || bootSplashPlayed) {
+    if (splash) splash.style.display = 'none';
+    if (loginCard) loginCard.style.display = 'block';
+    return;
+  }
+
+  splash.style.display = 'block';
+  splash.classList.remove('fade-out');
+  loginCard.style.display = 'none';
+
+  const phrase = 'Helooowww world eng. Computacional!!!!!!!';
+  const typeEl = document.getElementById('boot-typewriter-text');
+  const barEl = document.getElementById('boot-progress-bar');
+  const statusEl = document.getElementById('boot-status-label');
+
+  if (typeEl) typeEl.textContent = '';
+  for (let i = 1; i <= phrase.length; i++) {
+    bootSplashTimers.push(setTimeout(() => {
+      if (typeEl) typeEl.textContent = phrase.slice(0, i);
+    }, i * 32));
+  }
+
+  const steps = [
+    { id: 'boot-step-1', pct: '28%', msg: 'Kernel ARM64 e isolamento ativos...', delay: 300 },
+    { id: 'boot-step-2', pct: '56%', msg: 'Sensores RBC e broker MQTT sincronizados...', delay: 750 },
+    { id: 'boot-step-3', pct: '84%', msg: 'Ledger WORM ECDSA P-256 íntegro...', delay: 1200 },
+    { id: 'boot-step-4', pct: '100%', msg: 'Gateway pronto! Abrindo autenticação...', delay: 1650 }
+  ];
+
+  steps.forEach(st => {
+    bootSplashTimers.push(setTimeout(() => {
+      const el = document.getElementById(st.id);
+      if (el) el.classList.add('done');
+      if (barEl) barEl.style.width = st.pct;
+      if (statusEl) statusEl.textContent = st.msg;
+    }, st.delay));
+  });
+
+  bootSplashTimers.push(setTimeout(() => {
+    finishBootSplash();
+  }, 2250));
+}
+
 function showLogin() {
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('app-container').style.display = 'none';
+  runBootSplashAnimation();
 }
 
 function showApp() {
