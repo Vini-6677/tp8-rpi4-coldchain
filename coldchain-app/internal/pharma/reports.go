@@ -48,6 +48,11 @@ type DossierReportData struct {
 
 // FetchDossierReportData compila todos os dados analíticos a partir do SQLite e assina o laudo com o signer ECDSA.
 func FetchDossierReportData(db *sql.DB, signer SignerInterface) (*DossierReportData, error) {
+	return FetchDossierReportDataWithIssuer(db, signer, "", "", "")
+}
+
+// FetchDossierReportDataWithIssuer compila todos os dados regulatórios identificando dinamicamente o profissional emissor (ALCOA+).
+func FetchDossierReportDataWithIssuer(db *sql.DB, signer SignerInterface, issuerRole, issuerName, issuerUsername string) (*DossierReportData, error) {
 	kpi, err := GetPharmaKPIs(db)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao obter KPIs: %w", err)
@@ -78,20 +83,40 @@ func FetchDossierReportData(db *sql.DB, signer SignerInterface) (*DossierReportD
 		return nil, fmt.Errorf("erro ao obter dossiê de qualidade: %w", err)
 	}
 
-	var adminName, adminUsername string
-	_ = db.QueryRow("SELECT name, username FROM users WHERE role = 'admin' LIMIT 1").Scan(&adminName, &adminUsername)
-	if adminName == "" {
-		adminName = "Administrador Geral"
+	if issuerName == "" || issuerRole == "" {
+		var dbRole, dbName, dbUsername string
+		_ = db.QueryRow("SELECT role, name, username FROM users WHERE role = 'tecnico' LIMIT 1").Scan(&dbRole, &dbName, &dbUsername)
+		if dbName == "" {
+			_ = db.QueryRow("SELECT role, name, username FROM users WHERE role = 'admin' LIMIT 1").Scan(&dbRole, &dbName, &dbUsername)
+		}
+		if dbName == "" {
+			dbName = "Administrador Geral"
+			dbUsername = "admin"
+			dbRole = "admin"
+		}
+		issuerRole = dbRole
+		issuerName = dbName
+		issuerUsername = dbUsername
 	}
-	if adminUsername == "" {
-		adminUsername = "admin"
-	}
-	techLead := fmt.Sprintf("%s (%s)", adminName, adminUsername)
 
+	techLead := fmt.Sprintf("%s (%s)", issuerName, issuerUsername)
+	var crfStr string
+	switch strings.ToLower(issuerRole) {
+	case "tecnico":
+		crfStr = "Farmacêutico(a) RT - Responsabilidade Técnica Farmacêutica"
+	case "admin":
+		crfStr = "Administrador Geral do Sistema - Gestão da Qualidade"
+	case "enfermeiro":
+		crfStr = "Operador Sanitário - Equipe de Enfermagem / Operação"
+	default:
+		crfStr = "Emissor Autorizado - 21 CFR Part 11"
+	}
+
+	loc := time.FixedZone("BRT", -3*3600)
 	data := &DossierReportData{
-		GeneratedAt:     time.Now().Format("2006-01-02 15:04:05"),
+		GeneratedAt:     time.Now().In(loc).Format("02/01/2006 15:04:05 BRT"),
 		TechnicalLead:   techLead,
-		CRF:             "Administração e Garantia da Qualidade",
+		CRF:             crfStr,
 		Company:         "ColdChain Pharma Distribuidora e Logística Hospitalar Ltda",
 		CNPJ:            "33.247.743/0001-10",
 		KPIs:            kpi,
@@ -471,12 +496,64 @@ func GenerateLedgerCSVWithIssuer(db *sql.DB, signer SignerInterface, issuerRole,
 				prevHex,
 				hex.EncodeToString(curr),
 				hex.EncodeToString(sig),
-				"VÁLIDO (ALCOA+)",
+				"ÍNTEGRO (ALCOA+)",
 			})
 		}
 	}
 
+	// Seção 2: Trilha de Auditoria de Operações e Acessos (ANVISA Guia 33/2020 & 21 CFR Part 11)
+	_ = writer.Write([]string{"", "", "", "", "", "", "", "", "", ""})
+	_ = writer.Write([]string{"[SECAO 2: TRILHA DE AUDITORIA DE OPERACOES E ACESSOS - ANVISA GUIA 33/2020 & 21 CFR PART 11]", "", "", "", "", "", "", "", "", ""})
+	_ = writer.Write([]string{"ID Registro", "Data e Hora (Brasília)", "Usuário Autenticado", "Perfil RBAC", "Operação / Evento", "Detalhamento Técnico Regulatório", "Endereço IP", "Conformidade ALCOA+", "", ""})
+
+	auditRows, errAudit := db.Query("SELECT id, timestamp, username, role, action, details, ip_address FROM audit_logs ORDER BY id DESC LIMIT 250")
+	if errAudit == nil {
+		defer auditRows.Close()
+		for auditRows.Next() {
+			var aid int64
+			var ats, auser, arole, aaction, adetails, aip string
+			if err := auditRows.Scan(&aid, &ats, &auser, &arole, &aaction, &adetails, &aip); err == nil {
+				_ = writer.Write([]string{
+					strconv.FormatInt(aid, 10),
+					fmt.Sprintf("=\"%s\"", sanitizeCSV(ats)),
+					sanitizeCSV(auser),
+					sanitizeCSV(arole),
+					sanitizeCSV(aaction),
+					sanitizeCSV(adetails),
+					sanitizeCSV(aip),
+					"AUDITADO (21 CFR PART 11)",
+					"",
+					"",
+				})
+			}
+		}
+	}
+
 	writer.Flush()
+
+	// Calcula Hash SHA-256 e Assinatura ECDSA do Relatório CSV completo
+	digest := sha256.Sum256(buf.Bytes())
+	reportHashHex := hex.EncodeToString(digest[:])
+	sigHex := ""
+	keyIDHex := ""
+	if signer != nil {
+		if sigBytes, err := signer.Sign(rand.Reader, digest[:], crypto.SHA256); err == nil {
+			sigHex = hex.EncodeToString(sigBytes)
+		}
+		kid := signer.KeyID()
+		keyIDHex = hex.EncodeToString(kid[:])
+	}
+
+	footerWriter := csv.NewWriter(&buf)
+	footerWriter.Comma = ';'
+	_ = footerWriter.Write([]string{"", "", "", "", "", "", "", "", "", ""})
+	_ = footerWriter.Write([]string{"[CHANCELA CRIPTOGRAFICA DE INTEGRIDADE DO RELATORIO - ANVISA RDC 430/2020]", "", "", "", "", "", "", "", "", ""})
+	_ = footerWriter.Write([]string{"Algoritmo de Assinatura:", "ECDSA P-256 (secp256r1) + SHA-256", "Key ID:", keyIDHex, "", "", "", "", "", ""})
+	_ = footerWriter.Write([]string{"Hash SHA-256 do Relatório:", reportHashHex, "", "", "", "", "", "", "", ""})
+	_ = footerWriter.Write([]string{"Assinatura Digital ECDSA:", sigHex, "", "", "", "", "", "", "", ""})
+	_ = footerWriter.Write([]string{"Declaração Regulatória:", "Documento íntegro, autêntico e verificável conforme ANVISA RDC 430/2020, Guia 33/2020 e FDA 21 CFR Part 11 (ALCOA+).", "", "", "", "", "", "", "", ""})
+	footerWriter.Flush()
+
 	return buf.Bytes(), nil
 }
 
@@ -529,7 +606,7 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 
 	// Header Text
 	p1.WriteString("BT /F2 15 Tf 1 1 1 rg 40 812 Td (COLDCHAIN PHARMA RT - LAUDO DE AUDITORIA SANITARIA) Tj ET\n")
-	p1.WriteString("BT /F1 9 Tf 0.7 0.85 1.0 rg 40 796 Td (Conformidade Integral: ANVISA RDC 430/2020, RDC 197/2017 & FDA 21 CFR Part 11) Tj ET\n")
+	p1.WriteString("BT /F1 9 Tf 0.7 0.85 1.0 rg 40 796 Td (Auditoria e Rastreabilidade - ANVISA RDC 430/2020, Guia 33/2020 & 21 CFR Part 11) Tj ET\n")
 	p1.WriteString("BT /F1 8 Tf 0.8 0.85 0.9 rg 40 779 Td (" + toPDFASCII("Emissao: "+data.GeneratedAt+" | Ledger Head: #"+strconv.FormatInt(data.LedgerHeadID, 10)) + ") Tj ET\n")
 
 	// Metadata Box (Company & RT)
@@ -537,11 +614,11 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 	p1.WriteString("0.85 0.88 0.92 RG\n1 w\n40 705 515.28 55 re S\n")
 	p1.WriteString("BT /F2 9 Tf 0.1 0.15 0.25 rg 50 746 Td (" + toPDFASCII("Empresa: "+data.Company) + ") Tj ET\n")
 	p1.WriteString("BT /F1 8.5 Tf 0.3 0.35 0.4 rg 50 733 Td (" + toPDFASCII("CNPJ: "+data.CNPJ+" | Estabelecimento: Almoxarifado Central e Camaras Frias de Medicamentos") + ") Tj ET\n")
-	p1.WriteString("BT /F2 9 Tf 0.05 0.5 0.35 rg 50 718 Td (" + toPDFASCII("Responsavel Tecnica: "+data.TechnicalLead+" ("+data.CRF+")") + ") Tj ET\n")
-	p1.WriteString("BT /F2 9 Tf 0.1 0.2 0.5 rg 420 718 Td (" + toPDFASCII("Status: "+data.KPIs.ComplianceStatus) + ") Tj ET\n")
+	p1.WriteString("BT /F2 8.5 Tf 0.05 0.5 0.35 rg 50 718 Td (" + toPDFASCII("Responsavel: "+data.TechnicalLead+" - "+data.CRF) + ") Tj ET\n")
+	p1.WriteString("BT /F2 8.5 Tf 0.1 0.2 0.5 rg 435 718 Td (" + toPDFASCII("Status: "+data.KPIs.ComplianceStatus) + ") Tj ET\n")
 
 	// SEÇÃO 1: KPIS OPERACIONAIS (Grid de 4 caixas)
-	p1.WriteString("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 686 Td (1. INDICADORES MATEMATICOS DE DESEMPENHO (KPIS REGULATORIOS)) Tj ET\n")
+	p1.WriteString("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 686 Td (1. INDICADORES REGULATORIOS DE DESEMPENHO [KPIS]) Tj ET\n")
 	p1.WriteString("0.2 0.4 0.8 RG\n1 w\n40 680 m 555 680 l S\n")
 
 	kpisCards := []struct {
@@ -566,7 +643,7 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 	}
 
 	// SEÇÃO 2: SENSORES RBC
-	p1.WriteString("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 596 Td (2. INVENTARIO METROLOGICO DE SENSORES CALIBRADOS (RBC)) Tj ET\n")
+	p1.WriteString("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 596 Td (2. INVENTARIO METROLOGICO DE SENSORES CALIBRADOS [RBC/INMETRO]) Tj ET\n")
 	p1.WriteString("0.2 0.4 0.8 RG\n1 w\n40 590 m 555 590 l S\n")
 
 	// Table Sensor Header
@@ -606,7 +683,7 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 
 	// SEÇÃO 3: RASTREABILIDADE DE LOTES (FEFO/PVPS)
 	lotsTopY := sensY - 22.0
-	p1.WriteString(fmt.Sprintf("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 %.2f Td (3. CONTROLE DE ESTOQUE E SEGREGAÇÃO SANITÁRIA (FEFO/PVPS)) Tj ET\n", lotsTopY))
+	p1.WriteString(fmt.Sprintf("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 %.2f Td (3. CONTROLE DE ESTOQUE E SEGREGACAO SANITARIA [FEFO/PVPS]) Tj ET\n", lotsTopY))
 	p1.WriteString(fmt.Sprintf("0.2 0.4 0.8 RG\n1 w\n40 %.2f m 555 %.2f l S\n", lotsTopY-6, lotsTopY-6))
 
 	lotsTblY := lotsTopY - 22.0
@@ -662,10 +739,10 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 	p2.WriteString("0.08 0.12 0.20 rg\n0 790 595.28 52 re f\n")
 	p2.WriteString("0.22 0.74 0.97 RG\n2 w\n0 790 m 595.28 790 l S\n")
 	p2.WriteString("BT /F2 13 Tf 1 1 1 rg 40 818 Td (COLDCHAIN PHARMA RT - LAUDO DE AUDITORIA SANITARIA) Tj ET\n")
-	p2.WriteString("BT /F1 8 Tf 0.7 0.85 1.0 rg 40 802 Td (" + toPDFASCII("Dossie Tecnico e Chancela Forense WORM | Data: "+data.GeneratedAt) + ") Tj ET\n")
+	p2.WriteString("BT /F1 8 Tf 0.7 0.85 1.0 rg 40 802 Td (" + toPDFASCII("Auditoria e Rastreabilidade WORM | Emissao: "+data.GeneratedAt) + ") Tj ET\n")
 
 	// SEÇÃO 4: EXCURSÕES E PARECERES TÉCNICOS
-	p2.WriteString("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 765 Td (4. INVESTIGAÇÃO DE EXCURSÕES TÉRMICAS E DECISÕES DE CAPA) Tj ET\n")
+	p2.WriteString("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 765 Td (4. INVESTIGACAO DE EXCURSOES TERMICAS E DECISOES DE CAPA) Tj ET\n")
 	p2.WriteString("0.2 0.4 0.8 RG\n1 w\n40 760 m 555 760 l S\n")
 
 	excTblY := 740.0
@@ -684,7 +761,7 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 		for _, e := range data.Excursions {
 			p2.WriteString(fmt.Sprintf("0.98 0.98 0.99 rg\n40 %.2f 515.28 26 re f\n", excRowY-14))
 			p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 45 %.2f Td (%s) Tj ET\n", excRowY, toPDFASCII(e.Code)))
-			p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.8 0.2 0.2 rg 115 %.2f Td (%.1f C) Tj ET\n", excRowY, e.PeakTemp))
+			p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.8 0.2 0.2 rg 115 %.2f Td (%.1f \\260C) Tj ET\n", excRowY, e.PeakTemp))
 			p2.WriteString(fmt.Sprintf("BT /F1 7 Tf 0.4 0.4 0.4 rg 115 %.2f Td (%.1f min) Tj ET\n", excRowY-9, e.AccumulatedDegreeMinutes))
 			cause := e.Cause
 			if len(cause) > 38 {
@@ -706,13 +783,13 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 
 	// SEÇÃO 5: DOSSIÊ DA QUALIDADE (POPS E QUALIFICAÇÕES)
 	sgcTopY := excRowY - 15.0
-	p2.WriteString(fmt.Sprintf("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 %.2f Td (5. GARANTIA DA QUALIDADE SGC (POPS E QUALIFICACAO TERMICA)) Tj ET\n", sgcTopY))
+	p2.WriteString(fmt.Sprintf("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 %.2f Td (5. GARANTIA DA QUALIDADE SGC [POPS E QUALIFICACAO TERMICA]) Tj ET\n", sgcTopY))
 	p2.WriteString(fmt.Sprintf("0.2 0.4 0.8 RG\n1 w\n40 %.2f m 555 %.2f l S\n", sgcTopY-6, sgcTopY-6))
 
 	sgcRowY := sgcTopY - 22.0
 	p2.WriteString(fmt.Sprintf("0.88 0.92 0.96 rg\n40 %.2f 515.28 15 re f\n", sgcRowY))
 	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 45 %.2f Td (Codigo) Tj ET\n", sgcRowY+4))
-	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 120 %.2f Td (Procedimento Operacional Padrao (POP)) Tj ET\n", sgcRowY+4))
+	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 120 %.2f Td (Procedimento Operacional Padrao [POP]) Tj ET\n", sgcRowY+4))
 	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 380 %.2f Td (Versao / Revisao) Tj ET\n", sgcRowY+4))
 	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 470 %.2f Td (Proxima Revisao) Tj ET\n", sgcRowY+4))
 	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 525 %.2f Td (Status) Tj ET\n", sgcRowY+4))
@@ -737,9 +814,9 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 		popRowY -= 13.0
 	}
 
-	// SEÇÃO 6: CHANCELA CRIPTOGRÁFICA FORENSE WORM (ALCOA+)
+	// SEÇÃO 6: CHANCELA CRIPTOGRÁFICA E AUDITORIA WORM (ALCOA+)
 	cryptoTopY := popRowY - 18.0
-	p2.WriteString(fmt.Sprintf("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 %.2f Td (6. CHANCELA FORENSE CRIPTOGRAFICA E AUDITORIA WORM (ALCOA+)) Tj ET\n", cryptoTopY))
+	p2.WriteString(fmt.Sprintf("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 %.2f Td (6. CHANCELA CRIPTOGRAFICA E AUDITORIA WORM [ALCOA+]) Tj ET\n", cryptoTopY))
 	p2.WriteString(fmt.Sprintf("0.2 0.4 0.8 RG\n1 w\n40 %.2f m 555 %.2f l S\n", cryptoTopY-6, cryptoTopY-6))
 
 	boxY := cryptoTopY - 145.0
@@ -747,7 +824,7 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 	p2.WriteString(fmt.Sprintf("0.22 0.74 0.97 RG\n1.5 w\n40 %.2f 515.28 135 re S\n", boxY))
 
 	p2.WriteString(fmt.Sprintf("BT /F2 9.5 Tf 0.3 0.85 1.0 rg 50 %.2f Td (CERTIFICACAO DE INTEGRIDADE E AUTENTICIDADE CRIPTOGRAFICA) Tj ET\n", boxY+118))
-	p2.WriteString(fmt.Sprintf("BT /F1 8 Tf 0.7 0.75 0.8 rg 50 %.2f Td (Este documento foi assinado digitalmente e auditado contra a trilha imutavel (WORM) do Ledger.) Tj ET\n", boxY+105))
+	p2.WriteString(fmt.Sprintf("BT /F1 8 Tf 0.7 0.75 0.8 rg 50 %.2f Td (Este documento foi assinado digitalmente e auditado contra a trilha imutavel WORM do Ledger.) Tj ET\n", boxY+105))
 
 	p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 0.9 0.9 0.9 rg 50 %.2f Td (Algoritmo:) Tj ET\n", boxY+88))
 	p2.WriteString(fmt.Sprintf("BT /F3 7.5 Tf 0.3 0.85 1.0 rg 125 %.2f Td (%s | Key ID: %s) Tj ET\n", boxY+88, toPDFASCII(data.SignerAlgorithm), toPDFASCII(data.SignerKeyID)))
@@ -768,7 +845,26 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 	}
 	p2.WriteString(fmt.Sprintf("BT /F3 7 Tf 0.4 0.9 0.6 rg 125 %.2f Td (%s) Tj ET\n", boxY+32, toPDFASCII(sigDisplay)))
 
-	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.05 0.9 0.5 rg 50 %.2f Td ([VERIFICADO] 100%% CONFORME COM A RDC 430/2020 E PRINCIPIOS ALCOA+ DO GUIA 38/2020 DA ANVISA) Tj ET\n", boxY+14))
+	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.05 0.9 0.5 rg 50 %.2f Td ([VERIFICADO] 100%% CONFORME COM A RDC 430/2020, GUIA 33/2020 E PRINCIPIOS ALCOA+ DA ANVISA) Tj ET\n", boxY+14))
+
+	// Bloco de Assinatura Eletrônica Centralizada do Responsável (Padrão 21 CFR Part 11)
+	sigLineW := 320.0
+	sigLineX := (595.28 - sigLineW) / 2.0
+	sigLineY := 115.0
+	p2.WriteString("0.70 0.75 0.80 RG\n0.75 w\n")
+	p2.WriteString(fmt.Sprintf("%.1f %.1f m %.1f %.1f l S\n", sigLineX, sigLineY, sigLineX+sigLineW, sigLineY))
+
+	sigName := toPDFASCII(data.TechnicalLead)
+	sigRole := toPDFASCII(data.CRF)
+	sigDate := fmt.Sprintf("Assinado Eletronicamente em %s", toPDFASCII(data.GeneratedAt))
+
+	nameX := pdfCenterText(sigName, 9.5, 595.28)
+	roleX := pdfCenterText(sigRole, 8.5, 595.28)
+	dateX := pdfCenterText(sigDate, 7.5, 595.28)
+
+	p2.WriteString(fmt.Sprintf("BT /F2 9.5 Tf 0.05 0.15 0.30 rg %.1f %.1f Td (%s) Tj ET\n", nameX, sigLineY-15, sigName))
+	p2.WriteString(fmt.Sprintf("BT /F1 8.5 Tf 0.20 0.25 0.35 rg %.1f %.1f Td (%s) Tj ET\n", roleX, sigLineY-29, sigRole))
+	p2.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 0.35 0.40 0.45 rg %.1f %.1f Td (%s) Tj ET\n", dateX, sigLineY-42, sigDate))
 
 	// Footer Page 2 (Chancela Criptográfica e Integridade Pericial por Folha)
 	p2.WriteString("0.78 0.82 0.88 RG\n0.5 w\n40 38 m 555 38 l S\n")

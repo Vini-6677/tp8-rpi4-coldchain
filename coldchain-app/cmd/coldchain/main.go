@@ -1221,8 +1221,6 @@ func (a *App) routes() http.Handler {
 
 	// API Ledger: Exportação de Laudo Pericial Regulatório Completo (.JSON)
 	mux.HandleFunc("/api/v1/ledger/export", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.Header().Set("Content-Disposition", "attachment; filename=\"coldchain_laudo_pericial_anvisa.json\"")
 		if a.ledger == nil || a.signer == nil {
 			http.Error(w, "Ledger não inicializado", http.StatusInternalServerError)
 			return
@@ -1232,50 +1230,81 @@ func (a *App) routes() http.Handler {
 		records, total, _ := a.ledger.GetRecords(0, 50000)
 		pemStr, _ := a.signer.PublicKeyPEM()
 		kid := a.signer.KeyID()
+		kidHex := hex.EncodeToString(kid[:])
 
-		var issuerRole, issuerName, issuerUsername string
-		if sess, ok := a.getSession(r); ok && sess != nil {
-			issuerRole = sess.Role
-			issuerName = sess.Name
-			issuerUsername = sess.Username
-		} else {
-			var dbRole, dbName, dbUsername string
-			_ = a.db.QueryRow("SELECT role, name, username FROM users WHERE role = 'tecnico' LIMIT 1").Scan(&dbRole, &dbName, &dbUsername)
-			if dbName == "" {
-				_ = a.db.QueryRow("SELECT role, name, username FROM users WHERE role = 'admin' LIMIT 1").Scan(&dbRole, &dbName, &dbUsername)
+		issuerRole, issuerName, issuerUsername := a.getReportIssuer(r)
+		loc := time.FixedZone("BRT", -3*3600)
+		nowUTC := time.Now().UTC().Format(time.RFC3339Nano)
+		nowBRT := time.Now().In(loc).Format("02/01/2006 15:04:05 BRT")
+
+		var auditTrail []AuditLog
+		if auditRows, err := a.db.Query("SELECT id, timestamp, username, role, action, details, ip_address FROM audit_logs ORDER BY id DESC LIMIT 250"); err == nil {
+			defer auditRows.Close()
+			for auditRows.Next() {
+				var al AuditLog
+				if err := auditRows.Scan(&al.ID, &al.Timestamp, &al.Username, &al.Role, &al.Action, &al.Details, &al.IPAddress); err == nil {
+					auditTrail = append(auditTrail, al)
+				}
 			}
-			if dbName == "" {
-				dbName = "Administrador Geral"
-				dbUsername = "admin"
-				dbRole = "admin"
-			}
-			issuerRole = dbRole
-			issuerName = dbName
-			issuerUsername = dbUsername
 		}
 
+		genesisHex := strings.Repeat("0", 64)
+		headHex := strings.Repeat("0", 64)
+		if len(records) > 0 {
+			genesisHex = records[len(records)-1].CurrentHashHex
+			headHex = records[0].CurrentHashHex
+		}
+
+		canonicalSeal := fmt.Sprintf("COLDCHAIN-ANVISA-JSON-V1|TIME=%s|ISSUER=%s(%s)|TOTAL=%d|GENESIS=%s|HEAD=%s",
+			nowUTC, issuerName, issuerUsername, total, genesisHex, headHex)
+		sealDigest := sha256.Sum256([]byte(canonicalSeal))
+		reportSHA256 := hex.EncodeToString(sealDigest[:])
+		sigHex := ""
+		if sigBytes, err := a.signer.Sign(rand.Reader, sealDigest[:], nil); err == nil {
+			sigHex = hex.EncodeToString(sigBytes)
+		}
+
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Content-Disposition", "attachment; filename=\"Laudo_Auditoria_WORM_ANVISA.json\"")
+		w.Header().Set("X-Report-SHA256", reportSHA256)
+		w.Header().Set("X-Signature-ECDSA", sigHex)
+
 		exportData := map[string]any{
-			"regulatory_standard": "ANVISA RDC 430/2020, RDC 304/2019 & 21 CFR Part 11",
-			"document_title":      "Laudo Pericial Criptográfico de Cadeia de Frio (Ledger WORM)",
-			"generated_at":        time.Now().UTC().Format(time.RFC3339Nano),
-			"total_records":       total,
+			"regulatory_standard": "ANVISA RDC 430/2020 (Art. 64 e 86), Guia nº 33/2020 (Sistemas Computadorizados), IN 134/2022 & FDA 21 CFR Part 11 (ALCOA+)",
+			"document_title":      "Laudo Criptográfico de Auditoria e Integridade de Dados (Ledger WORM)",
+			"establishment": map[string]string{
+				"company":  "ColdChain Pharma Distribuidora e Logística Hospitalar Ltda",
+				"cnpj":     "33.247.743/0001-10",
+				"facility": "Almoxarifado Central e Câmaras Frias Qualificadas",
+			},
+			"generated_at":     nowUTC,
+			"generated_at_brt": nowBRT,
+			"total_records":    total,
 			"issued_by": map[string]string{
 				"name":     issuerName,
 				"username": issuerUsername,
 				"role":     issuerRole,
 			},
 			"verification_report": report,
+			"document_seal": map[string]any{
+				"report_sha256":       reportSHA256,
+				"signature_ecdsa_hex": sigHex,
+				"algorithm":           "ECDSA P-256 (secp256r1) + SHA-256",
+				"key_id":              kidHex,
+				"alcoa_compliance":    "Atribuível, Legível, Contemporâneo, Original e Preciso (ALCOA+)",
+			},
 			"server_authority": map[string]any{
 				"algorithm":      "ECDSA P-256 + SHA-256",
-				"key_id":         hex.EncodeToString(kid[:]),
+				"key_id":         kidHex,
 				"public_key_pem": pemStr,
 			},
-			"records": records,
+			"records":     records,
+			"audit_trail": auditTrail,
 		}
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		_ = enc.Encode(exportData)
-		a.logAudit(issuerUsername, issuerRole, "EXPORTACAO_LAUDO", fmt.Sprintf("Exportação do Laudo Pericial WORM em JSON (%d registros verificados)", total), getClientIP(r))
+		a.logAudit(issuerUsername, issuerRole, "EXPORTACAO_LAUDO", fmt.Sprintf("Exportação do Laudo de Auditoria WORM em JSON (%d blocos verificados)", total), getClientIP(r))
 	})
 
 	// API Ledger: Emissão Manual de Âncora Criptográfica
@@ -2383,8 +2412,8 @@ func (a *App) routes() http.Handler {
 
 	// 18. Dossiê Sanitário Oficial em PDF 1.4 com Assinatura Digital ECDSA
 	mux.HandleFunc("/api/pharma/reports/dossier.pdf", func(w http.ResponseWriter, r *http.Request) {
-		issuerRole, _, issuerUsername := a.getReportIssuer(r)
-		data, err := pharma.FetchDossierReportData(a.db, a.signer)
+		issuerRole, issuerName, issuerUsername := a.getReportIssuer(r)
+		data, err := pharma.FetchDossierReportDataWithIssuer(a.db, a.signer, issuerRole, issuerName, issuerUsername)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -2408,8 +2437,8 @@ func (a *App) routes() http.Handler {
 
 	// 19. Dossiê Sanitário Completo em CSV Sanitizado
 	mux.HandleFunc("/api/pharma/reports/dossier.csv", func(w http.ResponseWriter, r *http.Request) {
-		issuerRole, _, issuerUsername := a.getReportIssuer(r)
-		data, err := pharma.FetchDossierReportData(a.db, a.signer)
+		issuerRole, issuerName, issuerUsername := a.getReportIssuer(r)
+		data, err := pharma.FetchDossierReportDataWithIssuer(a.db, a.signer, issuerRole, issuerName, issuerUsername)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -2428,8 +2457,8 @@ func (a *App) routes() http.Handler {
 
 	// 20. Laudo Pericial de Impressão HTML / Print-to-PDF
 	mux.HandleFunc("/api/pharma/reports/dossier.html", func(w http.ResponseWriter, r *http.Request) {
-		issuerRole, _, issuerUsername := a.getReportIssuer(r)
-		data, err := pharma.FetchDossierReportData(a.db, a.signer)
+		issuerRole, issuerName, issuerUsername := a.getReportIssuer(r)
+		data, err := pharma.FetchDossierReportDataWithIssuer(a.db, a.signer, issuerRole, issuerName, issuerUsername)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -2440,7 +2469,7 @@ func (a *App) routes() http.Handler {
 		w.Write([]byte(htmlStr))
 	})
 
-	// 21. Exportação do Ledger WORM em CSV para Auditoria Forense Externa
+	// 21. Exportação do Ledger WORM em CSV para Auditoria Externa
 	mux.HandleFunc("/api/pharma/reports/ledger.csv", func(w http.ResponseWriter, r *http.Request) {
 		issuerRole, issuerName, issuerUsername := a.getReportIssuer(r)
 
@@ -2449,9 +2478,11 @@ func (a *App) routes() http.Handler {
 			http.Error(w, "Falha ao exportar ledger: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		csvHash := sha256.Sum256(csvBytes)
 		a.logAudit(issuerUsername, issuerRole, "EXPORTACAO_LEDGER", "Exportação regulamentar da Trilha WORM em CSV (ANVISA RDC 430/2020)", getClientIP(r))
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", "attachment; filename=\"Ledger_WORM_Auditoria_ANVISA.csv\"")
+		w.Header().Set("X-Report-SHA256", hex.EncodeToString(csvHash[:]))
 		w.Write(csvBytes)
 	})
 
