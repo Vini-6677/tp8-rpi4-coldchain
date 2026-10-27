@@ -94,7 +94,35 @@ if which docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   docker save coldchain-tp8:1.0.0 | gzip > br2-external/board/common/overlay/opt/docker/coldchain-tp8.tar.gz
   echo "[+] coldchain-tp8.tar.gz atualizado com sucesso."
 elif [ -f "br2-external/board/common/overlay/opt/docker/coldchain-tp8.tar.gz" ]; then
-  echo "[+] Mantendo imagem Docker pré-empacotada com Ledger ANVISA em br2-external/board/common/overlay/opt/docker/coldchain-tp8.tar.gz."
+  echo "[+] Atualizando camada OCI de br2-external/board/common/overlay/opt/docker/coldchain-tp8.tar.gz sem necessidade de Docker daemon..."
+  python3 -c '
+import hashlib, json, tarfile, gzip, io
+oci_tar = "br2-external/board/common/overlay/opt/docker/coldchain-tp8.tar.gz"
+bin_bytes = open("coldchain-app/dist/coldchain", "rb").read()
+lbuf = io.BytesIO()
+with tarfile.open(fileobj=lbuf, mode="w") as lt:
+    d = tarfile.TarInfo(name="app"); d.type = tarfile.DIRTYPE; d.mode = 0o755; d.mtime = 1700000000; lt.addfile(d)
+    f = tarfile.TarInfo(name="app/coldchain"); f.size = len(bin_bytes); f.mode = 0o755; f.mtime = 1700000000; lt.addfile(f, io.BytesIO(bin_bytes))
+nl_bytes = lbuf.getvalue(); nl_sha = hashlib.sha256(nl_bytes).hexdigest()
+entries = {}
+with tarfile.open(oci_tar, mode="r:gz") as tf:
+    for m in tf.getmembers():
+        if m.isfile(): entries[m.name] = tf.extractfile(m).read()
+manifest = json.loads(entries["manifest.json"].decode())
+old_cfg, old_l = manifest[0]["Config"], manifest[0]["Layers"][1]
+cfg = json.loads(entries[old_cfg].decode())
+cfg["rootfs"]["diff_ids"][1] = "sha256:" + nl_sha
+nc_bytes = json.dumps(cfg, separators=(",", ":")).encode(); nc_sha = hashlib.sha256(nc_bytes).hexdigest()
+entries.pop(old_l, None); entries.pop(old_cfg, None)
+entries["blobs/sha256/" + nl_sha] = nl_bytes; entries["blobs/sha256/" + nc_sha] = nc_bytes
+manifest[0]["Config"] = "blobs/sha256/" + nc_sha; manifest[0]["Layers"][1] = "blobs/sha256/" + nl_sha
+entries["manifest.json"] = json.dumps(manifest, separators=(",", ":")).encode()
+obuf = io.BytesIO()
+with tarfile.open(fileobj=obuf, mode="w") as ot:
+    for k in sorted(entries.keys()):
+        ti = tarfile.TarInfo(name=k); ti.size = len(entries[k]); ti.mode = 0o644; ti.mtime = 1700000000; ot.addfile(ti, io.BytesIO(entries[k]))
+with gzip.GzipFile(filename=oci_tar, mode="wb", mtime=1700000000) as gz: gz.write(obuf.getvalue())
+' 
 else
   echo "[!] Docker daemon do host não disponível. Criando pacote tarball..."
   tar -czf br2-external/board/common/overlay/opt/docker/coldchain-tp8.tar.gz -C "$TEMP_DIR" coldchain

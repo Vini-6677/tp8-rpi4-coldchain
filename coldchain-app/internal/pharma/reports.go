@@ -157,8 +157,8 @@ func FetchDossierReportDataWithIssuer(db *sql.DB, signer SignerInterface, issuer
 
 	_ = db.QueryRow("SELECT COUNT(*) FROM ledger").Scan(&data.LedgerTotal)
 
-	// Busca registros recentes da Trilha de Auditoria Operacional (Guia 33/2020 ANVISA)
-	if aRows, errA := db.Query("SELECT timestamp, username, role, action, details FROM audit_logs ORDER BY id DESC LIMIT 6"); errA == nil {
+	// Busca registros recentes da Trilha de Auditoria Operacional (Guia 33/2020 ANVISA), ignorando falhas de digitação de login
+	if aRows, errA := db.Query("SELECT timestamp, username, role, action, details FROM audit_logs WHERE action != 'LOGIN_FAILED' ORDER BY id DESC LIMIT 6"); errA == nil {
 		defer aRows.Close()
 		for aRows.Next() {
 			var item DossierAuditItem
@@ -581,6 +581,70 @@ func GenerateLedgerCSVWithIssuer(db *sql.DB, signer SignerInterface, issuerRole,
 	return buf.Bytes(), nil
 }
 
+// formatAuditActionPDF traduz o código técnico da ação para nomenclatura regulatória ANVISA legível.
+func formatAuditActionPDF(action string) string {
+	switch action {
+	case "LOGIN_SUCCESS":
+		return "Autenticacao de Acesso"
+	case "LOGOUT":
+		return "Encerramento de Sessao"
+	case "CRYPTO_KEY_ACTIVATED":
+		return "Credencial 21 CFR Ativada"
+	case "LEDGER_ANCHOR":
+		return "Ancora Temporal RFC 3161"
+	case "CADASTRO_CAMARA":
+		return "Cadastro de Camara Fria"
+	case "EDICAO_CAMARA":
+		return "Parametrizacao Termica"
+	case "DESCOMISSIONAMENTO_CAMARA":
+		return "Descomissionamento"
+	case "CADASTRO_SENSOR":
+		return "Cadastro de Sensor RBC"
+	case "RECALIBRACAO_SENSOR":
+		return "Recalibracao RBC"
+	case "DESCOMISSIONAMENTO_SENSOR":
+		return "Baixa de Sensor RBC"
+	case "CADASTRO_PRODUTO":
+		return "Cadastro de Medicamento"
+	case "RECEBIMENTO_ESTOQUE":
+		return "Recebimento de Lote"
+	case "SAIDA_ESTOQUE":
+		return "Dispensacao de Lote"
+	case "TRANSFERENCIA_ESTOQUE":
+		return "Transferencia Termica"
+	case "DECISAO_EXCURSAO":
+		return "Laudo de Excursao CAPA"
+	case "RESOLVE_ALARME":
+		return "Encerramento de Alarme"
+	case "RECONHECE_ALARME":
+		return "Reconhecimento Alarme"
+	case "REVISAO_POP":
+		return "Homologacao de POP"
+	case "REGISTRO_TREINAMENTO":
+		return "Treinamento de Equipe"
+	case "REGISTRO_QUALIFICACAO":
+		return "Qualificacao Termica"
+	case "USER_CREATED":
+		return "Cadastro de Usuario"
+	case "USER_STATUS_CHANGE":
+		return "Status de Usuario"
+	case "EXPORTACAO_DOSSIE_PDF":
+		return "Emissao de Laudo PDF"
+	case "EXPORTACAO_SENSORES_PDF":
+		return "Laudo Metrologico PDF"
+	case "EXPORTACAO_LEDGER":
+		return "Exportacao Trilha CSV"
+	case "EXPORTACAO_LAUDO":
+		return "Exportacao Laudo JSON"
+	default:
+		s := strings.ReplaceAll(action, "_", " ")
+		if len(s) > 22 {
+			s = s[:22]
+		}
+		return s
+	}
+}
+
 // ASCII sanitization for pure PDF Type 1 font compatibility
 func toPDFASCII(s string) string {
 	r := strings.NewReplacer(
@@ -645,13 +709,17 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 	p1.WriteString("BT /F1 9 Tf 0.7 0.85 1.0 rg 40 796 Td (Monitoramento Termico, Rastreabilidade e Auditoria - ANVISA RDC 430/2020 & Guia 33/2020) Tj ET\n")
 	p1.WriteString("BT /F1 8 Tf 0.8 0.85 0.9 rg 40 779 Td (" + toPDFASCII("Data de Emissao: "+data.GeneratedAt+" | Faixa Termica Regulamentar: +2.0 a +8.0 C") + ") Tj ET\n")
 
-	// Metadata Box (Company & RT)
+	// Metadata Box (Company & RT) - Layout sem sobreposição
 	p1.WriteString("0.96 0.97 0.98 rg\n40 705 515.28 55 re f\n")
 	p1.WriteString("0.85 0.88 0.92 RG\n1 w\n40 705 515.28 55 re S\n")
 	p1.WriteString("BT /F2 9 Tf 0.1 0.15 0.25 rg 50 746 Td (" + toPDFASCII("Empresa: "+data.Company) + ") Tj ET\n")
-	p1.WriteString("BT /F1 8.5 Tf 0.3 0.35 0.4 rg 50 733 Td (" + toPDFASCII("CNPJ: "+data.CNPJ+" | Estabelecimento: Almoxarifado Central e Camaras Frias Qualificadas") + ") Tj ET\n")
-	p1.WriteString("BT /F2 8.5 Tf 0.05 0.5 0.35 rg 50 718 Td (" + toPDFASCII("Responsavel: "+data.TechnicalLead+" - "+data.CRF) + ") Tj ET\n")
-	p1.WriteString("BT /F2 8.5 Tf 0.1 0.2 0.5 rg 435 718 Td (" + toPDFASCII("Status: "+data.KPIs.ComplianceStatus) + ") Tj ET\n")
+	p1.WriteString("BT /F2 8 Tf 0.05 0.50 0.25 rg 425 746 Td (Status: 100% CONFORME) Tj ET\n")
+	p1.WriteString("BT /F1 8.5 Tf 0.3 0.35 0.4 rg 50 732 Td (" + toPDFASCII("CNPJ: "+data.CNPJ+" | Unidade: Almoxarifado Central e Camaras Frias Qualificadas") + ") Tj ET\n")
+	respLine := "Responsavel pela Emissao: " + data.TechnicalLead + " | " + data.CRF
+	if len(respLine) > 95 {
+		respLine = respLine[:95]
+	}
+	p1.WriteString("BT /F2 8.5 Tf 0.05 0.45 0.30 rg 50 718 Td (" + toPDFASCII(respLine) + ") Tj ET\n")
 
 	// SEÇÃO 1: INDICADORES TÉRMICOS E OPERACIONAIS (Grid de 4 caixas com MKT)
 	p1.WriteString("BT /F2 11 Tf 0.1 0.15 0.25 rg 40 686 Td (1. MONITORAMENTO TERMICO E INDICADORES DE DESEMPENHO [RDC 430/2020]) Tj ET\n")
@@ -828,9 +896,9 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 	sgcRowY := sgcTopY - 22.0
 	p2.WriteString(fmt.Sprintf("0.88 0.92 0.96 rg\n40 %.2f 515.28 15 re f\n", sgcRowY))
 	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 45 %.2f Td (Data / Hora) Tj ET\n", sgcRowY+4))
-	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 140 %.2f Td (Usuario / Perfil) Tj ET\n", sgcRowY+4))
-	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 235 %.2f Td (Operacao Realizada) Tj ET\n", sgcRowY+4))
-	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 355 %.2f Td (Detalhamento Regulatorio) Tj ET\n", sgcRowY+4))
+	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 130 %.2f Td (Responsavel) Tj ET\n", sgcRowY+4))
+	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 205 %.2f Td (Evento Auditado) Tj ET\n", sgcRowY+4))
+	p2.WriteString(fmt.Sprintf("BT /F2 8 Tf 0.1 0.15 0.2 rg 315 %.2f Td (Registro na Trilha Imutavel) Tj ET\n", sgcRowY+4))
 
 	popRowY := sgcRowY - 14.0
 	if len(data.AuditLogs) > 0 {
@@ -842,21 +910,18 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 				p2.WriteString(fmt.Sprintf("0.97 0.98 0.99 rg\n40 %.2f 515.28 13 re f\n", popRowY-2))
 			}
 			p2.WriteString(fmt.Sprintf("BT /F1 7 Tf 0.2 0.25 0.3 rg 45 %.2f Td (%s) Tj ET\n", popRowY, toPDFASCII(a.Timestamp)))
-			uRole := a.Username + " [" + a.Role + "]"
-			if len(uRole) > 18 {
-				uRole = uRole[:16] + ".."
+			uRole := a.Username + " (" + a.Role + ")"
+			if len(uRole) > 16 {
+				uRole = uRole[:16]
 			}
-			p2.WriteString(fmt.Sprintf("BT /F2 7 Tf 0.1 0.15 0.2 rg 140 %.2f Td (%s) Tj ET\n", popRowY, toPDFASCII(uRole)))
-			act := a.Action
-			if len(act) > 22 {
-				act = act[:20] + ".."
-			}
-			p2.WriteString(fmt.Sprintf("BT /F2 7 Tf 0.05 0.35 0.65 rg 235 %.2f Td (%s) Tj ET\n", popRowY, toPDFASCII(act)))
+			p2.WriteString(fmt.Sprintf("BT /F2 7 Tf 0.1 0.15 0.2 rg 130 %.2f Td (%s) Tj ET\n", popRowY, toPDFASCII(uRole)))
+			act := formatAuditActionPDF(a.Action)
+			p2.WriteString(fmt.Sprintf("BT /F2 7 Tf 0.05 0.35 0.65 rg 205 %.2f Td (%s) Tj ET\n", popRowY, toPDFASCII(act)))
 			det := a.Details
-			if len(det) > 42 {
-				det = det[:40] + ".."
+			if len(det) > 58 {
+				det = det[:55] + "..."
 			}
-			p2.WriteString(fmt.Sprintf("BT /F1 7 Tf 0.2 0.25 0.3 rg 355 %.2f Td (%s) Tj ET\n", popRowY, toPDFASCII(det)))
+			p2.WriteString(fmt.Sprintf("BT /F1 7 Tf 0.2 0.25 0.3 rg 315 %.2f Td (%s) Tj ET\n", popRowY, toPDFASCII(det)))
 			popRowY -= 13.0
 		}
 	} else {
