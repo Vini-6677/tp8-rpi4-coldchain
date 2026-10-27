@@ -2988,49 +2988,38 @@
        MODAL: ATIVAÇÃO DE PRIMEIRO ACESSO E CHAVE CRIPTOGRÁFICA PESSOAL
        ========================================================================= -->
   <div id="modal-first-login-crypto" class="modal-backdrop">
-    <div class="modal-box" style="max-width: 540px;">
-      <div class="modal-header" style="padding-bottom: 14px; margin-bottom: 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.08);">
-        <div class="modal-title" style="font-size: 16px; font-weight: 700; color: #FFFFFF; letter-spacing: -0.2px;">Ativação de Primeiro Acesso</div>
-      </div>
-      
-      <div style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; font-size: 12.5px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid rgba(239, 68, 68, 0.3);">
-          <span style="font-weight: 800; color: #F87171; font-size: 12px; letter-spacing: 0.5px; text-transform: uppercase;">⚠ EXIBIÇÃO ÚNICA — NUNCA MAIS SERÁ MOSTRADA</span>
-          <span style="font-size: 10.5px; font-weight: 700; color: #FCA5A5; background: rgba(239, 68, 68, 0.25); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(239, 68, 68, 0.4);">21 CFR PART 11</span>
-        </div>
-        <div style="color: #FEE2E2; font-size: 12.5px; line-height: 1.5;">
-          Esta chave criptográfica é <strong>PESSOAL, INTRANSFERÍVEL, SECRETA E DEFINITIVA</strong>. Copie e guarde-a agora em seu cofre seguro.
-          <strong>Ela NUNCA MAIS será exibida nem poderá ser redefinida no sistema após fechar esta tela.</strong>
-          Se sua senha de acesso vazar, ninguém conseguirá realizar transferências, baixas ou assinar laudos sem esta chave.
-        </div>
+    <div class="modal-box" style="max-width: 440px;">
+      <div class="modal-header" style="display: flex; align-items: center; justify-content: space-between; padding-bottom: 14px; margin-bottom: 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.08);">
+        <div class="modal-title" style="font-size: 15px; font-weight: 700; color: #FFFFFF; letter-spacing: -0.2px;">Credencial Criptográfica</div>
+        <span style="font-size: 10px; font-weight: 700; color: #94A3B8; background: rgba(148, 163, 184, 0.12); padding: 3px 8px; border-radius: 4px; border: 1px solid rgba(148, 163, 184, 0.25); letter-spacing: 0.5px;">21 CFR PART 11</span>
       </div>
 
-      <div style="margin-bottom: 14px;">
-        <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Sua Chave Criptográfica Pessoal de Autenticação</label>
-        <div id="first-login-key-display" style="font-family: monospace; font-size: 17px; font-weight: 700; color: #38BDF8; background: #0B1120; border: 1.5px solid #2563EB; padding: 12px 16px; border-radius: 8px; text-align: center; letter-spacing: 1.2px; user-select: all;">
+      <div style="font-size: 12.5px; color: #CBD5E1; margin-bottom: 16px; line-height: 1.5;">
+        Chave <strong>única e intransferível</strong> para acesso e assinatura eletrônica. Exibição única — armazene em local seguro.
+      </div>
+
+      <div style="margin-bottom: 12px;">
+        <label class="form-label" style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #94A3B8; margin-bottom: 6px; display: block;">Chave Gerada</label>
+        <div id="first-login-key-display" style="font-family: monospace; font-size: 16px; font-weight: 700; color: #38BDF8; background: #0B1120; border: 1px solid rgba(56, 189, 248, 0.35); padding: 12px 14px; border-radius: 6px; text-align: center; letter-spacing: 1.2px; user-select: all;">
           --
         </div>
       </div>
 
-      <button type="button" id="btn-copy-crypto-key" onclick="copyCryptoKey()" style="width: 100%; height: 38px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; background: #1E293B; border: 1px solid #475569; color: #F8FAFC; border-radius: 6px; cursor: pointer; transition: all 0.2s; margin-bottom: 16px;">
-        Copiar Chave Criptográfica
+      <button type="button" id="btn-copy-crypto-key" onclick="copyCryptoKey()" style="width: 100%; height: 36px; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 600; background: #1E293B; border: 1px solid #334155; color: #F8FAFC; border-radius: 6px; cursor: pointer; transition: all 0.2s; margin-bottom: 16px;">
+        Copiar Chave
       </button>
 
-      <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 12px 14px; margin-bottom: 18px; font-size: 12px; color: #94A3B8; line-height: 1.45;">
-        <strong style="color: #FBBF24;">Atenção:</strong> Salve sua chave em local seguro. Por estrito cumprimento da norma 21 CFR Part 11, esta chave <strong>não poderá ser redefinida sob nenhuma hipótese</strong>. A partir de agora, ela autenticará sua <strong>entrada no sistema</strong> e servirá como sua <strong>assinatura eletrônica regulatória</strong> em transferências de medicamentos, descomissionamento e encerramento de alarmes.
+      <div style="margin-bottom: 16px;">
+        <label class="form-label" style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #94A3B8; margin-bottom: 6px; display: block;">Confirmar Chave</label>
+        <input type="text" id="input-confirm-crypto-key" class="form-control" placeholder="CC-KEY-..." style="font-family: monospace; font-size: 13.5px; text-align: center; letter-spacing: 1px; height: 40px;">
       </div>
 
-      <div style="margin-bottom: 14px;">
-        <label class="form-label" style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #94A3B8; margin-bottom: 6px; display: block;">Validação Obrigatória: Confirme a Chave Criptográfica Gerada</label>
-        <input type="text" id="input-confirm-crypto-key" class="form-control" placeholder="Cole a chave CC-KEY-... para validar" style="font-family: monospace; font-size: 13.5px; text-align: center; letter-spacing: 1px; height: 42px;">
-      </div>
-
-      <button type="button" onclick="acknowledgeCryptoKey()" style="width: 100%; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 13.5px; font-weight: 700; background: #2563EB; border: 1px solid #3B82F6; color: #FFFFFF; border-radius: 6px; cursor: pointer; transition: all 0.2s;">
-        Validar Chave Criptográfica e Acessar Sistema
+      <button type="button" onclick="acknowledgeCryptoKey()" style="width: 100%; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; background: #2563EB; border: 1px solid #3B82F6; color: #FFFFFF; border-radius: 6px; cursor: pointer; transition: all 0.2s;">
+        Confirmar e Acessar
       </button>
     </div>
   </div>
 
-  <script src="/static/app.js?v=pharma_v42"></script>
+  <script src="/static/app.js?v=pharma_v43"></script>
 </body>
 </html>

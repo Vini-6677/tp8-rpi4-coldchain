@@ -3880,7 +3880,7 @@ function copyCryptoKey() {
       navigator.clipboard.writeText(text).then(() => {
         if (btn) {
           const orig = btn.innerText;
-          btn.innerText = '✓ Chave Copiada e Preenchida!';
+          btn.innerText = '✓ Chave Copiada';
           btn.style.color = '#34D399';
           setTimeout(() => {
             btn.innerText = orig;
@@ -3921,7 +3921,7 @@ function acknowledgeCryptoKey() {
     for (let k in localStorage) { if (k.startsWith('cc_key_')) localStorage.removeItem(k); }
     for (let k in sessionStorage) { if (k.startsWith('cc_key_')) sessionStorage.removeItem(k); }
   } catch(e) {}
-  showToast('Chave criptográfica confirmada com sucesso! Guarde-a em segurança. Ela NUNCA MAIS será exibida.', 'success');
+  showToast('Credencial criptográfica validada.', 'success');
   closeFirstLoginModal();
 }
 
