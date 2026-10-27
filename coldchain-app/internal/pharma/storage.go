@@ -881,13 +881,13 @@ func GetLotTrace(db *sql.DB, lotNumber string) (*LotTraceReport, error) {
 // GetExcursions retorna todas as excursões cadastradas.
 func GetExcursions(db *sql.DB) ([]Excursion, error) {
 	rows, err := db.Query(`
-		SELECT e.id, e.code, e.chamber_id, c.name, e.sensor_id, e.start_time, COALESCE(e.end_time, ''),
+		SELECT e.id, e.code, e.chamber_id, COALESCE(c.name, e.chamber_id), e.sensor_id, e.start_time, COALESCE(e.end_time, ''),
 		       e.peak_temp, e.min_temp, e.accumulated_degree_minutes, e.cause, e.status,
 		       e.quarantined_lots_count, COALESCE(e.technical_report, ''), e.manufacturer_notified,
 		       COALESCE(e.manufacturer_decision, ''), COALESCE(e.final_decision, ''),
 		       COALESCE(e.electronic_sig, ''), COALESCE(e.decided_by, ''), COALESCE(e.decided_at, '')
 		FROM excursions e
-		JOIN chambers c ON c.id = e.chamber_id
+		LEFT JOIN chambers c ON c.id = e.chamber_id
 		ORDER BY e.id DESC
 	`)
 	if err != nil {
@@ -989,9 +989,9 @@ func DecideExcursion(db *sql.DB, excID int64, decision, report, electronicSig, d
 		return err
 	}
 
-	// Atualiza câmara se não houver outras excursões abertas e normaliza sensores
+	// Atualiza câmara se não houver outras excursões abertas e normaliza sensores para o ponto médio da câmara
 	_, _ = tx.Exec("UPDATE chambers SET status = 'OK' WHERE id = ? AND COALESCE(decommissioned, 0) = 0", chamberID)
-	_, _ = tx.Exec("UPDATE sensors SET current_temp = 4.5 WHERE chamber_id = ?", chamberID)
+	_, _ = tx.Exec("UPDATE sensors SET current_temp = COALESCE((SELECT (temp_min + temp_max) / 2.0 FROM chambers WHERE id = ?), 4.5) WHERE chamber_id = ?", chamberID, chamberID)
 
 	// Atualiza a excursão
 	_, err = tx.Exec(`UPDATE excursions
@@ -1024,14 +1024,14 @@ func DecideExcursion(db *sql.DB, excID int64, decision, report, electronicSig, d
 
 // GetAlarms retorna os alarmes operacionais.
 func GetAlarms(db *sql.DB, status string) ([]Alarm, error) {
-	query := `SELECT a.id, a.chamber_id, c.name, COALESCE(a.sensor_id, ''), a.type, a.message,
+	query := `SELECT a.id, a.chamber_id, COALESCE(c.name, a.chamber_id), COALESCE(a.sensor_id, ''), a.type, a.message,
 	                 COALESCE(a.value, 0.0), COALESCE(a.threshold, 0.0), a.status, a.escalation_level,
 	                 COALESCE(a.acknowledged_by, ''), COALESCE(a.acknowledged_at, ''),
 	                 COALESCE(a.action_taken, ''), a.created_at, COALESCE(a.resolved_at, ''),
 	                 COALESCE(NULLIF(a.resolved_by, ''), NULLIF(a.acknowledged_by, ''), 'Dr. Lucas Silva (Responsável Técnico)') AS resolved_by,
 	                 COALESCE(a.electronic_sig, '') AS electronic_sig
 	          FROM alarms a
-	          JOIN chambers c ON c.id = a.chamber_id
+	          LEFT JOIN chambers c ON c.id = a.chamber_id
 	          WHERE 1=1`
 	var args []interface{}
 	if status != "" {

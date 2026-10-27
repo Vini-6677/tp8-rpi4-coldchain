@@ -2230,32 +2230,77 @@ func (a *App) routes() http.Handler {
 		}
 
 		chID := r.URL.Query().Get("chamber")
-		if chID == "" {
-			chID = "CH-A"
+		var chName string
+		var tMin, tMax float64
+		if chID != "" {
+			_ = a.db.QueryRow("SELECT id, name, temp_min, temp_max FROM chambers WHERE id = ? AND COALESCE(decommissioned, 0) = 0", chID).
+				Scan(&chID, &chName, &tMin, &tMax)
 		}
+		if chName == "" {
+			// Seleciona automaticamente a primeira câmara ativa cadastrada no sistema
+			_ = a.db.QueryRow("SELECT id, name, temp_min, temp_max FROM chambers WHERE COALESCE(decommissioned, 0) = 0 ORDER BY id ASC LIMIT 1").
+				Scan(&chID, &chName, &tMin, &tMax)
+		}
+		if chID == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{"error": "Cadastre ao menos uma câmara fria ativa antes de simular uma excursão térmica."})
+			return
+		}
+		if tMin == 0 && tMax == 0 {
+			tMin, tMax = 2.0, 8.0
+		}
+
+		var sensorID string
+		_ = a.db.QueryRow("SELECT id FROM sensors WHERE chamber_id = ? AND COALESCE(decommissioned, 0) = 0 ORDER BY id ASC LIMIT 1", chID).Scan(&sensorID)
+		if sensorID == "" {
+			sensorID = "S01"
+		}
+
+		peakTemp := tMax + 2.4
+		minTemp := (tMin + tMax) / 2.0
 
 		excCode := fmt.Sprintf("EXC-SIM-%d", time.Now().Unix()%10000)
 		exc := pharma.Excursion{
 			Code:                     excCode,
 			ChamberID:                chID,
-			SensorID:                 "S01",
+			SensorID:                 sensorID,
 			StartTime:                time.Now().Add(-25 * time.Minute).Format("2006-01-02 15:04:05"),
 			EndTime:                  time.Now().Format("2006-01-02 15:04:05"),
-			PeakTemp:                 9.6,
-			MinTemp:                  4.2,
+			PeakTemp:                 peakTemp,
+			MinTemp:                  minTemp,
 			AccumulatedDegreeMinutes: 38.0,
-			Cause:                    "Simulação controlada de queda de energia e transição para nobreak",
-			TechnicalReport:          "Alerta sanitário emitido automaticamente. Todos os lotes foram colocados em análise conforme RDC 430/2020.",
+			Cause:                    "Simulação controlada de abertura prolongada / transição para nobreak",
+			TechnicalReport:          "Alerta sanitário emitido automaticamente. Lotes segregados preventivamente conforme RDC 430/2020 Art. 38.",
 		}
 
 		excID, err := pharma.TriggerExcursion(a.db, exc)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
 			return
 		}
 
+		// Registra a leitura crítica na tabela readings para refletir imediatamente nos gráficos e no Laudo PDF de Sensores
+		nowUnix := time.Now().Unix()
+		_, _ = a.db.Exec(`INSERT INTO readings (device_id, seq, ts, t, h, door) VALUES (?, ?, ?, ?, 58.0, 1)`,
+			sensorID, nowUnix, nowUnix, peakTemp)
+
+		// Registra no Ledger Criptográfico WORM
+		if a.ledger != nil {
+			ledgerPayload, _ := json.Marshal(map[string]any{
+				"event":        "THERMAL_EXCURSION_DETECTED",
+				"excursion_id": excCode,
+				"chamber_id":   chID,
+				"sensor_id":    sensorID,
+				"peak_temp_c":  peakTemp,
+				"limit_max_c":  tMax,
+				"triggered_by": sess.Username,
+			})
+			_, _ = a.ledger.AppendData("PHARMA-GATEWAY", uint64(time.Now().UnixNano()), ledgerPayload, 1)
+		}
+
 		ip := getClientIP(r)
-		a.logAudit(sess.Username, sess.Role, "SIMULACAO_EXCURSAO", fmt.Sprintf("Simulação da excursão %s disparada na câmara %s. Lotes colocados em análise.", excCode, chID), ip)
+		a.logAudit(sess.Username, sess.Role, "SIMULACAO_EXCURSAO", fmt.Sprintf("Ensaio de excursão %s na câmara %s (Sensor %s, Pico %.1f°C). Lotes colocados em análise.", excCode, chID, sensorID, peakTemp), ip)
 
 		json.NewEncoder(w).Encode(map[string]any{
 			"status":       "ok",
@@ -2698,7 +2743,7 @@ func (a *App) pharmaSimulatorLoop(ctx context.Context) {
 				SELECT s.id, c.temp_min, c.temp_max, c.humidity_min, c.humidity_max 
 				FROM sensors s
 				JOIN chambers c ON s.chamber_id = c.id
-				WHERE COALESCE(c.decommissioned, 0) = 0`)
+				WHERE COALESCE(c.decommissioned, 0) = 0 AND COALESCE(c.status, '') != 'EXCURSAO' AND COALESCE(s.decommissioned, 0) = 0`)
 			if err == nil {
 				type sUpdate struct {
 					id string
@@ -2731,10 +2776,15 @@ func (a *App) pharmaSimulatorLoop(ctx context.Context) {
 				}
 				rows.Close()
 
+				nowUnix := time.Now().Unix()
 				for _, u := range updates {
 					_, _ = a.db.Exec(`UPDATE sensors 
 						SET current_temp = ?, current_humidity = ?, last_seen = ? 
 						WHERE id = ?`, u.t, u.h, nowStr, u.id)
+					if step%5 == 1 {
+						_, _ = a.db.Exec(`INSERT INTO readings (device_id, seq, ts, t, h, door) VALUES (?, ?, ?, ?, ?, 0)`,
+							u.id, nowUnix, nowUnix, u.t, u.h)
+					}
 				}
 			}
 		}

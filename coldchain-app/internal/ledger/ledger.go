@@ -99,12 +99,16 @@ func (l *Ledger) bootstrapChain() error {
 	}
 
 	if count > 0 {
-		err = l.db.QueryRow("SELECT id, current_hash FROM ledger ORDER BY id DESC LIMIT 1").Scan(&latestID, &latestHash)
+		var lastType int
+		err = l.db.QueryRow("SELECT id, record_type, current_hash FROM ledger ORDER BY id DESC LIMIT 1").Scan(&latestID, &lastType, &latestHash)
 		if err != nil {
 			return err
 		}
 		l.latestID = uint64(latestID)
 		copy(l.latestHash[:], latestHash)
+		if uint8(lastType) == RecordTypeBoot {
+			return nil
+		}
 		return l.appendBootRecordLocked()
 	}
 

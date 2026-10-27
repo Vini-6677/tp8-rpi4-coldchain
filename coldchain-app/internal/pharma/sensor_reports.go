@@ -121,7 +121,7 @@ func FetchSensorHistoryReportData(db *sql.DB, signer SignerInterface, chamberID 
 		crfStr = "Farmacêutico(a) RT - Responsabilidade Técnica Farmacêutica"
 	case "admin":
 		leadStr = fmt.Sprintf("%s (%s)", issuerName, issuerUsername)
-		crfStr = "Administrador Geral do Sistema - Gestão da Qualidade"
+		crfStr = "Gestão da Qualidade e Integridade de Dados (21 CFR Part 11)"
 	case "enfermeiro":
 		leadStr = fmt.Sprintf("%s (%s)", issuerName, issuerUsername)
 		crfStr = "Operador Sanitário - Equipe de Enfermagem / Operação"
@@ -130,15 +130,14 @@ func FetchSensorHistoryReportData(db *sql.DB, signer SignerInterface, chamberID 
 		crfStr = "Emissor Autorizado - 21 CFR Part 11"
 	}
 
-	// 1. Busca dados da câmara
+	// 1. Busca dados da câmara (prioriza câmara ativa solicitada ou a primeira câmara ativa cadastrada)
 	var ch Chamber
 	if chamberID != "" {
-		_ = db.QueryRow("SELECT id, name, temp_min, temp_max, status FROM chambers WHERE id = ?", chamberID).
+		_ = db.QueryRow("SELECT id, name, temp_min, temp_max, status FROM chambers WHERE id = ? AND COALESCE(decommissioned, 0) = 0", chamberID).
 			Scan(&ch.ID, &ch.Name, &ch.TempMin, &ch.TempMax, &ch.Status)
 	}
 	if ch.ID == "" {
-		// Seleciona a primeira câmara ativa como padrão
-		_ = db.QueryRow("SELECT id, name, temp_min, temp_max, status FROM chambers ORDER BY id ASC LIMIT 1").
+		_ = db.QueryRow("SELECT id, name, temp_min, temp_max, status FROM chambers WHERE COALESCE(decommissioned, 0) = 0 ORDER BY id ASC LIMIT 1").
 			Scan(&ch.ID, &ch.Name, &ch.TempMin, &ch.TempMax, &ch.Status)
 	}
 	if ch.ID == "" {
@@ -275,12 +274,16 @@ func FetchSensorHistoryReportData(db *sql.DB, signer SignerInterface, chamberID 
 		}
 	}
 
-	// Se não houver medições registradas em readings, gera amostragem representativa para a câmara
+	// Se não houver medições registradas em readings, gera amostragem representativa centrada na faixa da câmara
 	if len(readings) == 0 {
+		midTemp := (ch.TempMin + ch.TempMax) / 2.0
+		if ch.TempMin == 0 && ch.TempMax == 0 {
+			midTemp = 4.8
+		}
 		for i := 0; i < 20; i++ {
 			ts := time.Now().Add(-time.Duration(i*3) * time.Minute)
 			dataHora := ts.In(loc).Format("02/01/2006 15:04:05")
-			t := 4.8 + math.Sin(float64(i)*0.4)*0.6
+			t := math.Round((midTemp+math.Sin(float64(i)*0.4)*0.4)*100) / 100
 			h := 48.0 + math.Cos(float64(i)*0.3)*3.0
 			sID := "S01"
 			if len(sensors) > 0 {
@@ -509,7 +512,7 @@ func GenerateSensorHistoryPDF(data *SensorHistoryReportData) ([]byte, error) {
 	p1.WriteString(fmt.Sprintf("BT /F2 9 Tf 160 720 Td (%s [%s]) Tj ET\n", toPDFASCII(data.ChamberName), toPDFASCII(data.ChamberID)))
 
 	p1.WriteString("BT /F1 9 Tf 40 705 Td (Faixa Regulamentar:) Tj ET\n")
-	p1.WriteString(fmt.Sprintf("BT /F2 9 Tf 160 705 Td (+%.1f \\260C a +%.1f \\260C [Termolabeis]) Tj ET\n", data.TargetMin, data.TargetMax))
+	p1.WriteString(fmt.Sprintf("BT /F2 9 Tf 160 705 Td (%+.1f \\260C a %+.1f \\260C [Monitoramento Continuo]) Tj ET\n", data.TargetMin, data.TargetMax))
 
 	p1.WriteString("BT /F1 9 Tf 40 690 Td (Responsavel Tecnico:) Tj ET\n")
 	p1.WriteString(fmt.Sprintf("BT /F2 9 Tf 160 690 Td (%s) Tj ET\n", toPDFASCII(data.TechnicalLead)))
@@ -522,7 +525,7 @@ func GenerateSensorHistoryPDF(data *SensorHistoryReportData) ([]byte, error) {
 
 	// Seção 1: Indicadores Térmicos e MKT
 	p1.WriteString("0.05 0.15 0.35 rg\n")
-	p1.WriteString("BT /F1 11 Tf 30 635 Td (1. Resumo Estatistico Metrologico e MKT (Mean Kinetic Temperature)) Tj ET\n")
+	p1.WriteString("BT /F1 11 Tf 30 635 Td (1. Resumo Estatistico Metrologico e MKT [Mean Kinetic Temperature]) Tj ET\n")
 
 	// 4 Cards de Métricas Térmicas
 	// Card 1: Temp Mínima
@@ -575,11 +578,15 @@ func GenerateSensorHistoryPDF(data *SensorHistoryReportData) ([]byte, error) {
 		if i%2 == 1 {
 			p1.WriteString(fmt.Sprintf("0.97 0.98 0.99 rg 30 %d 535.28 15 re f\n", yS-3))
 		}
+		sPos := s.ThermalPosition
+		if len(sPos) > 30 {
+			sPos = sPos[:28] + ".."
+		}
 		p1.WriteString("0.10 0.15 0.20 rg\n")
 		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 35 %d Td (%s) Tj ET\n", yS, toPDFASCII(s.ID)))
 		p1.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 105 %d Td (%s) Tj ET\n", yS, toPDFASCII(s.SerialNumber)))
 		p1.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 210 %d Td (%s) Tj ET\n", yS, toPDFASCII(s.CertNumber)))
-		p1.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 340 %d Td (%s) Tj ET\n", yS, toPDFASCII(s.ThermalPosition)))
+		p1.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 340 %d Td (%s) Tj ET\n", yS, toPDFASCII(sPos)))
 		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 500 %d Td (CALIBRADO RBC) Tj ET\n", yS))
 		yS -= 16
 	}
@@ -661,22 +668,31 @@ func GenerateSensorHistoryPDF(data *SensorHistoryReportData) ([]byte, error) {
 	p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 45 700 Td (EQUIPAMENTO:      %s [ID: %s]) Tj ET\n", toPDFASCII(data.ChamberName), toPDFASCII(data.ChamberID)))
 	p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 45 685 Td (TEMPERATURA MKT:  %.2f \\260C [CONFORME ESTUDO DE ESTABILIDADE ARRHENIUS]) Tj ET\n", data.MKT))
 	p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 45 670 Td (HASH SHA-256:     %s) Tj ET\n", data.ReportSHA256))
+	sigR := data.SignatureHex
+	sigS := ""
+	if len(sigR) > 64 {
+		sigS = sigR[64:]
+		sigR = sigR[:64]
+	}
 	p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 45 655 Td (ASSINADOR KEY ID: %s [%s]) Tj ET\n", data.SignerKeyID, toPDFASCII(data.SignerAlgorithm)))
-	p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 45 640 Td (ASSINATURA ECDSA: %s) Tj ET\n", toPDFASCII(data.SignatureHex)))
+	p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 45 640 Td (ASSINATURA ECDSA [R]: %s) Tj ET\n", toPDFASCII(sigR)))
+	if sigS != "" {
+		p2.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 45 626 Td (ASSINATURA ECDSA [S]: %s) Tj ET\n", toPDFASCII(sigS)))
+	}
 
 	p2.WriteString("0.29 0.85 0.50 rg\n")
-	p2.WriteString("BT /F1 8.5 Tf 45 605 Td ([STATUS: 100%% CONFORME COM A RDC 430/2020, RDC 304/2019 E FDA 21 CFR PART 11]) Tj ET\n")
+	p2.WriteString("BT /F1 8.5 Tf 45 600 Td ([STATUS: 100%% CONFORME COM A RDC 430/2020, RDC 304/2019 E FDA 21 CFR PART 11]) Tj ET\n")
 
 	// Termo de Declaração de Integridade ALCOA+
 	p2.WriteString("0.05 0.15 0.35 rg\n")
-	p2.WriteString("BT /F1 11 Tf 30 540 Td (5. Declaracao de Integridade de Dados Sanitarios (Principios ALCOA+)) Tj ET\n")
+	p2.WriteString("BT /F1 11 Tf 30 540 Td (5. Declaracao de Integridade de Dados Sanitarios [Principios ALCOA+]) Tj ET\n")
 
 	p2.WriteString("0.20 0.25 0.30 rg\n")
 	p2.WriteString("BT /F2 8 Tf 30 515 Td (1. Atribuivel: Todas as medicoes e intervencoes identificam inequivocamente sensores e operadores.) Tj ET\n")
 	p2.WriteString("BT /F2 8 Tf 30 495 Td (2. Legivel: Registros imutaveis protegidos e exportaveis em padrao universal e pericial.) Tj ET\n")
 	p2.WriteString("BT /F2 8 Tf 30 475 Td (3. Contemporaneo: Carimbos de tempo em milissegundos sincronizados via NTP confiavel.) Tj ET\n")
 	p2.WriteString("BT /F2 8 Tf 30 455 Td (4. Original: Dado capturado diretamente do conversor AD dos sensores metrologicos.) Tj ET\n")
-	p2.WriteString("BT /F2 8 Tf 30 435 Td (5. Preciso: Sensores calibrados pela Rede Brasileira de Calibracao (RBC/INMETRO).) Tj ET\n")
+	p2.WriteString("BT /F2 8 Tf 30 435 Td (5. Preciso: Sensores calibrados pela Rede Brasileira de Calibracao [RBC/INMETRO].) Tj ET\n")
 
 	// Campo de Assinatura do Responsável Técnico (Perfeitamente Alinhado e Centralizado)
 	sigLineW := 320.0

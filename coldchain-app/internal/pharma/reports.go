@@ -410,7 +410,7 @@ func GenerateLedgerCSVWithIssuer(db *sql.DB, signer SignerInterface, issuerRole,
 		valorResponsavel = fmt.Sprintf("%s (%s) — Farmacêutico(a) RT", issuerName, issuerUsername)
 	case "admin":
 		labelResponsavel = "Responsável pela Emissão / Administrador:"
-		valorResponsavel = fmt.Sprintf("%s (%s) — Administrador Geral", issuerName, issuerUsername)
+		valorResponsavel = fmt.Sprintf("%s (%s) — Gestão da Qualidade e Integridade de Dados", issuerName, issuerUsername)
 	case "enfermeiro":
 		labelResponsavel = "Operador Sanitário Responsável:"
 		valorResponsavel = fmt.Sprintf("%s (%s) — Enfermagem / Operação", issuerName, issuerUsername)
@@ -487,27 +487,31 @@ func GenerateLedgerCSVWithIssuer(db *sql.DB, signer SignerInterface, issuerRole,
 			var tipoEvento string
 			switch rType {
 			case 0:
-				tipoEvento = "Gênese (Bootstrap da Cadeia)"
+				tipoEvento = "Gênese (Bootstrap da Cadeia WORM)"
 			case 1:
 				tipoEvento = "Operação / Evento Sanitário"
 			case 2:
-				tipoEvento = "Rotação de Chaves Criptográficas"
+				tipoEvento = "Inicialização Segura do Gateway (SYSTEM_BOOT)"
 			case 3:
-				tipoEvento = "Sincronização Temporal NTP"
+				tipoEvento = "Rotação de Chaves Criptográficas"
 			case 4:
 				tipoEvento = "Âncora Criptográfica RFC 3161"
+			case 5:
+				tipoEvento = "Checkpoint de Consistência WORM"
+			case 6:
+				tipoEvento = "Sincronização Temporal NTP"
 			default:
 				tipoEvento = fmt.Sprintf("Registro Técnico #%d", rType)
 			}
 
 			payloadStr := formatLedgerPayload(payload)
 
-			// Formata dataHora e seq com ="..." para o Excel exibir diretamente sem ######## ou notação científica 1,79E+18
+			// Formata dataHora, seq e prevHex com ="..." para o Excel exibir diretamente sem ########, notação científica ou converter 64 zeros em 0
 			dataHoraCell := fmt.Sprintf("=\"%s\"", dataHora)
 			seqCell := fmt.Sprintf("=\"%d\"", seq)
 			prevHex := hex.EncodeToString(prev)
 			if len(prevHex) == 0 || strings.Repeat("0", len(prevHex)) == prevHex {
-				prevHex = strings.Repeat("0", 64)
+				prevHex = fmt.Sprintf("=\"%s\"", strings.Repeat("0", 64))
 			}
 
 			_ = writer.Write([]string{
@@ -530,19 +534,27 @@ func GenerateLedgerCSVWithIssuer(db *sql.DB, signer SignerInterface, issuerRole,
 	_ = writer.Write([]string{"[SECAO 2: TRILHA DE AUDITORIA DE OPERACOES E ACESSOS - ANVISA GUIA 33/2020 & 21 CFR PART 11]", "", "", "", "", "", "", "", "", ""})
 	_ = writer.Write([]string{"ID Registro", "Data e Hora (Brasília)", "Usuário Autenticado", "Perfil RBAC", "Operação / Evento", "Detalhamento Técnico Regulatório", "Endereço IP", "Conformidade ALCOA+", "", ""})
 
-	auditRows, errAudit := db.Query("SELECT id, timestamp, username, role, action, details, ip_address FROM audit_logs ORDER BY id DESC LIMIT 250")
+	auditRows, errAudit := db.Query("SELECT id, timestamp, username, role, action, details, ip_address FROM audit_logs WHERE action != 'LOGIN_FAILED' ORDER BY id DESC LIMIT 250")
 	if errAudit == nil {
 		defer auditRows.Close()
 		for auditRows.Next() {
 			var aid int64
 			var ats, auser, arole, aaction, adetails, aip string
 			if err := auditRows.Scan(&aid, &ats, &auser, &arole, &aaction, &adetails, &aip); err == nil {
+				if t, errT := time.Parse(time.RFC3339, ats); errT == nil {
+					ats = t.In(loc).Format("02/01/2006 15:04:05")
+				} else if t2, errT2 := time.Parse("2006-01-02 15:04:05", ats); errT2 == nil {
+					ats = t2.In(loc).Format("02/01/2006 15:04:05")
+				}
+				if aip == "::1" || aip == "[::1]" || aip == "" {
+					aip = "127.0.0.1"
+				}
 				_ = writer.Write([]string{
 					strconv.FormatInt(aid, 10),
 					fmt.Sprintf("=\"%s\"", sanitizeCSV(ats)),
 					sanitizeCSV(auser),
 					sanitizeCSV(arole),
-					sanitizeCSV(aaction),
+					sanitizeCSV(formatAuditActionPDF(aaction)),
 					sanitizeCSV(adetails),
 					sanitizeCSV(aip),
 					"AUDITADO (21 CFR PART 11)",
@@ -636,6 +648,8 @@ func formatAuditActionPDF(action string) string {
 		return "Exportacao Trilha CSV"
 	case "EXPORTACAO_LAUDO":
 		return "Exportacao Laudo JSON"
+	case "SIMULACAO_EXCURSAO":
+		return "Ensaio de Excursao"
 	default:
 		s := strings.ReplaceAll(action, "_", " ")
 		if len(s) > 22 {

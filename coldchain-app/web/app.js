@@ -1660,16 +1660,20 @@ async function submitExcursionDecision() {
         excursion_id: excId,
         decision: decision,
         report: report,
-        electronic_sig: `SIG-P256-RT-${currentUser.username}-${Date.now()}`
+        electronic_sig: sig.trim()
       })
     });
     const data = await res.json();
     if (res.ok) {
       showToast(`Decisão pericial registrada com sucesso! Lotes ${decision === 'liberado' ? 'LIBERADOS para uso' : 'REPROVADOS para descarte'}.`, 'success')
+      document.getElementById('dec-report').value = '';
+      document.getElementById('dec-signature').value = '';
       closeDecisionModal();
       loadExcursions();
+      loadAlarms();
       loadLots();
       loadChambers();
+      loadKPIs();
     } else {
       showToast(data.error || 'Erro ao registrar decisão.', 'error')
     }
@@ -1686,7 +1690,8 @@ async function simulateExcursion() {
   }
 
   try {
-    const res = await fetch('/api/pharma/excursions/simulate?chamber=CH-A', { method: 'POST' });
+    const targetChamber = selectedChamberId || '';
+    const res = await fetch('/api/pharma/excursions/simulate?chamber=' + encodeURIComponent(targetChamber), { method: 'POST' });
     const data = await res.json();
     if (res.ok) {
       showToast(data.message || 'Excursão térmica simulada com sucesso! Lotes alocados em análise.', 'success')
@@ -2202,7 +2207,7 @@ async function exportLedgerJSON() {
 
 async function downloadSensorsCSV() {
   try {
-    const chamberId = selectedChamberId || 'CH-A';
+    const chamberId = selectedChamberId || '';
     showToast('Gerando Histórico Metrológico dos Sensores (CSV)...', 'info');
     const res = await fetch('/api/pharma/reports/sensors.csv?chamber_id=' + encodeURIComponent(chamberId), { credentials: 'same-origin' });
     if (!res.ok) throw new Error('Falha ao gerar CSV dos sensores: ' + res.status);
@@ -2219,7 +2224,7 @@ async function downloadSensorsCSV() {
     setTimeout(() => { if (typeof loadLedger === 'function') loadLedger(); }, 600);
   } catch (err) {
     console.error('Erro ao baixar CSV de sensores:', err);
-    window.location.href = '/api/pharma/reports/sensors.csv?chamber_id=' + encodeURIComponent(selectedChamberId || 'CH-A');
+    window.location.href = '/api/pharma/reports/sensors.csv?chamber_id=' + encodeURIComponent(selectedChamberId || '');
   }
 }
 
@@ -2251,7 +2256,7 @@ async function downloadLedgerPDF() {
 
 async function downloadSensorsPDF() {
   try {
-    const chamberId = selectedChamberId || 'CH-A';
+    const chamberId = selectedChamberId || '';
     showToast('Emitindo Laudo Metrológico de Temperatura em PDF (ANVISA)...', 'info');
     // Abre imediatamente em nova aba para visualização instantânea
     window.open('/api/pharma/reports/sensors.pdf?chamber_id=' + encodeURIComponent(chamberId) + '&view=1', '_blank');
@@ -2271,7 +2276,7 @@ async function downloadSensorsPDF() {
     setTimeout(() => { if (typeof loadLedger === 'function') loadLedger(); }, 600);
   } catch (err) {
     console.error('Erro ao baixar PDF de sensores:', err);
-    window.open('/api/pharma/reports/sensors.pdf?chamber_id=' + encodeURIComponent(selectedChamberId || 'CH-A') + '&view=1', '_blank');
+    window.open('/api/pharma/reports/sensors.pdf?chamber_id=' + encodeURIComponent(selectedChamberId || '') + '&view=1', '_blank');
   }
 }
 
