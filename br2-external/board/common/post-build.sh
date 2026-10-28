@@ -49,3 +49,13 @@ fi
 
 # Remove S60dockerd duplicado (usamos S40docker deterministico)
 rm -f "${TARGET_DIR}/etc/init.d/S60dockerd"
+
+# Descompacta modulos .ko.xz para .ko (compativel com BusyBox modprobe) e gera modules.dep
+if [ -d "${TARGET_DIR}/lib/modules" ]; then
+  for kver in $(ls "${TARGET_DIR}/lib/modules"); do
+    if [ -d "${TARGET_DIR}/lib/modules/${kver}" ]; then
+      find "${TARGET_DIR}/lib/modules/${kver}" -name "*.ko.xz" -exec unxz -f {} + 2>/dev/null || true
+      depmod -a -b "${TARGET_DIR}" "${kver}" 2>/dev/null || /usr/sbin/depmod -a -b "${TARGET_DIR}" "${kver}" 2>/dev/null || true
+    fi
+  done
+fi

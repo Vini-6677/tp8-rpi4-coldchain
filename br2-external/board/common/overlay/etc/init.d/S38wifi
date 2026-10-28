@@ -1,0 +1,49 @@
+#!/bin/sh
+# S38wifi - Inicializacao resiliente do Wi-Fi Broadcom BCM43455 (Raspberry Pi 4)
+
+case "$1" in
+  start)
+    # Garante carregamento do driver Wi-Fi caso ainda nao esteja ativo
+    modprobe brcmfmac 2>/dev/null || true
+
+    # Aguarda ate 6s pela interface wlan0 aparecer
+    WAIT=0
+    while [ ! -e /sys/class/net/wlan0 ] && [ $WAIT -lt 30 ]; do
+      usleep 200000 2>/dev/null || sleep 1
+      WAIT=$((WAIT + 1))
+    done
+
+    if [ -e /sys/class/net/wlan0 ]; then
+      echo "[+] Inicializando interface Wi-Fi wlan0 (Rede: S23 / ColdChain-WiFi)..."
+      ip link set wlan0 up 2>/dev/null || ifconfig wlan0 up 2>/dev/null || true
+      mkdir -p /var/run/wpa_supplicant
+
+      # Inicia wpa_supplicant se ainda nao estiver rodando
+      if ! pidof wpa_supplicant >/dev/null 2>&1; then
+        wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant.conf -P /run/wpa_supplicant.wlan0.pid >/dev/null 2>&1
+      fi
+
+      # Daemon leve em background: garante renovacao DHCP e mDNS assim que o roteador do celular responder
+      (
+        HAS_IP=0
+        while true; do
+          if iw dev wlan0 link 2>/dev/null | grep -q "Connected"; then
+            CUR_IP=$(ip -4 addr show wlan0 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1)
+            if [ -z "$CUR_IP" ]; then
+              udhcpc -i wlan0 -n -q -t 4 -T 2 >/dev/null 2>&1 || true
+              /etc/init.d/S50avahi-daemon restart >/dev/null 2>&1 || true
+            fi
+          fi
+          sleep 5
+        done
+      ) &
+    fi
+    ;;
+  stop)
+    killall wpa_supplicant 2>/dev/null || true
+    ;;
+  *)
+    echo "Usage: $0 {start|stop}"
+    exit 1
+    ;;
+esac
