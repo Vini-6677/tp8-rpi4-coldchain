@@ -2,7 +2,7 @@
 # Root bloqueado com senha desabilitada (!)
 
 # Usuario administrativo coldadmin com hash SHA-512 gerado no build
-coldadmin 1000 coldadmin 1000 $6$qyBLkli/P94xoBtl$PfkB84IHvavGlLFHWUHmtnvcGVNBeoR8Dq1tsfu2sp5zdpzrltobfPl7jesdpXRS9FGgHcQrFkslSMS40dCGt/ /home/coldadmin /bin/sh sudo,docker -
+coldadmin 1000 coldadmin 1000 $6$EeuIX8NWNK68BbtD$Ltd4jPRw1wbQiUgZT6x33rzcIcZm7ynQylEbKWZmX6BGTLP22fp1uzDxgTTQoKLECDx6U5BPb1E5NDqxDH8ZF. /home/coldadmin /bin/sh sudo,docker -
 
 # Usuario academico aluno (senha: senha123) exigido pelo Guia do TP8 / Avaliacao
 aluno 1001 aluno 1001 $6$JTnHFHdFf9sYHYux$BQqDMVQFW2NZriyzYH4cJ4GXDQhp7oJ5IEhjtKKAaRhg5jP1ak01OG92iVqNusI0oMhj9lcjk.AYRXD4pCVom/ /home/aluno /bin/sh sudo,docker "Aluno_TP8"
