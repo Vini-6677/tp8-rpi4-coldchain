@@ -37,7 +37,7 @@ Configurados via `BR2_ROOTFS_USERS_TABLES` no arquivo [`br2-external/users_table
 | Usuário | Senha | Grupos | Finalidade |
 | :--- | :--- | :--- | :--- |
 | **`aluno`** | `senha123` | `aluno`, `docker`, `users` | Usuário oficial do guia TP Aula 8 com permissão direta ao Docker CLI. |
-| **`coldadmin`** | `ColdChain2026` | `coldadmin`, `docker`, `wheel` | Usuário administrativo de manutenção e auditoria do gateway. |
+| **`coldadmin`** | `ColdChainAdmin2026!` | `coldadmin`, `docker`, `wheel` | Usuário administrativo de manutenção e auditoria do gateway. |
 | **`root`** | *(bloqueado)* | `root` | Login direto de root desabilitado por segurança (`passwd -l root`). |
 
 ### 2.2. Perfis de Acesso da Aplicação Web (`http://coldchain-rpi4.local:5000`)
