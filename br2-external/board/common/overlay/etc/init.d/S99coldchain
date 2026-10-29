@@ -3,7 +3,6 @@
 
 case "$1" in
   start)
-    # Se o sistema estiver em modo seguro apos falha grave de fsck, nao inicia containers
     if [ -f /run/safe-mode ]; then
       echo "[!] MODO SEGURO ATIVO: Containers suspensos para recuperacao."
       exit 0
@@ -11,38 +10,32 @@ case "$1" in
 
     DOCKER_SUBNET=${DOCKER_SUBNET:-"172.30.0.0/24"}
 
-    # Aguarda o socket do Docker daemon responder antes de prosseguir (max 30s)
     echo "[*] Aguardando Docker daemon..."
     WAIT=0
     while ! docker info >/dev/null 2>&1 && [ $WAIT -lt 30 ]; do
-      sleep 1
+      usleep 250000 2>/dev/null || sleep 1
       WAIT=$((WAIT + 1))
     done
 
-    # Cria diretorios de dados persistentes com permissoes corretas
     mkdir -p /data/mosquitto /data/coldchain
     chown -R 1883:1883 /data/mosquitto
     chown -R 10001:10001 /data/coldchain
 
-    # Nivel 1: Primeiro boot (Provisionamento inicial das imagens offline)
     if [ ! -f /data/.provisioned ]; then
       echo "[+] Primeiro boot: Carregando imagens Docker offline de /opt/docker/..."
-      
-      # Carrega as imagens tarball pre-armazenadas
       for img in /opt/docker/*.tar.gz /opt/docker/*.tar; do
         if [ -f "$img" ]; then
           echo "    - Carregando $img..."
-          docker load -i "$img"
+          docker load -i "$img" >/dev/null 2>&1 || docker load -i "$img"
         fi
       done
 
-      # Cria a rede bridge isolada br-coldchain
       docker network inspect coldchain-net >/dev/null 2>&1 || \
       docker network create --driver bridge --subnet "$DOCKER_SUBNET" \
-        -o com.docker.network.bridge.name=br-coldchain coldchain-net
+        -o com.docker.network.bridge.name=br-coldchain coldchain-net >/dev/null 2>&1
 
-      # Cria container do broker Mosquitto (Eclipse 2.x) com uid 1883
       echo "[+] Criando container Mosquitto..."
+      docker rm -f mosquitto >/dev/null 2>&1 || true
       docker create --name mosquitto --restart always --network coldchain-net \
         --user 1883:1883 \
         --read-only --tmpfs /tmp:size=4m --cap-drop ALL \
@@ -54,10 +47,10 @@ case "$1" in
         --health-cmd "nc -z 127.0.0.1 1883" \
         --health-interval 15s --health-timeout 2s --health-retries 3 \
         --health-start-period 5s \
-        eclipse-mosquitto:2.0
+        eclipse-mosquitto:2.0 >/dev/null 2>&1
 
-      # Cria container da aplicacao Go em scratch com uid 10001
       echo "[+] Criando container Coldchain..."
+      docker rm -f coldchain >/dev/null 2>&1 || true
       docker create --name coldchain --restart always --network coldchain-net \
         --user 10001:10001 \
         --read-only --tmpfs /tmp:size=16m,mode=1777 --cap-drop ALL \
@@ -67,16 +60,14 @@ case "$1" in
         -v /etc/coldchain/app-secrets:/run/secrets:ro \
         -v /data/coldchain:/data \
         -p 5000:5000 \
-        coldchain-tp8:1.0.0
+        coldchain-tp8:1.0.0 >/dev/null 2>&1
 
-      # Inicia ambos
       echo "[+] Iniciando containers..."
-      docker start mosquitto coldchain
+      docker start mosquitto coldchain >/dev/null 2>&1
       touch /data/.provisioned
     else
-      # Nivel 2: Containers ja provisionados, garante que estao rodando
       echo "[+] Iniciando containers existentes..."
-      docker start mosquitto coldchain
+      docker start mosquitto coldchain >/dev/null 2>&1
     fi
 
     # Animacao de abertura no console antes do prompt de login
@@ -85,28 +76,31 @@ case "$1" in
     printf "\033[1;37m   INICIALIZANDO GATEWAY SANITARIO COLDCHAIN PHARMA RT (ARM64)\033[0m\n"
     printf "\033[1;36m==========================================================================\033[0m\n\n"
     printf "  \033[1;34m[####................]  20%%\033[0m  Montando Particao Criptografica WORM (/data)...\r"
-    usleep 250000 2>/dev/null || sleep 1
+    usleep 200000 2>/dev/null || sleep 1
     printf "  \033[1;34m[#########...........]  45%%\033[0m  Ativando Isolamento Docker & Cgroups v2...      \r"
-    usleep 250000 2>/dev/null || true
-    printf "  \033[1;36m[##############......]  70%%\033[0m  Sincronizando Broker MQTT TLS/ACL (:1883)...     \r"
-    usleep 250000 2>/dev/null || true
-    printf "  \033[1;36m[##################..]  90%%\033[0m  Verificando Ledger ECDSA P-256 (:5000)...        \r"
-    usleep 250000 2>/dev/null || true
-    printf "  \033[1;32m[####################] 100%%  SISTEMA VALIDADO — ANVISA RDC 430 & 21 CFR 11   \033[0m\n\n"
     usleep 200000 2>/dev/null || true
+    printf "  \033[1;36m[##############......]  70%%\033[0m  Sincronizando Broker MQTT TLS/ACL (:1883)...     \r"
+    usleep 200000 2>/dev/null || true
+    printf "  \033[1;36m[##################..]  90%%\033[0m  Verificando Ledger ECDSA P-256 (:5000)...        \r"
+    usleep 200000 2>/dev/null || true
+    printf "  \033[1;32m[####################] 100%%  SISTEMA VALIDADO — ANVISA RDC 430 & 21 CFR 11   \033[0m\n\n"
+    usleep 150000 2>/dev/null || true
     printf "  \033[1;33m>>> Helooowww world eng. Computacional!!!!!!! <<<\033[0m\n\n"
     IP_ETH=$(ip -4 addr show eth0 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1)
     IP_WLAN=$(ip -4 addr show wlan0 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1)
     printf "  \033[1;36mEnderecos de Acesso ao Web-Server (Porta 5000):\033[0m\n"
     printf "    - mDNS (.local): \033[1;32mhttp://coldchain-rpi4.local:5000\033[0m\n"
-    [ -n "$IP_WLAN" ] && printf "    - Wi-Fi (wlan0): \033[1;32mhttp://%s:5000\033[0m\n" "$IP_WLAN"
-    [ -n "$IP_ETH" ]  && printf "    - Cabo  (eth0):  \033[1;32mhttp://%s:5000\033[0m\n" "$IP_ETH"
+    if [ -n "$IP_WLAN" ]; then
+      printf "    - Wi-Fi (wlan0): \033[1;32mhttp://%s:5000\033[0m\n" "$IP_WLAN"
+    elif [ -e /sys/class/net/wlan0 ]; then
+      printf "    - Wi-Fi (wlan0): \033[1;33mAguardando Hotspot S23 em background...\033[0m\n"
+    fi
+    [ -n "$IP_ETH" ] && printf "    - Cabo  (eth0):  \033[1;32mhttp://%s:5000\033[0m\n" "$IP_ETH"
     printf "\n"
-    usleep 400000 2>/dev/null || true
     ;;
   stop)
     echo "[*] Parando containers..."
-    docker stop coldchain mosquitto
+    docker stop coldchain mosquitto >/dev/null 2>&1 || true
     ;;
   *)
     echo "Usage: $0 {start|stop}"

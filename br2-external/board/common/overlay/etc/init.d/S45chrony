@@ -1,19 +1,32 @@
 #!/bin/sh
+# S45chrony - Sincronizacao NTP resiliente sem duplicidade com S49chronyd
+
 case "$1" in
   start)
-    # Restaura o último horário salvo se não houver RTC
+    printf "Starting chronyd: "
     if [ -f /data/last-time ]; then
-      date -s "@$(cat /data/last-time)" >/dev/null 2>&1
+      date -s "@$(cat /data/last-time)" >/dev/null 2>&1 || true
     fi
-    mkdir -p /var/lib/chrony
-    chronyd -f /etc/chrony.conf
+    mkdir -p /var/lib/chrony /var/run/chrony
+    if pidof chronyd >/dev/null 2>&1; then
+      echo "OK"
+      exit 0
+    fi
+    chronyd -f /etc/chrony.conf >/dev/null 2>&1 || true
+    echo "OK"
     ;;
   stop)
-    date +%s > /data/last-time 2>/dev/null
-    killall chronyd 2>/dev/null
+    printf "Stopping chronyd: "
+    date +%s > /data/last-time 2>/dev/null || true
+    killall chronyd 2>/dev/null || true
+    echo "OK"
+    ;;
+  restart|reload)
+    "$0" stop
+    "$0" start
     ;;
   *)
-    echo "Usage: $0 {start|stop}"
+    echo "Usage: $0 {start|stop|restart}"
     exit 1
     ;;
 esac

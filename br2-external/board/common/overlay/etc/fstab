@@ -1,9 +1,12 @@
 # /etc/fstab: static file system information.
 # <file system>             <mount pt>     <type>    <options>                         <dump> <pass>
 /dev/root                   /              ext4      ro,noatime                        0      0
-LABEL=data                  /data          ext4      rw,noauto,noatime,commit=30       0      0
+proc                        /proc          proc      defaults                          0      0
+sysfs                       /sys           sysfs     defaults                          0      0
+devpts                      /dev/pts       devpts    gid=5,mode=620                    0      0
+tmpfs                       /dev/shm       tmpfs     mode=0777                         0      0
 tmpfs                       /tmp           tmpfs     size=32m,nosuid,nodev,mode=1777   0      0
 tmpfs                       /run           tmpfs     size=16m,nosuid,nodev,mode=0755   0      0
 tmpfs                       /var/log       tmpfs     size=16m,nosuid,nodev,noexec      0      0
 cgroup2                     /sys/fs/cgroup cgroup2   defaults                          0      0
-devpts                      /dev/pts       devpts    gid=5,mode=620                    0      0
+LABEL=data                  /data          ext4      rw,noauto,noatime,commit=30       0      0

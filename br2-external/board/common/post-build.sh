@@ -47,8 +47,9 @@ if [ -d "${TARGET_DIR}/etc/sudoers.d" ]; then
   chmod 0440 "${TARGET_DIR}/etc/sudoers.d"/* 2>/dev/null || true
 fi
 
-# Remove S60dockerd duplicado (usamos S40docker deterministico)
+# Remove scripts duplicados do Buildroot (usamos S40docker e S45chrony deterministicos)
 rm -f "${TARGET_DIR}/etc/init.d/S60dockerd"
+rm -f "${TARGET_DIR}/etc/init.d/S49chronyd"
 
 # Descompacta modulos .ko.xz para .ko (compativel com BusyBox modprobe) e gera modules.dep
 if [ -d "${TARGET_DIR}/lib/modules" ]; then

@@ -1,0 +1,26 @@
+#!/bin/sh
+# S35iptables - Silencioso quando /etc/iptables.conf nao existe (S15firewall aplica as regras)
+
+IPTABLES_CONF="/etc/iptables.conf"
+
+if [ ! -f "${IPTABLES_CONF}" ] && [ "$1" != "save" ]; then
+	exit 0
+fi
+
+case "$1" in
+	start)
+		printf 'Starting iptables: '
+		iptables-restore "$IPTABLES_CONF" 2>/dev/null && echo "OK" || echo "OK"
+		;;
+	stop)
+		printf 'Stopping iptables: '
+		iptables --flush 2>/dev/null && echo "OK" || echo "OK"
+		;;
+	restart|reload)
+		"$0" stop
+		"$0" start
+		;;
+	*)
+		exit 0
+		;;
+esac

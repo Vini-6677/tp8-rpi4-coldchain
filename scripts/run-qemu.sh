@@ -14,7 +14,7 @@ if [ -z "$QEMU_BIN" ]; then
   exit 1
 fi
 
-IMAGE_KERNEL="output/images/Image"
+IMAGE_KERNEL="output/images/Image.qemu"
 IMAGE_ROOTFS="output/images/rootfs.ext4"
 IMAGE_DATA="output/images/data.ext4"
 

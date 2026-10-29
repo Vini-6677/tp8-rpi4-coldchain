@@ -1,0 +1,35 @@
+#!/bin/sh
+# S11modules - Carregamento limpo de modulos de kernel disponiveis no alvo
+
+MODULES_DIR="/etc/modules-load.d"
+KVER=$(uname -r)
+
+[ ! -d "${MODULES_DIR}" ] && exit 0
+
+case "$1" in
+  start)
+    printf "Starting modules: "
+    for module_file in "${MODULES_DIR}"/*.conf; do
+      [ ! -f "$module_file" ] && continue
+      while read -r module args; do
+        case "$module" in
+          ""|"#"*) continue ;;
+        esac
+        if modprobe -q "${module}" ${args} >/dev/null 2>&1; then
+          printf "%s " "$module"
+        fi
+      done < "$module_file"
+    done
+    echo "OK"
+    ;;
+  stop)
+    echo "Stopping modules: OK"
+    ;;
+  restart|reload)
+    "$0" start
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|restart|reload}"
+    exit 1
+    ;;
+esac

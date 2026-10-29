@@ -1,29 +1,32 @@
 #!/bin/sh
-# S40docker - Inicialização determinística de containerd e dockerd
+# S40docker - Inicializacao deterministica de containerd e dockerd
 
 case "$1" in
   start)
+    printf "Starting Docker engine: "
     mkdir -p /run/containerd /run/docker /data/containerd /data/docker
     rm -f /run/docker.pid /run/docker.sock /run/containerd/containerd.sock
 
-    # 1. Inicia o containerd com o arquivo de configuração sem CRI
+    # 1. Inicia o containerd com o arquivo de configuracao sem CRI
     containerd --config /etc/containerd/config.toml >/var/log/containerd.log 2>&1 &
 
-    # 2. Aguarda o socket do containerd aparecer (máximo 5 s)
+    # 2. Aguarda o socket do containerd aparecer (maximo 5 s)
     WAIT=0
     while [ ! -S /run/containerd/containerd.sock ] && [ $WAIT -lt 50 ]; do
-      usleep 100000
+      usleep 100000 2>/dev/null || sleep 1
       WAIT=$((WAIT + 1))
     done
 
     # 3. Inicia o dockerd apontando para o socket externo
     dockerd --containerd=/run/containerd/containerd.sock >/var/log/dockerd.log 2>&1 &
+    echo "OK"
     ;;
   stop)
-    # Parada limpa na ordem inversa conforme Seção 2
-    killall dockerd 2>/dev/null
+    printf "Stopping Docker engine: "
+    killall dockerd 2>/dev/null || true
     sleep 1
-    killall containerd 2>/dev/null
+    killall containerd 2>/dev/null || true
+    echo "OK"
     ;;
   *)
     echo "Usage: $0 {start|stop}"

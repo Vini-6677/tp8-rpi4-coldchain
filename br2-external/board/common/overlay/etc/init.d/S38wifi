@@ -1,49 +1,73 @@
 #!/bin/sh
-# S38wifi - Inicializacao resiliente do Wi-Fi Broadcom BCM43455 (Raspberry Pi 4)
+# S38wifi - Inicializacao 100% paralela (non-blocking) do Wi-Fi Broadcom BCM43455 (Raspberry Pi 4)
 
 case "$1" in
   start)
-    # Garante carregamento do driver Wi-Fi caso ainda nao esteja ativo
-    modprobe brcmfmac 2>/dev/null || true
+    printf "Starting Wi-Fi subsystem (S23): "
+    (
+      # Desbloqueia radio Wi-Fi caso rfkill esteja ativo
+      rfkill unblock all 2>/dev/null || true
 
-    # Aguarda ate 6s pela interface wlan0 aparecer
-    WAIT=0
-    while [ ! -e /sys/class/net/wlan0 ] && [ $WAIT -lt 30 ]; do
-      usleep 200000 2>/dev/null || sleep 1
-      WAIT=$((WAIT + 1))
-    done
+      # Carrega driver e submodulos de vendor (Kernel 6.12+)
+      for mod in rfkill cfg80211 brcmutil brcmfmac brcmfmac-wcc brcmfmac-cyw brcmfmac-bca; do
+        modprobe -q "$mod" 2>/dev/null || true
+      done
 
-    if [ -e /sys/class/net/wlan0 ]; then
-      echo "[+] Inicializando interface Wi-Fi wlan0 (Rede: S23 / ColdChain-WiFi)..."
-      ip link set wlan0 up 2>/dev/null || ifconfig wlan0 up 2>/dev/null || true
-      mkdir -p /var/run/wpa_supplicant
+      # Aguarda em background ate 12s pela interface wlan0 aparecer
+      WAIT=0
+      while ! ip link show wlan0 >/dev/null 2>&1 && [ $WAIT -lt 60 ]; do
+        if [ $WAIT -eq 15 ]; then
+          rmmod brcmfmac_wcc brcmfmac_cyw brcmfmac_bca brcmfmac 2>/dev/null || true
+          for mod in brcmfmac brcmfmac-wcc brcmfmac-cyw brcmfmac-bca; do
+            modprobe -q "$mod" 2>/dev/null || true
+          done
+        fi
+        usleep 200000 2>/dev/null || sleep 1
+        WAIT=$((WAIT + 1))
+      done
 
-      # Inicia wpa_supplicant se ainda nao estiver rodando
-      if ! pidof wpa_supplicant >/dev/null 2>&1; then
-        wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant.conf -P /run/wpa_supplicant.wlan0.pid >/dev/null 2>&1
-      fi
+      if ip link show wlan0 >/dev/null 2>&1; then
+        ip link set wlan0 up 2>/dev/null || ifconfig wlan0 up 2>/dev/null || true
+        iw dev wlan0 set power_save off 2>/dev/null || true
+        mkdir -p /var/run/wpa_supplicant /run/wpa_supplicant
 
-      # Daemon leve em background: garante renovacao DHCP e mDNS assim que o roteador do celular responder
-      (
-        HAS_IP=0
+        if ! pidof wpa_supplicant >/dev/null 2>&1; then
+          wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant.conf -P /run/wpa_supplicant.wlan0.pid >/dev/null 2>&1
+        fi
+
+        # Inicia daemon udhcpc silencioso em background para wlan0
+        udhcpc -b -t 2 -T 1 -A 3 -p /run/udhcpc.wlan0.pid -i wlan0 >/dev/null 2>&1 &
+
+        # Loop continuo em paralelo para auto-DHCP e anuncio mDNS no hotspot S23
+        LAST_IP=""
         while true; do
-          if iw dev wlan0 link 2>/dev/null | grep -q "Connected"; then
+          CUR_IP=$(ip -4 addr show wlan0 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1)
+          if [ -z "$CUR_IP" ] && iw dev wlan0 link 2>/dev/null | grep -q "Connected"; then
+            udhcpc -n -q -t 2 -T 1 -i wlan0 >/dev/null 2>&1 || true
             CUR_IP=$(ip -4 addr show wlan0 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1)
-            if [ -z "$CUR_IP" ]; then
-              udhcpc -i wlan0 -n -q -t 4 -T 2 >/dev/null 2>&1 || true
-              /etc/init.d/S50avahi-daemon restart >/dev/null 2>&1 || true
-            fi
           fi
-          sleep 5
+          if [ -n "$CUR_IP" ] && [ "$CUR_IP" != "$LAST_IP" ]; then
+            LAST_IP="$CUR_IP"
+            /etc/init.d/S50avahi-daemon restart >/dev/null 2>&1 || true
+            logger -t wifi "Wi-Fi S23 conectado com IP ${CUR_IP}" 2>/dev/null || true
+          fi
+          sleep 2
         done
-      ) &
-    fi
+      fi
+    ) </dev/null >/dev/null 2>&1 &
+    echo "OK"
     ;;
   stop)
+    printf "Stopping Wi-Fi subsystem: "
     killall wpa_supplicant 2>/dev/null || true
+    echo "OK"
+    ;;
+  restart|reload)
+    "$0" stop
+    "$0" start
     ;;
   *)
-    echo "Usage: $0 {start|stop}"
+    echo "Usage: $0 {start|stop|restart}"
     exit 1
     ;;
 esac

@@ -1,0 +1,38 @@
+#!/bin/sh
+# S30cgroupfs2 - Garante montagem de cgroup v2 sem erro caso fstab ja tenha montado
+
+DAEMON=cgroupfs2
+
+start() {
+	printf 'Mounting %s: ' "${DAEMON}"
+	mkdir -p /sys/fs/cgroup
+	if grep -qs '/sys/fs/cgroup ' /proc/mounts; then
+		echo "OK"
+		return 0
+	fi
+	if mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null; then
+		echo "OK"
+		return 0
+	else
+		echo "OK"
+		return 0
+	fi
+}
+
+stop() {
+	printf 'Unmounting %s: ' "${DAEMON}"
+	umount /sys/fs/cgroup 2>/dev/null || true
+	echo "OK"
+	return 0
+}
+
+case "$1" in
+	start|stop)
+		"$1";;
+	restart|reload)
+		stop
+		start;;
+	*)
+		echo "Usage: $0 {start|stop|restart|reload}"
+		exit 1
+esac

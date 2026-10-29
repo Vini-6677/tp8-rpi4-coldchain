@@ -1,0 +1,36 @@
+#!/bin/sh
+# S40network - Inicializacao de rede 100% em paralelo (nao bloqueia o boot no udhcpc)
+
+mkdir -p /run/network
+
+case "$1" in
+  start)
+    printf "Starting network (async DHCP): "
+    # 1. Loopback imediato
+    ip link set lo up 2>/dev/null || ifconfig lo 127.0.0.1 up 2>/dev/null || true
+    ip addr add 127.0.0.1/8 dev lo 2>/dev/null || true
+
+    # 2. Ethernet (eth0) 100% em paralelo: dispara udhcpc em background sem travar o boot
+    if ip link show eth0 >/dev/null 2>&1; then
+      ip link set eth0 up 2>/dev/null || ifconfig eth0 up 2>/dev/null || true
+      udhcpc -b -t 2 -T 1 -A 3 -p /run/udhcpc.eth0.pid -i eth0 >/dev/null 2>&1 &
+    fi
+    echo "OK"
+    ;;
+  stop)
+    printf "Stopping network: "
+    killall udhcpc 2>/dev/null || true
+    /sbin/ifdown -a 2>/dev/null || true
+    echo "OK"
+    ;;
+  restart|reload)
+    "$0" stop
+    "$0" start
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|restart}"
+    exit 1
+    ;;
+esac
+
+exit 0
