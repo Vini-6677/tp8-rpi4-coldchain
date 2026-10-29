@@ -1,12 +1,12 @@
 # Syntax: <username> <uid> <group> <gid> <password> <home> <shell> <groups> <comment>
 # Root bloqueado com senha desabilitada (!)
 
-# Usuario administrativo coldadmin com hash SHA-512 gerado no build
+# Usuario de administracao e manutencao do sistema
 coldadmin 1000 coldadmin 1000 __COLDADMIN_HASH__ /home/coldadmin /bin/sh sudo,docker -
 
-# Usuario academico aluno (senha: senha123) exigido pelo Guia do TP8 / Avaliacao
+# Usuario aluno para operacao do sistema e Docker CLI
 aluno 1001 aluno 1001 $6$JTnHFHdFf9sYHYux$BQqDMVQFW2NZriyzYH4cJ4GXDQhp7oJ5IEhjtKKAaRhg5jP1ak01OG92iVqNusI0oMhj9lcjk.AYRXD4pCVom/ /home/aluno /bin/sh sudo,docker "Aluno_TP8"
 
-# Usuarios de servico para os containers
+# Usuarios de servico para execucao dos containers
 mosquitto 1883 mosquitto 1883 =* /var/empty /bin/false - "Mosquitto MQTT"
 coldchain 10001 coldchain 10001 =* /var/empty /bin/false - "Coldchain App"
