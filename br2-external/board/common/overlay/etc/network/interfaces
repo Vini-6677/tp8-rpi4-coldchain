@@ -1,9 +1,8 @@
 auto lo
 iface lo inet loopback
 
+auto eth0
 iface eth0 inet dhcp
-  udhcpc_opts -b -q -S -t 3 -T 1
 
+auto wlan0
 iface wlan0 inet dhcp
-  udhcpc_opts -b -q -S -t 3 -T 1
-  wpa-conf /etc/wpa_supplicant.conf

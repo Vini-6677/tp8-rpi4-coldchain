@@ -1,120 +1,208 @@
-# Web-Server Cold Chain Gateway
+# Web-Server Cold Chain Gateway — TP Aula 8 (Buildroot + Docker na Raspberry Pi 4)
 
-> **Gateway Embarcado Linux para Monitoração de Cadeia de Frio**  
-> Projeto: **Web-Server Cold Chain** (Base: Trabalho Prático TP8 v3.2 — Buildroot + Docker + Go + Mosquitto)  
-> Alvos: **QEMU AArch64 (virt)** e **Raspberry Pi 4 (8 GB, ARM64)**  
-> Autor: Equipe Web-Server Cold Chain | Ano: 2026
-
----
-
-## 1. Visão Geral do Sistema
-O **Web-Server Cold Chain** é um appliance Linux customizado com inicialização ultrarrápida (SLA de boot ≤ 15 s) projetado para monitoramento de produtos sensíveis a temperatura (como vacinas e alimentos perecíveis). O gateway atua como concentrador local, recebendo dados de sensores ESP32 via MQTT, persistindo leituras com alta resiliência a quedas de energia (SQLite WAL) e servindo uma interface web moderna na porta 5000.
+> **Gateway Embarcado Linux ARM64 para Monitoramento Farmacêutico de Cadeia de Frio (ANVISA RDC 430/2020 & FDA 21 CFR Part 11)**  
+> **Disciplina:** Sistemas Embarcados — Engenharia de Computação (Prof. Sergio Schina)  
+> **Versão do Buildroot:** Buildroot `2026.05.1` (compatível com o Guia Técnico TP8 Buildroot `2026.08`)  
+> **Alvos Suportados:** **Raspberry Pi 4 Model B (ARM64 / Cortex-A72)** e **QEMU AArch64 (`virt`)**  
+> **Tag Oficial de Entrega:** `tp8-final`
 
 ---
 
-## 2. Metas Mensuráveis e Resultados de SLA
-| Meta | Especificação | Medição Prática | Status |
-|---|---|---|---|
-| **Teto de Boot (SLA)** | ≤ 15 s do power-on até a resposta na rede | Medido via loop `curl` com `measure-boot.sh` | Aprovado (~8,5 s estimado) |
-| **Otimização Contínua** | ≤ 10 s em boots seguintes | Média de 10 inicializações consecutivas | Aprovado |
-| **Segurança Host/Container** | Sem segredos no Git, root sem login, rootfs `ro` | Containers com `--user` explícito e `--cap-drop ALL` | Aprovado |
-| **Resiliência a Quedas** | 20 cortes de energia sem corrupção | `synchronous=FULL` e fsck pré-mount | Aprovado |
-| **Conformidade** | 13 requisitos obrigatórios do TP8 | Bateria automatizada via `scripts/test.sh` | 100% Conforme |
+## 1. Visão Geral e Arquitetura da Solução
 
----
+Ao ligar a **Raspberry Pi 4**, o sistema operacional Linux gerado pelo **Buildroot** inicia a partir do cartão microSD, monta a partição de dados persistentes `/data` (`ext4`), inicializa o **Docker Engine** automaticamente em segundo plano, carrega localmente as imagens de containers **ARM64** pré-embarcadas em `/opt/docker/` (100% offline, sem depender da Internet) e publica a aplicação Web na porta **`:5000`** e o broker MQTT na porta **`:1883`**.
 
-## 3. Arquitetura de Dois Containers
-Para garantir alta disponibilidade, a mensageria e a lógica de aplicação são isoladas em containers independentes:
-1. **Container `mosquitto` (Eclipse 2.x):**
-   - Executa sob UID não-root `1883:1883`.
-   - Autenticação por hash PBKDF2-SHA512.
-   - ACL dinâmica por dispositivo via padrão `%u`.
-   - Porta exposta: `1883:1883`.
-2. **Container `coldchain` (Web-Server em Go puro):**
-   - Compilado estaticamente em Go (`CGO_ENABLED=0`) dentro de imagem base `scratch` (~10 MB).
-   - Executa sob UID não-root `10001:10001`.
-   - Banco SQLite nativo em modo WAL montado em `/data/coldchain/`.
-   - Porta exposta: `5000:5000`.
-
-Ambos se comunicam através da rede bridge isolada `br-coldchain` (`coldchain-net`).
-
----
-
-## 4. Requisito 13 — Frase Obrigatória e Negociação HTTP
-A rota pública `/` na porta 5000 atende ao Requisito 13 com a frase exata:
+### Caminho de uma Requisição HTTP (Porta 5000)
+```text
+Notebook / Celular (Mesma Rede LAN ou Hotspot Wi-Fi S23)
+   │  http://IP_DA_RASPBERRY:5000  (ou http://coldchain-rpi4.local:5000)
+   ▼
+Interface de Rede da Raspberry Pi 4 (eth0 / wlan0 :5000)
+   │  Regras Netfilter/DNAT (-p 5000:5000) + Firewall DOCKER-USER (S15firewall)
+   ▼
+Docker Engine (bridge br-coldchain)
+   ├──► Container `coldchain` (Go 1.22 estático em scratch, UID 10001, :5000)
+   │       ├── `curl http://IP:5000` ──► "Helooowww world eng. Computacional!!!!!!!"
+   │       └── Navegador Web         ──► Painel Sinótico ColdChain Pharma RT + Ledger ECDSA
+   └──► Container `mosquitto` (Eclipse Mosquitto 2.0, UID 1883, :1883)
+           └── Recebe telemetria MQTT dos sensores ESP32 com autenticação PBKDF2-SHA512
 ```
-Helooowww world eng. Computacional!!!!!!!
+
+---
+
+## 2. Credenciais e Usuários do Sistema
+
+### 2.1. Usuários do Linux Embarcado (SSH / Console HDMI / Serial)
+Configurados via `BR2_ROOTFS_USERS_TABLES` no arquivo [`br2-external/users_table.txt`](br2-external/users_table.txt):
+| Usuário | Senha | Grupos | Finalidade |
+| :--- | :--- | :--- | :--- |
+| **`aluno`** | `senha123` | `aluno`, `docker`, `users` | Usuário oficial do guia TP Aula 8 com permissão direta ao Docker CLI. |
+| **`coldadmin`** | `ColdChain2026` | `coldadmin`, `docker`, `wheel` | Usuário administrativo de manutenção e auditoria do gateway. |
+| **`root`** | *(bloqueado)* | `root` | Login direto de root desabilitado por segurança (`passwd -l root`). |
+
+### 2.2. Perfis de Acesso da Aplicação Web (`http://coldchain-rpi4.local:5000`)
+| Usuário Web | Senha Inicial | Papel (RBAC) | Permissões no Sistema |
+| :--- | :--- | :--- | :--- |
+| **`admin`** | `admin123` | Administrador de TI / Sistema | Gestão de contas de usuários, bloqueio/desbloqueio, reset de chaves criptográficas e visualização de logs. |
+| **`rt`** | `rt123` | Farmacêutico Responsável Técnico (RT) | Criação/descomissionamento de câmaras e sensores, julgamento de excursões térmicas, emissão de dossiês PDF/CSV/JSON assinados com chave criptográfica ECDSA P-256. |
+| **`enfermagem`** | `enf123` | Operador de Enfermagem | Monitoramento do painel sinótico, cadastro/retirada FEFO e transferência térmica de lotes. |
+
+---
+
+## 3. Estrutura do Repositório Git (`BR2_EXTERNAL`)
+
+```text
+Web-Server/
+├── Makefile                        # Automação completa de build, testes e execução QEMU
+├── README.md                       # Documentação técnica principal e guia de reprodutibilidade
+├── app/                            # Aplicação Web e Motor Farmacêutico em Go + Mosquitto
+│   ├── Dockerfile                  # Build multi-stage ARM64 (golang:1.22-alpine -> scratch)
+│   ├── main.go                     # Servidor HTTP :5000, cliente MQTT, SQLite WAL e gerador PDF
+│   ├── pharma.go                   # Regras ANVISA RDC 430/2020, FDA 21 CFR Part 11 e Ledger ECDSA
+│   ├── static/                     # Frontend Vanilla JS/CSS de alta performance
+│   └── mosquitto/                  # Configuração Mosquitto 2.0, ACL e hashes PBKDF2-SHA512
+├── br2-external/                   # Árvore BR2_EXTERNAL isolada do código-fonte do Buildroot
+│   ├── external.desc               # Identificador BR2_EXTERNAL (COLDCHAIN)
+│   ├── Config.in & external.mk     # Descritores de pacotes customizados
+│   ├── users_table.txt             # Definição declarativa dos usuários (aluno e coldadmin)
+│   ├── device_table.txt            # Permissões estáticas de dispositivos e diretórios
+│   ├── configs/
+│   │   ├── rpi4_docker_defconfig   # Defconfig da Raspberry Pi 4 (64 bits + Docker + Wi-Fi)
+│   │   ├── tp8_rpi4_defconfig      # Alias oficial exigido pelo Checklist do Guia TP8
+│   │   └── qemu_aarch64_docker_defconfig # Defconfig para validação rápida em QEMU ARM64
+│   └── board/
+│       ├── common/
+│       │   ├── linux-docker.fragment # Fragmento do Kernel (Namespaces, Cgroups v2, OverlayFS, Veth, Netfilter)
+│       │   ├── post-build.sh       # Script pós-build (fstab, permissões, descompressão de módulos .ko)
+│       │   └── overlay/            # Rootfs Overlay copiado sobre o sistema alvo
+│       │       ├── etc/issue       # Banner customizado de pré-login
+│       │       ├── etc/fstab       # Montagem proc, sysfs, cgroup2 e partições RO/RW
+│       │       ├── etc/network/interfaces # Configuração DHCP (lo, eth0, wlan0)
+│       │       ├── etc/wpa_supplicant.conf # Conexão automática ao Hotspot Wi-Fi "S23" (Vini1234)
+│       │       ├── etc/init.d/     # Scripts SysV init paralelizados (S02fsck, S15firewall, S38wifi, S40network, S99coldchain)
+│       │       └── opt/docker/     # Imagens Docker ARM64 exportadas para boot 100% offline
+│       └── rpi4/
+│           ├── genimage-rpi4.cfg.in # Layout das 3 partições do microSD (boot.vfat, rootfs.ext4, data.ext4)
+│           └── post-image.sh       # Geração final do sdcard.img
+├── docs/                           # Documentação arquitetural detalhada e PDF de Arquitetura v3.7
+├── evidence/
+│   └── EVIDENCIAS_TP8.md           # Consolidação das 10 evidências obrigatórias da Seção 12.6
+├── esp32-sim/                      # Simulador de sensores de temperatura/porta via MQTT
+└── scripts/                        # Scripts de automação (build.sh, run-qemu.sh, test.sh, measure-boot.sh)
 ```
-O servidor negocia conteúdo via cabeçalho `Accept` (com `Vary: Accept`):
-- **Requisição via Navegador (`Accept: text/html`):** Retorna o painel operacional com a frase dentro do `<h1>`.
-- **Requisição via terminal (`curl` puro):** Retorna a frase limpa em texto puro, validável com `grep -F`.
 
 ---
 
-## 5. Particionamento e Durabilidade do Armazenamento
-O cartão SD / disco virtual possui 3 partições geradas via `genimage`:
-1. `/boot` (FAT32, ~64 MB, somente leitura `ro`): Kernel `Image`, DTB e arquivos de firmware.
-2. `/` (ext4, ~400 MB, somente leitura `ro`): Rootfs Buildroot imutável e imagens Docker offline em `/opt/docker/`.
-3. `/data` (ext4, ~2 GB, leitura e escrita `rw`): Dados persistentes do Docker, banco SQLite e chaves SSH.
+## 4. Hashes SHA-256 dos Artefatos Finais (Seção 12.6)
 
-### Proteção Contra Quedas de Energia
-- Montagem com `noauto` no `fstab` para impedir montagem antes do fsck.
-- Script `S02fsck-data` roda `e2fsck -p` no boot antes de montar `/data`.
-- Se o disco tiver falhas graves, ativa o modo de segurança `/run/safe-mode` (SSH ativo, containers suspensos) sem jamais formatar a partição sozinho.
-- Ingestão no SQLite em lotes de ~1 s com `synchronous=FULL`.
-- ACK MQTT ponta a ponta (`coldchain/<id>/ack`) só é enviado para o maior `seq` contíguo persistido em disco.
+| Artefato | Caminho | Hash SHA-256 |
+| :--- | :--- | :--- |
+| **Container ARM64 Offline (`coldchain-tp8.tar.gz`)** | `br2-external/board/common/overlay/opt/docker/coldchain-tp8.tar.gz` | `13d3251267784c3cab0e1ec0f42db3293e1cc8fdd5b8c391b43968432b57bb07` |
+| **Container ARM64 Offline (`mosquitto.tar.gz`)** | `br2-external/board/common/overlay/opt/docker/mosquitto.tar.gz` | `8d02ab746b469cafc58caf17882867ca91e28098014e9876039f1189b1086add` |
+| **Imagem Final microSD** | `output/images/sdcard.img` (`961 MB`) | `fb9e5dcd410183baa75f5d4e9a025c8895394e735bdbc17d0c80e3842435532e` |
 
 ---
 
-## 6. Firewall e Redes Docker
-O Docker ignora regras na tabela `INPUT` para portas mapeadas (`-p 5000:5000`). Por isso:
-- O script `S15firewall` cria e popula a chain **`DOCKER-USER`** antes da inicialização do dockerd.
-- Permite tráfego interno na bridge `br-coldchain`.
-- Aceita requisições nas portas 5000 e 1883 apenas a partir da sub-rede local recebida do DHCP (`udhcpc`).
-- Bloqueia acessos externos indesejados.
+## 5. Como Compilar a Imagem do Zero (Reprodutibilidade — Etapa 10)
 
----
-
-## 7. Compilação e Execução
-
-### Pré-requisitos (WSL2 Ubuntu 26.04)
+### 5.1. Instalar dependências no Host Linux (Ubuntu 22.04 / 24.04)
 ```bash
-sudo apt update && sudo apt install -y build-essential libncurses-dev bison flex libssl-dev bc qemu-system-aarch64 git rsync unzip whois ccache wget curl
+sudo apt update
+sudo apt install -y build-essential git wget cpio unzip rsync file bc bison flex libssl-dev libncurses-dev python3 qemu-system-aarch64 docker.io
 ```
 
-### Configurar Variáveis
+### 5.2. Carregar a `defconfig` da Raspberry Pi 4 e Compilar
 ```bash
-make setup-env
-```
+# Carrega a defconfig usando a árvore BR2_EXTERNAL
+make -C buildroot O=$(pwd)/output BR2_EXTERNAL=$(pwd)/br2-external rpi4_docker_defconfig
 
-### Compilar para QEMU AArch64
-```bash
-make build-qemu
+# Compila o Kernel, rootfs e gera output/images/sdcard.img
+make -C output -j$(nproc)
 ```
-
-### Executar no QEMU com Redirecionamento de Portas
+Ou utilizando o atalho automatizado do projeto:
 ```bash
-make run-qemu
-```
-Portas mapeadas no host:
-- Web Painel: `http://localhost:5000`
-- Broker MQTT: `localhost:1883`
-- SSH: `ssh -p 2222 coldadmin@localhost`
-
-### Validar os 13 Requisitos
-```bash
-make test
+bash scripts/build.sh rpi4
 ```
 
 ---
 
-## 8. Guia Rápido de Arguição da Disciplina
-- **Por que escutar em 0.0.0.0?** Se escutasse em 127.0.0.1, o container só aceitaria conexões do seu próprio namespace de rede interno.
-- **O que faz o `-p 5000:5000`?** Cria uma regra de DNAT no netfilter do host redirecionando a porta física para a bridge do container.
-- **Por que Go em `scratch`?** Gera uma imagem mínima (~10 MB), sem interpretadores, com arranque em dezenas de milissegundos e sem módulos nativos C.
-- **Como é garantido o SLA de 15 s?** Kernel enxuto com drivers embutidos (`=y`), containerd sem plugin CRI, inicialização paralela e containers pré-semeados com `--restart always`.
+## 6. Como Gravar o Cartão microSD e Conectar na Raspberry Pi 4 (Etapa 11)
+
+### Opção A — Pelo Raspberry Pi Imager (Windows / Linux / macOS)
+1. Abra o **Raspberry Pi Imager**.
+2. Em **Sistema Operacional (OS)**, role até o final e clique em **Use custom (Usar imagem personalizada)**.
+3. Selecione o arquivo `sdcard.img` (`SHA-256: fb9e5dcd410183baa75f5d4e9a025c8895394e735bdbc17d0c80e3842435532e`).
+4. Selecione o cartão microSD e clique em **Write / Gravar**.
+
+### Opção B — Pelo Terminal Linux (`dd`)
+```bash
+lsblk -o NAME,SIZE,MODEL,TYPE,MOUNTPOINTS
+sudo dd if=output/images/sdcard.img of=/dev/sdX bs=4M status=progress conv=fsync
+sync
+```
+*(Substitua `/dev/sdX` pelo dispositivo real do seu cartão microSD identificado no `lsblk`).*
+
+### Como Conectar na Raspberry Pi 4 (Cabo RJ45 ou Wi-Fi Roteado do Celular `S23`)
+* **Via Wi-Fi do Celular:** Ligue o Roteador Wi-Fi (Hotspot) do celular na banda **2.4 GHz (WPA2)** com nome **`S23`** e senha **`Vini1234`**. A Raspberry Pi 4 conecta sozinha no boot via [`S38wifi`](br2-external/board/common/overlay/etc/init.d/S38wifi) e mostra o IP na tela HDMI!
+* **Acesso no Navegador (PC ou Celular na mesma rede):**
+  * Pelo nome mDNS: `http://coldchain-rpi4.local:5000`
+  * Pelo endereço IP exibido no monitor HDMI: `http://IP_DA_RASPBERRY:5000`
 
 ---
 
-## 9. Licença
-Distribuído sob a licença MIT. Consulte `LICENSE` para mais informações.
+## 7. Como Testar e Validar (Etapa 12)
+
+### 7.1. Teste Local ou Remoto via `curl` (Frase Obrigatória)
+```bash
+curl http://127.0.0.1:5000
+# Saída exata:
+# Helooowww world eng. Computacional!!!!!!!
+```
+
+### 7.2. Bateria Automatizada dos Requisitos (`scripts/test.sh`)
+```bash
+bash scripts/test.sh
+```
+Valida automaticamente:
+1. Resposta exata `"Helooowww world eng. Computacional!!!!!!!"` via `curl` puro.
+2. Negociação por cabeçalho `Accept: text/html` retornando o painel completo com a frase dentro de `<h1>`.
+3. Diagnóstico de saúde `/healthz` (`HTTP 200`).
+4. Telemetria e persistência SQLite em `/api/status`.
+
+---
+
+## 8. Problemas Encontrados e Soluções Adotadas (Seção 12.7)
+
+1. **Atraso no boot (`udhcpc: broadcasting discover`) quando ligada sem cabo RJ45:**
+   * **Causa:** O script de rede padrão executava o cliente DHCP (`udhcpc`) de forma síncrona na interface `eth0`, bloqueando o boot por ~15 segundos quando apenas o Wi-Fi estava em uso.
+   * **Solução:** Criamos os scripts [`S40network`](br2-external/board/common/overlay/etc/init.d/S40network) e [`S38wifi`](br2-external/board/common/overlay/etc/init.d/S38wifi) executando o `udhcpc` em **segundo plano (`&` / assíncrono)**, reduzindo o tempo de bloqueio de rede para `< 0,01s`.
+2. **Aviso `Mounting cgroupfs2: already mounted or mount point busy FAIL`:**
+   * **Causa:** O `/etc/fstab` montava `cgroup2` sem antes montar `sysfs` em `/sys`, e o script `S30cgroupfs2` tentava montar novamente sem checar `/proc/mounts`.
+   * **Solução:** Adicionamos `proc /proc` e `sysfs /sys` no topo do [`/etc/fstab`](br2-external/board/common/overlay/etc/fstab) e tornamos o [`S30cgroupfs2`](br2-external/board/common/overlay/etc/init.d/S30cgroupfs2) idempotente.
+3. **Submódulos Wi-Fi Broadcom BCM43455 no Kernel Linux 6.12 (`brcmfmac`):**
+   * **Causa:** No Kernel 6.12+, os módulos são gerados como `.ko.xz` e o driver `brcmfmac` foi dividido em submódulos de fornecedor (`brcmfmac-wcc`, `brcmfmac-cyw`, `brcmfmac-bca`).
+   * **Solução:** O [`post-build.sh`](br2-external/board/common/post-build.sh) descompacta todos os `.ko.xz` e regenera o `depmod -a`, garantindo carregamento imediato pelo `modprobe` do BusyBox.
+
+---
+
+## 9. Checklist Final de Entrega (Página 21 do Guia TP8)
+
+- [x] Buildroot identificado na documentação (`README.md` e `docs/`).
+- [x] `tp8_rpi4_defconfig` e `rpi4_docker_defconfig` versionadas em `br2-external/configs/`.
+- [x] `BR2_EXTERNAL` versionado (`br2-external/`).
+- [x] `users_table.txt` versionado (`br2-external/users_table.txt`).
+- [x] `rootfs-overlay` versionado (`br2-external/board/common/overlay/`).
+- [x] `/etc/issue` e `/etc/network/interfaces` presentes no overlay.
+- [x] Docker Engine e Docker CLI habilitados.
+- [x] Kernel Linux validado para containers (`linux-docker.fragment`).
+- [x] Código da aplicação e `Dockerfile` presentes em `app/`.
+- [x] Container construído para `linux/arm64`.
+- [x] Pacotes `.tar.gz` das imagens Docker incluídos no overlay (`/opt/docker/`).
+- [x] Script `S99coldchain` executável (`chmod +x`).
+- [x] `sdcard.img` compilado e hash SHA-256 documentado.
+- [x] Login (`aluno` / `coldadmin`), hostname (`coldchain-rpi4`) e rede validados.
+- [x] Docker e containers iniciam automaticamente no boot (validado com 3 ciclos de `reboot`).
+- [x] Página acessível pela rede na porta `5000` exibindo `"Helooowww world eng. Computacional!!!!!!!"`.
+- [x] Evidências organizadas em [`evidence/EVIDENCIAS_TP8.md`](evidence/EVIDENCIAS_TP8.md) e [`docs/`](docs/).
+- [x] `README.md` completo.
+- [x] Tag `tp8-final` criada.
