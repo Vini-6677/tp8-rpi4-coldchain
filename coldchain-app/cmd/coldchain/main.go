@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -45,14 +46,16 @@ type Telemetry struct {
 }
 
 type User struct {
-	ID           int64  `json:"id"`
-	Username     string `json:"username"`
-	Name         string `json:"name"`
-	Role         string `json:"role"`
-	IsBlocked    int    `json:"is_blocked"`
-	CreatedAt    string `json:"created_at"`
-	FirstLogin   int    `json:"first_login"`
-	HasCryptoKey bool   `json:"has_crypto_key"`
+	ID            int64          `json:"id"`
+	Username      string         `json:"username"`
+	Name          string         `json:"name"`
+	Role          string         `json:"role"`
+	IsBlocked     int            `json:"is_blocked"`
+	CreatedAt     string         `json:"created_at"`
+	FirstLogin    int            `json:"first_login"`
+	HasCryptoKey  bool           `json:"has_crypto_key"`
+	USBKeysActive int            `json:"usb_keys_active"`
+	USBKeys       []USBKeyRecord `json:"usb_keys"`
 }
 
 type AuditLog struct {
@@ -75,6 +78,7 @@ type Session struct {
 
 type App struct {
 	db             *sql.DB
+	certDir        string
 	ledger         *ledger.Ledger
 	signer         ledger.Signer
 	telemetryCount uint64
@@ -85,6 +89,8 @@ type App struct {
 	devicesSeen    map[string]time.Time
 	batchQueue     []Telemetry
 	batchMu        sync.Mutex
+	usbSigMu       sync.Mutex
+	usbSigTokens   map[string]usbSigTokenEntry
 }
 
 func main() {
@@ -131,13 +137,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	certDir := strings.TrimSpace(os.Getenv("CERT_STORAGE_DIR"))
+	if certDir == "" {
+		certDir = filepath.Join(filepath.Dir(dbPath), "certificates")
+	}
+	_ = os.MkdirAll(certDir, 0700)
+
 	app := &App{
-		db:          db,
-		ledger:      led,
-		signer:      signer,
-		subscribers: make(map[chan Telemetry]struct{}),
-		latestSeq:   make(map[string]int64),
-		devicesSeen: make(map[string]time.Time),
+		db:           db,
+		certDir:      certDir,
+		ledger:       led,
+		signer:       signer,
+		subscribers:  make(map[chan Telemetry]struct{}),
+		latestSeq:    make(map[string]int64),
+		devicesSeen:  make(map[string]time.Time),
+		usbSigTokens: make(map[string]usbSigTokenEntry),
 	}
 
 	// 2. Loop de commit de lotes em background (~1 segundo)
@@ -154,10 +168,11 @@ func main() {
 
 	// 4. Servidor Web HTTP na porta 5000
 	server := &http.Server{
-		Addr:         "0.0.0.0:5000",
-		Handler:      app.routes(),
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		Addr:              "0.0.0.0:5000",
+		Handler:           app.routes(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      60 * time.Second,
 	}
 
 	go func() {
@@ -339,6 +354,10 @@ func (a *App) verifySignature(username, passwordOrKey string) bool {
 	if key == "" {
 		return false
 	}
+	// Aceita token único de assinatura criptográfica emitido após Challenge-Response Ed25519 do Pen Drive USB
+	if strings.HasPrefix(key, "CC-USB-SIG-") {
+		return a.consumeUSBSigToken(username, key)
+	}
 	var salt, cryptoKeyHash string
 	if err := a.db.QueryRow("SELECT salt, COALESCE(crypto_key_hash, '') FROM users WHERE username = ?", username).Scan(&salt, &cryptoKeyHash); err != nil {
 		return false
@@ -347,7 +366,7 @@ func (a *App) verifySignature(username, passwordOrKey string) bool {
 		return false
 	}
 	h := hashPassword(key, salt)
-	// Segurança estrita 21 CFR Part 11: apenas a Chave Criptográfica Pessoal gerada é válida para assinaturas digitais.
+	// Segurança estrita 21 CFR Part 11: apenas a Chave Criptográfica Pessoal gerada (ou Pen Drive USB Ed25519) é válida.
 	// A senha de login na conta é terminantemente REJEITADA como assinatura.
 	return subtle.ConstantTimeCompare([]byte(h), []byte(cryptoKeyHash)) == 1
 }
@@ -393,6 +412,11 @@ func seedUsers(db *sql.DB) error {
 }
 
 func initDB(path string) (*sql.DB, error) {
+	if path != "" && path != ":memory:" && !strings.HasPrefix(path, "file::memory:") {
+		if dir := filepath.Dir(path); dir != "" && dir != "." {
+			_ = os.MkdirAll(dir, 0700)
+		}
+	}
 	_ = os.MkdirAll("/data/coldchain", 0700)
 	dsn := path
 	if !strings.Contains(dsn, "?") {
@@ -488,6 +512,10 @@ func initDB(path string) (*sql.DB, error) {
 
 	if err := pharma.InitPharmaSchema(db); err != nil {
 		return nil, fmt.Errorf("erro ao inicializar schema pharma: %w", err)
+	}
+
+	if err := initUSBKeySchema(db); err != nil {
+		return nil, fmt.Errorf("erro ao inicializar schema de chaves USB: %w", err)
 	}
 
 	if err := seedUsers(db); err != nil {
@@ -792,6 +820,12 @@ func (a *App) routes() http.Handler {
 			var hasKeyInt int
 			if err := rows.Scan(&u.ID, &u.Username, &u.Name, &u.Role, &u.IsBlocked, &u.CreatedAt, &u.FirstLogin, &hasKeyInt); err == nil {
 				u.HasCryptoKey = (hasKeyInt == 1)
+				u.USBKeys = a.listUSBKeysByUsername(u.Username)
+				for _, uk := range u.USBKeys {
+					if uk.Status == "ACTIVE" {
+						u.USBKeysActive++
+					}
+				}
 				users = append(users, u)
 			}
 		}
@@ -1366,13 +1400,54 @@ func (a *App) routes() http.Handler {
 				pharma.Chamber
 				Password string `json:"password"`
 			}
-			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				http.Error(w, "JSON inválido", http.StatusBadRequest)
-				return
+			var (
+				pdfBytes        []byte
+				pdfName         string
+				pdfMIME         string
+				certDocNum      string
+				certIssuer      string
+				certIssuedAt    string
+				certValidUntil  string
+			)
+			if strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "multipart/form-data") {
+				r.Body = http.MaxBytesReader(w, r.Body, pharma.MaxCertificateSizeBytes+2*1024*1024)
+				if err := r.ParseMultipartForm(4 << 20); err != nil {
+					w.WriteHeader(http.StatusRequestEntityTooLarge)
+					json.NewEncoder(w).Encode(map[string]any{"error": "Arquivo PDF excede o limite de 10 MB ou formulário inválido."})
+					return
+				}
+				payload.ID = strings.TrimSpace(r.FormValue("id"))
+				payload.Name = strings.TrimSpace(r.FormValue("name"))
+				payload.Type = strings.TrimSpace(r.FormValue("type"))
+				payload.TempMin, _ = strconv.ParseFloat(r.FormValue("temp_min"), 64)
+				payload.TempMax, _ = strconv.ParseFloat(r.FormValue("temp_max"), 64)
+				payload.HumidityMin, _ = strconv.ParseFloat(r.FormValue("humidity_min"), 64)
+				payload.HumidityMax, _ = strconv.ParseFloat(r.FormValue("humidity_max"), 64)
+				payload.AlarmDelayMin, _ = strconv.Atoi(r.FormValue("alarm_delay_min"))
+				payload.QualStatus = strings.TrimSpace(r.FormValue("qualification_status"))
+				payload.QualValidUntil = strings.TrimSpace(r.FormValue("qualification_valid_until"))
+				payload.Password = r.FormValue("password")
+				certDocNum = strings.TrimSpace(r.FormValue("cert_document_number"))
+				certIssuer = strings.TrimSpace(r.FormValue("cert_issuer"))
+				certIssuedAt = strings.TrimSpace(r.FormValue("cert_issued_at"))
+				certValidUntil = strings.TrimSpace(r.FormValue("cert_valid_until"))
+
+				var pdfErr error
+				pdfBytes, pdfName, pdfMIME, pdfErr = readUploadedPDF(r, "cert_file", false)
+				if pdfErr != nil {
+					w.WriteHeader(http.StatusBadRequest)
+					json.NewEncoder(w).Encode(map[string]any{"error": "Certificado PDF inválido: " + pdfErr.Error()})
+					return
+				}
+			} else {
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					http.Error(w, "JSON inválido", http.StatusBadRequest)
+					return
+				}
 			}
 			if payload.Password == "" || !a.verifySignature(sess.Username, payload.Password) {
 				w.WriteHeader(http.StatusUnauthorized)
-				json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar cadastros (21 CFR Part 11)."})
+				json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...) ou assine com Pen Drive USB (21 CFR Part 11)."})
 				return
 			}
 			created, err := pharma.RegisterChamber(a.db, payload.Chamber)
@@ -1383,6 +1458,55 @@ func (a *App) routes() http.Handler {
 			}
 			ip := getClientIP(r)
 			a.logAudit(sess.Username, sess.Role, "CADASTRO_CAMARA", fmt.Sprintf("Equipamento '%s' (ID %s, Tipo: %s, Faixa: %.1f a %.1f °C) cadastrado por %s", created.Name, created.ID, created.Type, created.TempMin, created.TempMax, sess.Name), ip)
+
+			if len(pdfBytes) > 0 {
+				if certDocNum == "" {
+					certDocNum = "QUAL-DQ/IQ/OQ/PQ-" + created.ID
+				}
+				if certIssuer == "" {
+					certIssuer = "Órgão Regulador / Engenharia Clínica"
+				}
+				if certIssuedAt == "" {
+					certIssuedAt = time.Now().Format("2006-01-02")
+				}
+				if certValidUntil == "" {
+					certValidUntil = created.QualValidUntil
+				}
+				cert, ver, _, certErr := pharma.SaveOrReplaceCertificate(a.db, a.certStorageDir(), pharma.CertificateUploadInput{
+					EntityType:     pharma.CertEntityChamber,
+					EntityID:       created.ID,
+					DocType:        pharma.CertDocQualification,
+					DocumentNumber: certDocNum,
+					Issuer:         certIssuer,
+					IssuedAt:       certIssuedAt,
+					ValidUntil:     certValidUntil,
+					UploadedBy:     sess.Username,
+					UploadedByName: sess.Name,
+					Filename:       pdfName,
+					DeclaredMIME:   pdfMIME,
+					FileBytes:      pdfBytes,
+				})
+				if certErr == nil && cert != nil && ver != nil {
+					created.CertificateID = cert.ID
+					created.CertificateStatus = cert.Status
+					created.CertificateStatusLabel = cert.StatusLabel
+					created.CertificateFilename = cert.OriginalFilename
+					created.CertificateSHA256 = cert.SHA256Hash
+					created.CertificateVersion = cert.CurrentVersion
+					a.logAudit(sess.Username, sess.Role, "CERTIFICADO_ENVIADO",
+						fmt.Sprintf("Laudo PDF '%s' (%s) anexado no cadastro da câmara '%s' (SHA-256: %s)", cert.DocumentNumber, cert.Issuer, created.ID, ver.SHA256Hash[:16]), ip)
+					if a.ledger != nil {
+						lp, _ := json.Marshal(map[string]any{
+							"event": "CERTIFICADO_ENVIADO", "certificate_id": cert.ID, "version": ver.VersionNumber,
+							"entity_type": "CHAMBER", "entity_id": created.ID, "sha256": ver.SHA256Hash, "by": sess.Username,
+						})
+						if rec, lErr := a.ledger.AppendData("PHARMA-CERTIFICATES", uint64(time.Now().UnixNano()), lp, 1); lErr == nil && rec != nil {
+							pharma.UpdateCertificateVersionLedgerID(a.db, ver.ID, rec.ID)
+						}
+					}
+				}
+			}
+
 			w.WriteHeader(http.StatusCreated)
 			json.NewEncoder(w).Encode(created)
 			return
@@ -1508,15 +1632,46 @@ func (a *App) routes() http.Handler {
 				pharma.Sensor
 				Password string `json:"password"`
 			}
-			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]any{"error": "Payload JSON inválido."})
-				return
+			var (
+				pdfBytes []byte
+				pdfName  string
+				pdfMIME  string
+			)
+			if strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "multipart/form-data") {
+				r.Body = http.MaxBytesReader(w, r.Body, pharma.MaxCertificateSizeBytes+2*1024*1024)
+				if err := r.ParseMultipartForm(4 << 20); err != nil {
+					w.WriteHeader(http.StatusRequestEntityTooLarge)
+					json.NewEncoder(w).Encode(map[string]any{"error": "Arquivo PDF excede o limite de 10 MB ou formulário inválido."})
+					return
+				}
+				payload.ID = strings.TrimSpace(r.FormValue("id"))
+				payload.ChamberID = strings.TrimSpace(r.FormValue("chamber_id"))
+				payload.SerialNumber = strings.TrimSpace(r.FormValue("serial_number"))
+				payload.ThermalPosition = strings.TrimSpace(r.FormValue("thermal_position"))
+				payload.CertNumber = strings.TrimSpace(r.FormValue("cert_number"))
+				payload.CalibratedBy = strings.TrimSpace(r.FormValue("calibrated_by"))
+				payload.CalibratedAt = strings.TrimSpace(r.FormValue("calibrated_at"))
+				payload.CalibValidUntil = strings.TrimSpace(r.FormValue("calib_valid_until"))
+				payload.Password = r.FormValue("password")
+
+				var pdfErr error
+				pdfBytes, pdfName, pdfMIME, pdfErr = readUploadedPDF(r, "cert_file", false)
+				if pdfErr != nil {
+					w.WriteHeader(http.StatusBadRequest)
+					json.NewEncoder(w).Encode(map[string]any{"error": "Certificado PDF inválido: " + pdfErr.Error()})
+					return
+				}
+			} else {
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					w.WriteHeader(http.StatusBadRequest)
+					json.NewEncoder(w).Encode(map[string]any{"error": "Payload JSON inválido."})
+					return
+				}
 			}
 
 			if payload.Password == "" || !a.verifySignature(sess.Username, payload.Password) {
 				w.WriteHeader(http.StatusUnauthorized)
-				json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar cadastros (21 CFR Part 11)."})
+				json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...) ou assine com Pen Drive USB (21 CFR Part 11)."})
 				return
 			}
 
@@ -1542,6 +1697,43 @@ func (a *App) routes() http.Handler {
 				_, _ = a.ledger.AppendData("PHARMA-GATEWAY", uint64(time.Now().UnixNano()), ledgerData, 1)
 			}
 
+			// Se o PDF do certificado RBC foi anexado junto ao cadastro do sensor, salva imediatamente com integridade SHA-256
+			if len(pdfBytes) > 0 {
+				cert, ver, _, certErr := pharma.SaveOrReplaceCertificate(a.db, a.certStorageDir(), pharma.CertificateUploadInput{
+					EntityType:     pharma.CertEntitySensor,
+					EntityID:       created.ID,
+					DocType:        pharma.CertDocCalibration,
+					DocumentNumber: created.CertNumber,
+					Issuer:         created.CalibratedBy,
+					IssuedAt:       created.CalibratedAt,
+					ValidUntil:     created.CalibValidUntil,
+					UploadedBy:     sess.Username,
+					UploadedByName: sess.Name,
+					Filename:       pdfName,
+					DeclaredMIME:   pdfMIME,
+					FileBytes:      pdfBytes,
+				})
+				if certErr == nil && cert != nil && ver != nil {
+					created.CertificateID = cert.ID
+					created.CertificateStatus = cert.Status
+					created.CertificateStatusLabel = cert.StatusLabel
+					created.CertificateFilename = cert.OriginalFilename
+					created.CertificateSHA256 = cert.SHA256Hash
+					created.CertificateVersion = cert.CurrentVersion
+					a.logAudit(sess.Username, sess.Role, "CERTIFICADO_ENVIADO",
+						fmt.Sprintf("Certificado RBC PDF '%s' (%s) anexado no cadastro do sensor '%s' (Arquivo: %s, SHA-256: %s)", cert.DocumentNumber, cert.Issuer, created.ID, ver.OriginalFilename, ver.SHA256Hash[:16]), ip)
+					if a.ledger != nil {
+						lp, _ := json.Marshal(map[string]any{
+							"event": "CERTIFICADO_ENVIADO", "certificate_id": cert.ID, "version": ver.VersionNumber,
+							"entity_type": "SENSOR", "entity_id": created.ID, "sha256": ver.SHA256Hash, "by": sess.Username,
+						})
+						if rec, lErr := a.ledger.AppendData("PHARMA-CERTIFICATES", uint64(time.Now().UnixNano()), lp, 1); lErr == nil && rec != nil {
+							pharma.UpdateCertificateVersionLedgerID(a.db, ver.ID, rec.ID)
+						}
+					}
+				}
+			}
+
 			w.WriteHeader(http.StatusCreated)
 			json.NewEncoder(w).Encode(created)
 			return
@@ -1562,17 +1754,50 @@ func (a *App) routes() http.Handler {
 
 			var payload struct {
 				pharma.Sensor
-				Password string `json:"password"`
+				Password      string `json:"password"`
+				ReplaceReason string `json:"replace_reason"`
 			}
-			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]any{"error": "Payload JSON inválido."})
-				return
+			var (
+				pdfBytes []byte
+				pdfName  string
+				pdfMIME  string
+			)
+			if strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "multipart/form-data") {
+				r.Body = http.MaxBytesReader(w, r.Body, pharma.MaxCertificateSizeBytes+2*1024*1024)
+				if err := r.ParseMultipartForm(4 << 20); err != nil {
+					w.WriteHeader(http.StatusRequestEntityTooLarge)
+					json.NewEncoder(w).Encode(map[string]any{"error": "Arquivo PDF excede o limite de 10 MB ou formulário inválido."})
+					return
+				}
+				payload.ID = strings.TrimSpace(r.FormValue("id"))
+				payload.ChamberID = strings.TrimSpace(r.FormValue("chamber_id"))
+				payload.SerialNumber = strings.TrimSpace(r.FormValue("serial_number"))
+				payload.ThermalPosition = strings.TrimSpace(r.FormValue("thermal_position"))
+				payload.CertNumber = strings.TrimSpace(r.FormValue("cert_number"))
+				payload.CalibratedBy = strings.TrimSpace(r.FormValue("calibrated_by"))
+				payload.CalibratedAt = strings.TrimSpace(r.FormValue("calibrated_at"))
+				payload.CalibValidUntil = strings.TrimSpace(r.FormValue("calib_valid_until"))
+				payload.Password = r.FormValue("password")
+				payload.ReplaceReason = strings.TrimSpace(r.FormValue("replace_reason"))
+
+				var pdfErr error
+				pdfBytes, pdfName, pdfMIME, pdfErr = readUploadedPDF(r, "cert_file", false)
+				if pdfErr != nil {
+					w.WriteHeader(http.StatusBadRequest)
+					json.NewEncoder(w).Encode(map[string]any{"error": "Certificado PDF inválido: " + pdfErr.Error()})
+					return
+				}
+			} else {
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					w.WriteHeader(http.StatusBadRequest)
+					json.NewEncoder(w).Encode(map[string]any{"error": "Payload JSON inválido."})
+					return
+				}
 			}
 
 			if payload.Password == "" || !a.verifySignature(sess.Username, payload.Password) {
 				w.WriteHeader(http.StatusUnauthorized)
-				json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar cadastros (21 CFR Part 11)."})
+				json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...) ou assine com Pen Drive USB (21 CFR Part 11)."})
 				return
 			}
 
@@ -1596,7 +1821,52 @@ func (a *App) routes() http.Handler {
 				_, _ = a.ledger.AppendData("PHARMA-GATEWAY", uint64(time.Now().UnixNano()), ledgerData, 1)
 			}
 
-			json.NewEncoder(w).Encode(map[string]any{"status": "ok", "message": "Sensor atualizado com sucesso."})
+			var certObj *pharma.Certificate
+			if len(pdfBytes) > 0 {
+				reason := payload.ReplaceReason
+				if reason == "" {
+					reason = "Recalibração metrológica RBC do sensor " + payload.ID
+				}
+				cert, ver, isRep, certErr := pharma.SaveOrReplaceCertificate(a.db, a.certStorageDir(), pharma.CertificateUploadInput{
+					EntityType:     pharma.CertEntitySensor,
+					EntityID:       payload.ID,
+					DocType:        pharma.CertDocCalibration,
+					DocumentNumber: payload.CertNumber,
+					Issuer:         payload.CalibratedBy,
+					IssuedAt:       payload.CalibratedAt,
+					ValidUntil:     payload.CalibValidUntil,
+					ReplaceReason:  reason,
+					UploadedBy:     sess.Username,
+					UploadedByName: sess.Name,
+					Filename:       pdfName,
+					DeclaredMIME:   pdfMIME,
+					FileBytes:      pdfBytes,
+				})
+				if certErr == nil && cert != nil && ver != nil {
+					certObj = cert
+					ev := "CERTIFICADO_ENVIADO"
+					if isRep {
+						ev = "CERTIFICADO_SUBSTITUIDO"
+					}
+					a.logAudit(sess.Username, sess.Role, ev,
+						fmt.Sprintf("Certificado RBC PDF '%s' do sensor '%s' atualizado para v%d (SHA-256: %s)", cert.DocumentNumber, payload.ID, ver.VersionNumber, ver.SHA256Hash[:16]), ip)
+					if a.ledger != nil {
+						lp, _ := json.Marshal(map[string]any{
+							"event": ev, "certificate_id": cert.ID, "version": ver.VersionNumber,
+							"entity_type": "SENSOR", "entity_id": payload.ID, "sha256": ver.SHA256Hash, "by": sess.Username,
+						})
+						if rec, lErr := a.ledger.AppendData("PHARMA-CERTIFICATES", uint64(time.Now().UnixNano()), lp, 1); lErr == nil && rec != nil {
+							pharma.UpdateCertificateVersionLedgerID(a.db, ver.ID, rec.ID)
+						}
+					}
+				}
+			}
+
+			json.NewEncoder(w).Encode(map[string]any{
+				"status":      "ok",
+				"message":     "Sensor atualizado com sucesso.",
+				"certificate": certObj,
+			})
 			return
 		}
 
@@ -1638,14 +1908,53 @@ func (a *App) routes() http.Handler {
 				pharma.Product
 				Password string `json:"password"`
 			}
-			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				http.Error(w, "JSON inválido", http.StatusBadRequest)
-				return
+			var (
+				pdfBytes       []byte
+				pdfName        string
+				pdfMIME        string
+				certIssuer     string
+				certIssuedAt   string
+				certValidUntil string
+			)
+			if strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "multipart/form-data") {
+				r.Body = http.MaxBytesReader(w, r.Body, pharma.MaxCertificateSizeBytes+2*1024*1024)
+				if err := r.ParseMultipartForm(4 << 20); err != nil {
+					w.WriteHeader(http.StatusRequestEntityTooLarge)
+					json.NewEncoder(w).Encode(map[string]any{"error": "Arquivo PDF excede o limite de 10 MB ou formulário inválido."})
+					return
+				}
+				payload.TradeName = strings.TrimSpace(r.FormValue("trade_name"))
+				payload.DCB = strings.TrimSpace(r.FormValue("dcb"))
+				payload.Presentation = strings.TrimSpace(r.FormValue("presentation"))
+				payload.Manufacturer = strings.TrimSpace(r.FormValue("manufacturer"))
+				payload.AnvisaReg = strings.TrimSpace(r.FormValue("anvisa_reg"))
+				payload.TempMin, _ = strconv.ParseFloat(r.FormValue("temp_min"), 64)
+				payload.TempMax, _ = strconv.ParseFloat(r.FormValue("temp_max"), 64)
+				payload.HumidityMin, _ = strconv.ParseFloat(r.FormValue("humidity_min"), 64)
+				payload.HumidityMax, _ = strconv.ParseFloat(r.FormValue("humidity_max"), 64)
+				payload.Photosensitive, _ = strconv.Atoi(r.FormValue("photosensitive"))
+				payload.Password = r.FormValue("password")
+				certIssuer = strings.TrimSpace(r.FormValue("cert_issuer"))
+				certIssuedAt = strings.TrimSpace(r.FormValue("cert_issued_at"))
+				certValidUntil = strings.TrimSpace(r.FormValue("cert_valid_until"))
+
+				var pdfErr error
+				pdfBytes, pdfName, pdfMIME, pdfErr = readUploadedPDF(r, "cert_file", false)
+				if pdfErr != nil {
+					w.WriteHeader(http.StatusBadRequest)
+					json.NewEncoder(w).Encode(map[string]any{"error": "Certificado PDF inválido: " + pdfErr.Error()})
+					return
+				}
+			} else {
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					http.Error(w, "JSON inválido", http.StatusBadRequest)
+					return
+				}
 			}
 			if payload.Password != "" {
 				if !a.verifySignature(sess.Username, payload.Password) {
 					w.WriteHeader(http.StatusUnauthorized)
-					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital inválida: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida para firmar assinaturas digitais (21 CFR Part 11)."})
+					json.NewEncoder(w).Encode(map[string]any{"error": "Assinatura digital inválida: forneça sua Chave Criptográfica Pessoal (CC-KEY-...) ou assine com Pen Drive USB (21 CFR Part 11)."})
 					return
 				}
 			}
@@ -1657,6 +1966,52 @@ func (a *App) routes() http.Handler {
 			}
 			ip := getClientIP(r)
 			a.logAudit(sess.Username, sess.Role, "CADASTRO_PRODUTO", fmt.Sprintf("Medicamento '%s' (DCB: %s, Reg. ANVISA: %s) cadastrado por %s", created.TradeName, created.DCB, created.AnvisaReg, sess.Name), ip)
+
+			if len(pdfBytes) > 0 {
+				if certIssuer == "" {
+					certIssuer = "ANVISA — Agência Nacional de Vigilância Sanitária"
+				}
+				if certIssuedAt == "" {
+					certIssuedAt = time.Now().Format("2006-01-02")
+				}
+				if certValidUntil == "" {
+					certValidUntil = time.Now().AddDate(5, 0, 0).Format("2006-01-02")
+				}
+				cert, ver, _, certErr := pharma.SaveOrReplaceCertificate(a.db, a.certStorageDir(), pharma.CertificateUploadInput{
+					EntityType:     pharma.CertEntityProduct,
+					EntityID:       strconv.FormatInt(created.ID, 10),
+					DocType:        pharma.CertDocAnvisaReg,
+					DocumentNumber: created.AnvisaReg,
+					Issuer:         certIssuer,
+					IssuedAt:       certIssuedAt,
+					ValidUntil:     certValidUntil,
+					UploadedBy:     sess.Username,
+					UploadedByName: sess.Name,
+					Filename:       pdfName,
+					DeclaredMIME:   pdfMIME,
+					FileBytes:      pdfBytes,
+				})
+				if certErr == nil && cert != nil && ver != nil {
+					created.CertificateID = cert.ID
+					created.CertificateStatus = cert.Status
+					created.CertificateStatusLabel = cert.StatusLabel
+					created.CertificateFilename = cert.OriginalFilename
+					created.CertificateSHA256 = cert.SHA256Hash
+					created.CertificateVersion = cert.CurrentVersion
+					a.logAudit(sess.Username, sess.Role, "CERTIFICADO_ENVIADO",
+						fmt.Sprintf("Registro ANVISA PDF '%s' anexado no cadastro do medicamento '%s' (SHA-256: %s)", cert.DocumentNumber, created.TradeName, ver.SHA256Hash[:16]), ip)
+					if a.ledger != nil {
+						lp, _ := json.Marshal(map[string]any{
+							"event": "CERTIFICADO_ENVIADO", "certificate_id": cert.ID, "version": ver.VersionNumber,
+							"entity_type": "PRODUCT", "entity_id": strconv.FormatInt(created.ID, 10), "sha256": ver.SHA256Hash, "by": sess.Username,
+						})
+						if rec, lErr := a.ledger.AppendData("PHARMA-CERTIFICATES", uint64(time.Now().UnixNano()), lp, 1); lErr == nil && rec != nil {
+							pharma.UpdateCertificateVersionLedgerID(a.db, ver.ID, rec.ID)
+						}
+					}
+				}
+			}
+
 			w.WriteHeader(http.StatusCreated)
 			json.NewEncoder(w).Encode(created)
 			return
@@ -2578,6 +2933,12 @@ func (a *App) routes() http.Handler {
 		w.Header().Set("X-Signature-ECDSA", data.SignatureHex)
 		w.Write(pdfBytes)
 	})
+
+	// 23. Certificados Regulatórios PDF (Upload, Visualização Inline, Download e Versionamento Imutável)
+	a.registerCertificateRoutes(mux)
+
+	// 24. Chaves Criptográficas em Pen Drive USB (Provisionamento, Revogação e Login Plug-and-Play Ed25519)
+	a.registerUSBAuthRoutes(mux)
 
 	return mux
 }

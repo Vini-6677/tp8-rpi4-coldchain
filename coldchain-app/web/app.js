@@ -134,6 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
   checkSession();
   setupSSE();
   setupChartInteractions();
+  initUSBAgentClient();
   // Atualiza métricas a cada 3 segundos
   setInterval(() => {
     if (currentUser) {
@@ -239,6 +240,9 @@ function showLogin() {
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('app-container').style.display = 'none';
   runBootSplashAnimation();
+  if (typeof renderUSBLoginPanel === 'function') {
+    renderUSBLoginPanel();
+  }
 }
 
 function showApp() {
@@ -307,6 +311,15 @@ function showApp() {
     }
   }
 
+  const btnUploadCert = document.getElementById('btn-open-upload-cert');
+  if (btnUploadCert) {
+    if (currentUser.role === 'tecnico' || currentUser.role === 'admin') {
+      btnUploadCert.style.display = 'inline-flex';
+    } else {
+      btnUploadCert.style.display = 'none';
+    }
+  }
+
   // Simulação de excursão (disponível para todos os perfis autorizados)
   const btnSimulateExc = document.getElementById('btn-simulate-excursion');
   if (btnSimulateExc) {
@@ -328,6 +341,7 @@ function showApp() {
   loadLots();
   loadAlarms();
   loadExcursions();
+  loadCertificates();
   if (currentUser.role !== 'enfermeiro') {
     loadMetrology();
   }
@@ -371,6 +385,7 @@ async function submitLogin() {
 }
 
 async function handleLogout() {
+  window.usbSuppressAutoLoginUntilInsert = true;
   try {
     await fetch('/api/auth/logout', { method: 'POST' });
   } catch (e) {}
@@ -407,6 +422,7 @@ function switchTab(tabId) {
   if (tabId === 'stock') loadLots();
   if (tabId === 'excursions') { loadAlarms(); loadExcursions(); }
   if (tabId === 'metrology') loadMetrology();
+  if (tabId === 'certificates') loadCertificates();
   if (tabId === 'ledger') loadLedger();
   if (tabId === 'users') loadUsers();
 }
@@ -529,12 +545,13 @@ async function loadChambers(renderDetail = true) {
         </div>
 
         <div class="chamber-card-footer">
-          <div class="chamber-footer-qual">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <div class="chamber-footer-qual" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="${c.certificate_status === 'VENCIDO' ? '#EF4444' : (c.certificate_status === 'PENDENTE' ? '#A78BFA' : (c.certificate_status === 'PROXIMO_VENCIMENTO' ? '#F59E0B' : '#10B981'))}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="10"/>
               <path d="m9 12 2 2 4-4"/>
             </svg>
             <span>${c.qualification_status || 'Qualificado (QI/QO/QD)'}</span>
+            ${renderInlineCertBadge(c.certificate_id, c.certificate_status, c.certificate_version, 'CHAMBER', c.id, 'QUAL-' + c.id, 'Engenharia Clínica / Validação Térmica', c.qualification_valid_until, c.certificate_sha256, c.certificate_filename)}
           </div>
           <div class="chamber-footer-signal">
             <span style="width:6px; height:6px; border-radius:50%; background:#10B981; display:inline-block;"></span>
@@ -1201,6 +1218,7 @@ async function selectChamber(chamberId, forceHighlight = true) {
             <div>
               <div class="sensor-cert-label">Certificado RBC</div>
               <div class="sensor-cert-val">${s.cert_number}</div>
+              <div style="margin-top: 4px;">${renderInlineCertBadge(s.certificate_id, s.certificate_status, s.certificate_version, 'SENSOR', s.id, s.cert_number, s.calibrated_by, s.calib_valid_until, s.certificate_sha256, s.certificate_filename)}</div>
             </div>
             <div style="text-align:right;">
               <div class="sensor-val-label">Val. ${valDateFormatted}</div>
@@ -1864,7 +1882,10 @@ function renderMetrologyTable(list) {
         <td><strong>${s.chamber_id}</strong></td>
         <td>${s.serial_number}</td>
         <td>${s.thermal_position}</td>
-        <td><strong style="color:#C4B5FD;">${s.cert_number}</strong></td>
+        <td>
+          <strong style="color:#C4B5FD;">${s.cert_number}</strong>
+          <div style="margin-top: 4px;">${renderInlineCertBadge(s.certificate_id, s.certificate_status, s.certificate_version, 'SENSOR', s.id, s.cert_number, s.calibrated_by, s.calib_valid_until, s.certificate_sha256, s.certificate_filename)}</div>
+        </td>
         <td>${s.calibrated_by}</td>
         <td><span style="color:#6EE7B7;">${s.calib_valid_until}</span></td>
         <td><span class="badge-status ${badgeClass}">${s.status}</span></td>
@@ -1985,7 +2006,19 @@ function formatAuditAction(action) {
     'EXPORTACAO_SENSORES_PDF': 'Laudo Metrológico (PDF)',
     'EXPORTACAO_DOSSIE_PDF': 'Laudo de Auditoria (PDF)',
     'EXPORTACAO_DOSSIE_CSV': 'Dossiê Sanitário (CSV)',
-    'EXPORTACAO_DOSSIE_HTML': 'Laudo de Impressão HTML'
+    'EXPORTACAO_DOSSIE_HTML': 'Laudo de Impressão HTML',
+    'CERTIFICADO_ENVIADO': 'Envio de Certificado (PDF)',
+    'CERTIFICADO_SUBSTITUIDO': 'Substituição de Certificado',
+    'CERTIFICADO_DOWNLOAD': 'Download de Certificado',
+    'CERTIFICADO_INTEGRIDADE_FALHA': 'Falha SHA-256 Certificado',
+    'USB_KEY_PROVISIONED': 'Gravação de Chave USB',
+    'USB_KEY_REVOKED': 'Revogação de Chave USB',
+    'LOGIN_USB_SUCCESS': 'Login Plug-and-Play (USB)',
+    'USB_SIGN_AUTHORIZED': 'Assinatura 21 CFR (USB)',
+    'USB_LOGIN_UNKNOWN_KEY': 'Chave USB Não Cadastrada',
+    'USB_LOGIN_REVOKED_KEY': 'Bloqueio Chave USB Revogada',
+    'USB_LOGIN_INVALID_SIG': 'Assinatura USB Inválida',
+    'USB_AUTH_CLONE_SUSPECTED': 'Alerta: Clonagem USB Bloqueada'
   };
   return map[action] || (action ? action.replace(/_/g, ' ') : '-');
 }
@@ -1996,23 +2029,23 @@ function getAuditActionBadge(action) {
   let color = '#F59E0B';
   let border = 'rgba(245, 158, 11, 0.25)';
 
-  if (action === 'LOGIN_SUCCESS' || action === 'RESOLVE_ALARME' || action === 'LEDGER_ANCHOR' || action === 'DECISAO_EXCURSAO') {
+  if (action === 'LOGIN_SUCCESS' || action === 'LOGIN_USB_SUCCESS' || action === 'USB_SIGN_AUTHORIZED' || action === 'RESOLVE_ALARME' || action === 'LEDGER_ANCHOR' || action === 'DECISAO_EXCURSAO' || action === 'CERTIFICADO_ENVIADO') {
     bg = 'rgba(52, 211, 153, 0.1)';
     color = '#34D399';
     border = 'rgba(52, 211, 153, 0.3)';
-  } else if (action === 'LOGIN_FAILED' || action === 'LOGIN_BLOCKED') {
+  } else if (action === 'LOGIN_FAILED' || action === 'LOGIN_BLOCKED' || action === 'USB_KEY_REVOKED' || action === 'USB_LOGIN_REVOKED_KEY' || action === 'USB_LOGIN_UNKNOWN_KEY' || action === 'USB_LOGIN_INVALID_SIG' || action === 'USB_AUTH_CLONE_SUSPECTED' || action === 'CERTIFICADO_INTEGRIDADE_FALHA') {
     bg = 'rgba(239, 68, 68, 0.1)';
     color = '#FCA5A5';
     border = 'rgba(239, 68, 68, 0.3)';
-  } else if (action === 'SIMULACAO_EXCURSAO' || action === 'RECONHECE_ALARME') {
+  } else if (action === 'SIMULACAO_EXCURSAO' || action === 'RECONHECE_ALARME' || action === 'CERTIFICADO_SUBSTITUIDO') {
     bg = 'rgba(245, 158, 11, 0.12)';
     color = '#FBBF24';
     border = 'rgba(245, 158, 11, 0.35)';
-  } else if (action.startsWith('CADASTRO_') || action.startsWith('USER_') || action.startsWith('REGISTRO_')) {
+  } else if (action.startsWith('CADASTRO_') || action.startsWith('USER_') || action.startsWith('REGISTRO_') || action === 'USB_KEY_PROVISIONED') {
     bg = 'rgba(56, 189, 248, 0.1)';
     color = '#38BDF8';
     border = 'rgba(56, 189, 248, 0.3)';
-  } else if (action.startsWith('EXPORTACAO_')) {
+  } else if (action.startsWith('EXPORTACAO_') || action === 'CERTIFICADO_DOWNLOAD') {
     bg = 'rgba(14, 165, 233, 0.14)';
     color = '#38BDF8';
     border = 'rgba(14, 165, 233, 0.4)';
@@ -2381,8 +2414,13 @@ async function loadUsers() {
 
     users.forEach(u => {
       const cryptoBadge = u.first_login
-        ? '<span class="badge-status em_quarentena" style="font-size:11px; padding:3px 9px;">Pendente (1º Acesso)</span>'
-        : '<span class="badge-status liberado" style="font-size:11px; padding:3px 9px;">Chave Ativa</span>';
+        ? '<span class="badge-status em_quarentena" style="font-size:10.5px; padding:2px 8px;">Pendente (1º Acesso)</span>'
+        : '<span class="badge-status liberado" style="font-size:10.5px; padding:2px 8px;">CC-KEY Ativa</span>';
+
+      const usbCount = u.usb_keys_active || 0;
+      const usbBadge = usbCount > 0
+        ? `<div style="margin-top:4px;"><span style="display:inline-block; padding:2px 8px; border-radius:4px; font-size:10.5px; font-weight:700; background:rgba(16,185,129,0.14); color:#34D399; border:1px solid rgba(16,185,129,0.35);">USB Ed25519 (${usbCount} ativa${usbCount > 1 ? 's' : ''})</span></div>`
+        : `<div style="margin-top:4px;"><span style="font-size:10.5px; color:#64748B;">Sem Pen Drive USB</span></div>`;
 
       const isSeed = (u.username === 'admin');
       const deleteBtn = isSeed ? '' : `
@@ -2397,10 +2435,13 @@ async function loadUsers() {
           <td><strong style="color: #F8FAFC; letter-spacing: 0.2px;">${u.username}</strong></td>
           <td style="color: #CBD5E1;">${u.name}</td>
           <td style="text-align: center;"><span class="tag-badge tag-blue" style="font-size: 11px; font-weight: 700; letter-spacing: 0.5px;">${u.role.toUpperCase()}</span></td>
-          <td style="text-align: center;">${cryptoBadge}</td>
+          <td style="text-align: center;">${cryptoBadge}${usbBadge}</td>
           <td style="text-align: center;"><span class="badge-status ${u.is_blocked ? 'reprovado' : 'liberado'}" style="font-size: 11px; font-weight: 700;">${u.is_blocked ? 'BLOQUEADO' : 'ATIVO'}</span></td>
           <td style="text-align: right;">
-            <div style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px;">
+            <div style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap;">
+              <button type="button" class="btn-user-toggle" style="border-color: rgba(16, 185, 129, 0.45); color: #34D399;" onclick="openUserUSBKeysModal('${u.username}', '${escapeHTML(u.name)}')">
+                Chaves USB
+              </button>
               <button type="button" class="btn-user-toggle" onclick="toggleBlockUser(${u.id}, '${u.username}', ${u.is_blocked})">
                 ${u.is_blocked ? 'Desbloquear' : 'Bloquear'}
               </button>
@@ -2510,6 +2551,14 @@ function openNewProductModal() {
   if (m) {
     m.classList.add('active');
     setupSignatureField('new-product-resp-name', 'new-product-password');
+    const pv = document.getElementById('prod-cert-valid');
+    if (pv && !pv.value) {
+      const d = new Date();
+      d.setFullYear(d.getFullYear() + 5);
+      pv.value = d.toISOString().split('T')[0];
+    }
+    const pinfo = document.getElementById('prod-cert-pdf-info');
+    if (pinfo) pinfo.textContent = 'Anexe o PDF do órgão regulador ou envie depois na aba Certificados.';
   }
 }
 
@@ -2538,39 +2587,65 @@ async function submitNewProduct() {
 
   const pwd = document.getElementById('new-product-password') ? document.getElementById('new-product-password').value : '';
   if (!pwd) {
-    showToast('Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida (21 CFR Part 11).', 'info');
+    showToast('Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...) ou assine com Pen Drive USB (21 CFR Part 11).', 'info');
     return;
   }
 
-  const payload = {
-    trade_name: tradeName,
-    dcb: dcb,
-    anvisa_reg: anvisaReg,
-    presentation: presentation,
-    manufacturer: manufacturer,
-    temp_min: tempMin,
-    temp_max: tempMax,
-    humidity_min: 30.0,
-    humidity_max: humMax,
-    photosensitive: photosensitive,
-    password: pwd
-  };
+  const pdfInput = document.getElementById('prod-cert-pdf');
+  const pdfFile = (pdfInput && pdfInput.files && pdfInput.files[0]) ? pdfInput.files[0] : null;
+  if (pdfFile && !validatePDFClientSide(pdfFile)) return;
 
   try {
-    const res = await fetch('/api/pharma/products', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
+    let res;
+    if (pdfFile) {
+      const fd = new FormData();
+      fd.append('trade_name', tradeName);
+      fd.append('dcb', dcb);
+      fd.append('anvisa_reg', anvisaReg);
+      fd.append('presentation', presentation);
+      fd.append('manufacturer', manufacturer);
+      fd.append('temp_min', String(tempMin));
+      fd.append('temp_max', String(tempMax));
+      fd.append('humidity_min', '30.0');
+      fd.append('humidity_max', String(humMax));
+      fd.append('photosensitive', String(photosensitive));
+      fd.append('password', pwd);
+      fd.append('cert_issuer', 'ANVISA — Agência Nacional de Vigilância Sanitária');
+      fd.append('cert_issued_at', new Date().toISOString().split('T')[0]);
+      const validVal = document.getElementById('prod-cert-valid') ? document.getElementById('prod-cert-valid').value : '';
+      if (validVal) fd.append('cert_valid_until', validVal);
+      fd.append('cert_file', pdfFile, pdfFile.name);
+      res = await fetch('/api/pharma/products', { method: 'POST', body: fd });
+    } else {
+      const payload = {
+        trade_name: tradeName,
+        dcb: dcb,
+        anvisa_reg: anvisaReg,
+        presentation: presentation,
+        manufacturer: manufacturer,
+        temp_min: tempMin,
+        temp_max: tempMax,
+        humidity_min: 30.0,
+        humidity_max: humMax,
+        photosensitive: photosensitive,
+        password: pwd
+      };
+      res = await fetch('/api/pharma/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    }
     const data = await res.json();
     if (!res.ok) {
       showToast('Erro ao cadastrar medicamento: ' + (data.error || 'Erro desconhecido'), 'error')
       return;
     }
 
-    showToast('Medicamento ' + tradeName + ' cadastrado com sucesso no Catálogo ANVISA!', 'success')
+    showToast('Medicamento ' + tradeName + (pdfFile ? ' + Registro ANVISA (PDF)' : '') + ' cadastrado com sucesso!', 'success')
     closeNewProductModal();
-    loadProducts(); // recarrega catálogo e selects
+    loadProducts();
+    loadCertificates();
   } catch (e) {
     console.error('Erro na requisição:', e);
     showToast('Erro de conexão ao salvar medicamento.', 'error')
@@ -2634,39 +2709,68 @@ async function submitNewChamber() {
 
   const pwd = document.getElementById('new-chamber-password') ? document.getElementById('new-chamber-password').value : '';
   if (!pwd) {
-    showToast('Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida (21 CFR Part 11).', 'info');
+    showToast('Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...) ou assine com Pen Drive USB (21 CFR Part 11).', 'info');
     return;
   }
 
-  const payload = {
-    id: id,
-    name: name,
-    type: type,
-    temp_min: tempMin,
-    temp_max: tempMax,
-    humidity_min: 30.0,
-    humidity_max: 75.0,
-    alarm_delay_min: delay,
-    qualification_status: qualStatus,
-    qualification_valid_until: qualValid,
-    password: pwd
-  };
+  const pdfInput = document.getElementById('ch-cert-pdf');
+  const pdfFile = (pdfInput && pdfInput.files && pdfInput.files[0]) ? pdfInput.files[0] : null;
+  if (pdfFile && !validatePDFClientSide(pdfFile)) return;
 
   try {
-    const res = await fetch('/api/pharma/chambers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
+    let res;
+    if (pdfFile) {
+      const fd = new FormData();
+      fd.append('id', id);
+      fd.append('name', name);
+      fd.append('type', type);
+      fd.append('temp_min', String(tempMin));
+      fd.append('temp_max', String(tempMax));
+      fd.append('humidity_min', '30.0');
+      fd.append('humidity_max', '75.0');
+      fd.append('alarm_delay_min', String(delay));
+      fd.append('qualification_status', qualStatus);
+      fd.append('qualification_valid_until', qualValid);
+      fd.append('password', pwd);
+      const certNum = document.getElementById('ch-cert-number') ? document.getElementById('ch-cert-number').value.trim() : '';
+      const certIssuer = document.getElementById('ch-cert-issuer') ? document.getElementById('ch-cert-issuer').value.trim() : '';
+      if (certNum) fd.append('cert_document_number', certNum);
+      if (certIssuer) fd.append('cert_issuer', certIssuer);
+      fd.append('cert_issued_at', new Date().toISOString().split('T')[0]);
+      fd.append('cert_valid_until', qualValid);
+      fd.append('cert_file', pdfFile, pdfFile.name);
+      res = await fetch('/api/pharma/chambers', { method: 'POST', body: fd });
+    } else {
+      const payload = {
+        id: id,
+        name: name,
+        type: type,
+        temp_min: tempMin,
+        temp_max: tempMax,
+        humidity_min: 30.0,
+        humidity_max: 75.0,
+        alarm_delay_min: delay,
+        qualification_status: qualStatus,
+        qualification_valid_until: qualValid,
+        password: pwd
+      };
+      res = await fetch('/api/pharma/chambers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    }
     const data = await res.json();
     if (!res.ok) {
       showToast('Erro ao cadastrar equipamento: ' + (data.error || 'Erro desconhecido'), 'error')
       return;
     }
 
-    showToast('Câmara ' + name + ' (' + id + ') cadastrada com sucesso!', 'success')
+    showToast('Câmara ' + name + ' (' + id + ')' + (pdfFile ? ' + Laudo PDF' : '') + ' cadastrada com sucesso!', 'success')
     closeNewChamberModal();
     loadChambers(true);
+    loadCertificates();
+    loadKPIs();
   } catch (e) {
     console.error('Erro na requisição:', e);
     showToast('Erro de conexão ao cadastrar câmara.', 'error')
@@ -2864,6 +2968,12 @@ function openNewSensorModal() {
   document.getElementById('sensor-valid-until').value = nextYear.toISOString().split('T')[0];
 
   document.getElementById('btn-submit-sensor').textContent = 'Cadastrar no Parque Metrológico';
+  const pdfEl = document.getElementById('sensor-cert-pdf');
+  if (pdfEl) pdfEl.value = '';
+  const pdfInfo = document.getElementById('sensor-cert-pdf-info');
+  if (pdfInfo) pdfInfo.textContent = 'Anexe o arquivo PDF oficial do órgão regulador / laboratório RBC aqui junto ao cadastro do sensor (máx. 10 MB).';
+  const repWrap = document.getElementById('sensor-cert-replace-reason-wrap');
+  if (repWrap) repWrap.style.display = 'none';
 
   populateSensorChambersSelect();
 }
@@ -2897,6 +3007,14 @@ function openEditSensorModal(sensorId) {
   document.getElementById('sensor-valid-until').value = nextYear.toISOString().split('T')[0];
 
   document.getElementById('btn-submit-sensor').textContent = 'Salvar Recalibração RBC';
+  const pdfEl = document.getElementById('sensor-cert-pdf');
+  if (pdfEl) pdfEl.value = '';
+  const pdfInfo = document.getElementById('sensor-cert-pdf-info');
+  if (pdfInfo) pdfInfo.textContent = s.certificate_id
+    ? `Certificado atual: v${s.certificate_version || 1} (${s.certificate_filename || 'PDF'}). Enviar novo PDF criará versão v${(s.certificate_version || 1) + 1} preservando o histórico.`
+    : 'Este sensor ainda está PENDENTE de PDF. Anexe o certificado RBC oficial agora.';
+  const repWrap = document.getElementById('sensor-cert-replace-reason-wrap');
+  if (repWrap) repWrap.style.display = 'block';
 
   populateSensorChambersSelect(s.chamber_id);
 }
@@ -2926,30 +3044,51 @@ async function submitSensor() {
 
   const pwd = document.getElementById('sensor-password') ? document.getElementById('sensor-password').value : '';
   if (!pwd) {
-    showToast('Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...). A senha de login não é permitida (21 CFR Part 11).', 'info');
+    showToast('Assinatura digital obrigatória: forneça sua Chave Criptográfica Pessoal (CC-KEY-...) ou assine com Pen Drive USB (21 CFR Part 11).', 'info');
     return;
   }
 
-  const payload = {
-    id: id,
-    chamber_id: chamberId,
-    serial_number: sn,
-    thermal_position: pos,
-    cert_number: cert,
-    calibrated_by: lab,
-    calibrated_at: calibAt,
-    calib_valid_until: validUntil,
-    password: pwd
-  };
+  const pdfInput = document.getElementById('sensor-cert-pdf');
+  const pdfFile = (pdfInput && pdfInput.files && pdfInput.files[0]) ? pdfInput.files[0] : null;
+  if (pdfFile && !validatePDFClientSide(pdfFile)) return;
 
   const method = isEdit ? 'PUT' : 'POST';
 
   try {
-    const res = await fetch('/api/pharma/sensors', {
-      method: method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
+    let res;
+    if (pdfFile) {
+      const fd = new FormData();
+      fd.append('id', id);
+      fd.append('chamber_id', chamberId);
+      fd.append('serial_number', sn);
+      fd.append('thermal_position', pos);
+      fd.append('cert_number', cert);
+      fd.append('calibrated_by', lab);
+      fd.append('calibrated_at', calibAt);
+      fd.append('calib_valid_until', validUntil);
+      fd.append('password', pwd);
+      const repReason = document.getElementById('sensor-cert-replace-reason') ? document.getElementById('sensor-cert-replace-reason').value.trim() : '';
+      if (repReason) fd.append('replace_reason', repReason);
+      fd.append('cert_file', pdfFile, pdfFile.name);
+      res = await fetch('/api/pharma/sensors', { method: method, body: fd });
+    } else {
+      const payload = {
+        id: id,
+        chamber_id: chamberId,
+        serial_number: sn,
+        thermal_position: pos,
+        cert_number: cert,
+        calibrated_by: lab,
+        calibrated_at: calibAt,
+        calib_valid_until: validUntil,
+        password: pwd
+      };
+      res = await fetch('/api/pharma/sensors', {
+        method: method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    }
     const data = await res.json();
     if (!res.ok) {
       showToast('Erro na operação metrológica: ' + (data.error || 'Erro desconhecido'), 'error')
@@ -2957,9 +3096,10 @@ async function submitSensor() {
     }
 
     const actionText = isEdit ? 'recalibrado e atualizado' : 'cadastrado';
-    showToast(`Sensor ${id} ${actionText} com sucesso no Parque Metrológico RBC!`, 'success')
+    showToast(`Sensor ${id} ${actionText}` + (pdfFile ? ' com Certificado PDF verificado (SHA-256)!' : ' no Parque Metrológico RBC!'), 'success')
     closeSensorModal();
     loadMetrology();
+    loadCertificates();
     loadKPIs();
     loadChambers(true);
   } catch (e) {
@@ -3117,6 +3257,11 @@ function renderLotsTable() {
       ? `<button class="btn-action-primary" disabled title="Lote esgotado (saldo zero) - Transferência indisponível" style="padding:5px 12px; font-size:11.5px; margin-left: 6px; display: inline-flex; align-items: center; justify-content: center; background: #1E293B; color: #64748B; opacity: 0.4; cursor: not-allowed; border: 1px solid #334155;">⇄ Transferir</button>`
       : `<button class="btn-action-primary" style="padding:5px 12px; font-size:11.5px; margin-left: 6px; display: inline-flex; align-items: center; justify-content: center; background: #2563EB;" onclick="openTransferModal(${l.id})">⇄ Transferir</button>`;
 
+    const prodMatch = (window.allPharmaProducts || []).find(p => p.id === l.product_id);
+    const prodCertHtml = prodMatch
+      ? `<div style="margin-top:3px;">${renderInlineCertBadge(prodMatch.certificate_id, prodMatch.certificate_status, prodMatch.certificate_version, 'PRODUCT', String(prodMatch.id), prodMatch.anvisa_reg, 'ANVISA', '', prodMatch.certificate_sha256, prodMatch.certificate_filename)}</div>`
+      : '';
+
     const tr = document.createElement('tr');
     tr.className = 'lot-table-row';
     tr.innerHTML = `
@@ -3125,7 +3270,10 @@ function renderLotsTable() {
         <strong style="color:#F8FAFC;">${l.product_trade_name || 'Medicamento'}</strong>
         <div style="font-size:11px; color:#94A3B8;">${l.product_dcb || ''} ${l.manufacturer ? '— ' + l.manufacturer : ''}</div>
       </td>
-      <td><span style="font-size:11.5px; color:#CBD5E1;">${l.anvisa_reg || '---'}</span></td>
+      <td>
+        <span style="font-size:11.5px; color:#CBD5E1;">${l.anvisa_reg || '---'}</span>
+        ${prodCertHtml}
+      </td>
       <td><strong style="color:#38BDF8; font-family:monospace;">${l.lot_number}</strong></td>
       <td>
         <div style="font-weight:600; color:#F8FAFC;">${expiryFormatted}</div>
@@ -4102,6 +4250,11 @@ function acknowledgeCryptoKey() {
 function openNewUserModal() {
   const m = document.getElementById('modal-new-user');
   if (m) m.classList.add('active');
+  const chk = document.getElementById('new-user-usb-enabled');
+  const cfg = document.getElementById('new-user-usb-config');
+  if (chk) chk.checked = false;
+  if (cfg) cfg.style.display = 'none';
+  refreshUSBDrivesForProvision('new-user-usb-drive', 'new-user-usb-status');
 }
 
 function closeNewUserModal() {
@@ -4109,6 +4262,8 @@ function closeNewUserModal() {
   if (m) m.classList.remove('active');
   const f = document.getElementById('form-new-user');
   if (f) f.reset();
+  const cfg = document.getElementById('new-user-usb-config');
+  if (cfg) cfg.style.display = 'none';
   const feedback = document.getElementById('new-user-feedback');
   if (feedback) feedback.style.display = 'none';
 }
@@ -4120,23 +4275,40 @@ async function submitCreateUser() {
   const pwdEl = document.getElementById('new-user-password');
   const btn = document.getElementById('btn-submit-new-user');
   const feedback = document.getElementById('new-user-feedback');
+  const usbEnabled = document.getElementById('new-user-usb-enabled') && document.getElementById('new-user-usb-enabled').checked;
+  const usbDriveId = document.getElementById('new-user-usb-drive') ? document.getElementById('new-user-usb-drive').value : '';
+  const usbOverwrite = document.getElementById('new-user-usb-overwrite') && document.getElementById('new-user-usb-overwrite').checked;
 
   const name = nameEl ? nameEl.value.trim() : '';
   const username = userEl ? userEl.value.trim().toLowerCase() : '';
   const role = roleEl ? roleEl.value : 'enfermeiro';
   const password = pwdEl ? pwdEl.value : '';
 
+  const showModalMsg = (ok, html) => {
+    if (!feedback) return;
+    feedback.style.display = 'block';
+    feedback.style.background = ok ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)';
+    feedback.style.border = ok ? '1px solid rgba(16, 185, 129, 0.45)' : '1px solid rgba(239, 68, 68, 0.45)';
+    feedback.style.color = ok ? '#6EE7B7' : '#FCA5A5';
+    feedback.innerHTML = html;
+  };
+
   if (feedback) feedback.style.display = 'none';
 
   if (!name || !username || !password) {
-    if (feedback) {
-      feedback.style.display = 'block';
-      feedback.style.background = 'rgba(239, 68, 68, 0.12)';
-      feedback.style.border = '1px solid rgba(239, 68, 68, 0.45)';
-      feedback.style.color = '#FCA5A5';
-      feedback.innerHTML = '<strong>Atenção:</strong> Por favor, preencha todos os campos obrigatórios.';
-    }
+    showModalMsg(false, '<strong>Atenção:</strong> Por favor, preencha todos os campos obrigatórios.');
     return;
+  }
+
+  if (usbEnabled) {
+    if (!window.usbAgentState || !window.usbAgentState.connected) {
+      showModalMsg(false, '<strong>Agente USB desconectado:</strong> Inicie o executável <code>coldchain-usb-agent</code> nesta máquina para gravar a chave no pen drive.');
+      return;
+    }
+    if (!usbDriveId) {
+      showModalMsg(false, '<strong>Selecione o pen drive:</strong> Conecte um pen drive USB removível e clique em "Detectar USB" antes de continuar.');
+      return;
+    }
   }
 
   if (btn) btn.disabled = true;
@@ -4147,36 +4319,67 @@ async function submitCreateUser() {
       body: JSON.stringify({ name, username, role, password })
     });
     const data = await res.json().catch(() => ({}));
-    if (res.ok) {
-      if (feedback) {
-        feedback.style.display = 'block';
-        feedback.style.background = 'rgba(16, 185, 129, 0.12)';
-        feedback.style.border = '1px solid rgba(16, 185, 129, 0.45)';
-        feedback.style.color = '#6EE7B7';
-        feedback.innerHTML = `<strong>Sucesso!</strong> Usuário '<strong>${username}</strong>' cadastrado. No primeiro acesso, a chave criptográfica única será gerada.`;
+    if (!res.ok) {
+      showModalMsg(false, `<strong>Erro ao cadastrar:</strong> ${escapeHTML(data.error || 'Nome de usuário indisponível.')}`);
+      return;
+    }
+
+    if (usbEnabled && usbDriveId) {
+      showModalMsg(true, `Usuário <strong>${escapeHTML(username)}</strong> criado! Gerando chave Ed25519 e gravando no pen drive <strong>${escapeHTML(usbDriveId)}</strong> com verificação pós-escrita...`);
+      try {
+        const prov = await usbAgentRPC('provision_key', {
+          drive_id: usbDriveId,
+          username: username,
+          overwrite: usbOverwrite
+        });
+        if (!prov || !prov.ok) {
+          showModalMsg(false, `<strong>Usuário criado, mas falha ao gravar no pen drive:</strong> ${escapeHTML((prov && prov.error) || 'Erro na gravação USB.')} Você pode gravar depois pelo botão "Chaves USB".`);
+          loadUsers();
+          return;
+        }
+        const regRes = await fetch('/api/admin/users/usb-keys/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: username,
+            key_id: prov.key_id,
+            public_key_b64: prov.public_key_b64,
+            algorithm: prov.algorithm,
+            binding_mode: prov.binding_mode,
+            device_binding_hash: prov.device_binding_hash,
+            usb_vendor_product: prov.usb_vendor_product,
+            usb_serial_masked: prov.usb_serial_masked,
+            drive_label: prov.drive_label,
+            file_sha256: prov.file_sha256,
+            revoke_previous: false
+          })
+        });
+        const regData = await regRes.json().catch(() => ({}));
+        if (!regRes.ok) {
+          showModalMsg(false, `<strong>Erro ao registrar chave pública no servidor:</strong> ${escapeHTML(regData.error || 'Falha de registro.')}`);
+          loadUsers();
+          return;
+        }
+        showModalMsg(true, `<strong>Sucesso completo!</strong> Usuário '<strong>${escapeHTML(username)}</strong>' criado e chave Ed25519 gravada no pen drive <strong>${escapeHTML(prov.drive_label)} (${escapeHTML(prov.drive_id)})</strong> com verificação <code>fsync</code> + SHA-256 confirmada (Vínculo: <code>${escapeHTML(prov.binding_mode)}</code>).`);
+        loadUsers();
+        setTimeout(() => {
+          closeNewUserModal();
+          showToast(`Usuário '${username}' criado com chave USB verificada no pen drive!`, 'success');
+        }, 1800);
+      } catch (usbErr) {
+        showModalMsg(false, `<strong>Usuário criado, mas erro na gravação USB:</strong> ${escapeHTML(usbErr.message || String(usbErr))}`);
+        loadUsers();
       }
+    } else {
+      showModalMsg(true, `<strong>Sucesso!</strong> Usuário '<strong>${escapeHTML(username)}</strong>' cadastrado. No primeiro acesso, a chave criptográfica única será gerada (e você também pode gravar um Pen Drive USB pelo botão "Chaves USB").`);
       loadUsers();
       setTimeout(() => {
         closeNewUserModal();
         showToast(`Usuário '${username}' criado com sucesso!`, 'success');
       }, 1300);
-    } else {
-      if (feedback) {
-        feedback.style.display = 'block';
-        feedback.style.background = 'rgba(239, 68, 68, 0.12)';
-        feedback.style.border = '1px solid rgba(239, 68, 68, 0.45)';
-        feedback.style.color = '#FCA5A5';
-        feedback.innerHTML = `<strong>Erro ao cadastrar:</strong> ${data.error || 'Nome de usuário indisponível.'}`;
-      }
     }
   } catch (e) {
-    if (feedback) {
-      feedback.style.display = 'block';
-      feedback.style.background = 'rgba(239, 68, 68, 0.12)';
-      feedback.style.border = '1px solid rgba(239, 68, 68, 0.45)';
-      feedback.style.color = '#FCA5A5';
-      feedback.innerHTML = '<strong>Erro de conexão:</strong> Não foi possível comunicar com o servidor.';
-    }
+    showModalMsg(false, '<strong>Erro de conexão:</strong> Não foi possível comunicar com o servidor.');
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -4241,3 +4444,1166 @@ function togglePasswordVisibility(inputId, btnEl) {
   }
 }
 
+
+
+// =============================================================================
+// UTILITÁRIOS SEGUROS & GESTÃO DE CERTIFICADOS PDF DO ÓRGÃO REGULADOR
+// =============================================================================
+function escapeHTML(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatBytesHuman(bytes) {
+  const b = Number(bytes || 0);
+  if (b <= 0) return '0 B';
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function formatDateBR(isoDate) {
+  if (!isoDate) return '--/--/----';
+  const parts = String(isoDate).split('T')[0].split('-');
+  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  return isoDate;
+}
+
+function validatePDFClientSide(file) {
+  if (!file) return false;
+  if (!file.name.toLowerCase().endsWith('.pdf')) {
+    showToast('Extensão inválida: selecione apenas arquivos com extensão .pdf.', 'error');
+    return false;
+  }
+  if (file.type && file.type !== 'application/pdf') {
+    showToast(`Tipo MIME rejeitado (${file.type}): apenas application/pdf é permitido.`, 'error');
+    return false;
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    showToast(`Arquivo muito grande (${formatBytesHuman(file.size)}): o limite máximo é 10 MB.`, 'error');
+    return false;
+  }
+  if (file.size < 64) {
+    showToast('Arquivo PDF vazio ou corrompido.', 'error');
+    return false;
+  }
+  return true;
+}
+
+function previewSelectedPDF(inputId, infoId) {
+  const inp = document.getElementById(inputId);
+  const info = document.getElementById(infoId);
+  if (!inp || !info) return;
+  const f = inp.files && inp.files[0];
+  if (!f) {
+    info.style.color = '#94A3B8';
+    info.textContent = 'Nenhum arquivo PDF selecionado.';
+    return;
+  }
+  if (!validatePDFClientSide(f)) {
+    inp.value = '';
+    info.style.color = '#F87171';
+    info.textContent = 'Arquivo rejeitado. Selecione um PDF válido (máx. 10 MB).';
+    return;
+  }
+  info.style.color = '#34D399';
+  info.textContent = `PDF pronto para validação: ${f.name} (${formatBytesHuman(f.size)})`;
+}
+
+function getCertStatusStyle(status) {
+  switch (status) {
+    case 'VALIDO':
+      return { bg: 'rgba(16, 185, 129, 0.14)', color: '#34D399', border: 'rgba(16, 185, 129, 0.4)', label: 'Válido' };
+    case 'PROXIMO_VENCIMENTO':
+      return { bg: 'rgba(245, 158, 11, 0.15)', color: '#FBBF24', border: 'rgba(245, 158, 11, 0.45)', label: 'Próximo do Vencimento' };
+    case 'VENCIDO':
+      return { bg: 'rgba(239, 68, 68, 0.15)', color: '#F87171', border: 'rgba(239, 68, 68, 0.45)', label: 'Vencido' };
+    default:
+      return { bg: 'rgba(139, 92, 246, 0.14)', color: '#C4B5FD', border: 'rgba(139, 92, 246, 0.4)', label: 'Pendente PDF' };
+  }
+}
+
+function renderInlineCertBadge(certId, status, version, entityType, entityId, docNum, issuer, validUntil, sha256, filename) {
+  const st = getCertStatusStyle(status || 'PENDENTE');
+  if (certId) {
+    const safeTitle = escapeHTML(`${docNum || certId} (${filename || 'PDF'})`);
+    const safeSha = escapeHTML(sha256 || '');
+    return `<button type="button" onclick="event.stopPropagation(); openCertificateViewerModal('${escapeHTML(certId)}', ${Number(version || 1)}, '${safeTitle}', '${safeSha}')" title="Clique para visualizar o PDF oficial (v${version || 1})" style="display:inline-flex; align-items:center; gap:4px; padding:2px 7px; border-radius:4px; font-size:10px; font-weight:700; background:${st.bg}; color:${st.color}; border:1px solid ${st.border}; cursor:pointer;">PDF ${st.label} v${version || 1}</button>`;
+  }
+  const canUpload = currentUser && (currentUser.role === 'tecnico' || currentUser.role === 'admin');
+  if (canUpload) {
+    return `<button type="button" onclick="event.stopPropagation(); openUploadCertificateModal({ entity_type: '${escapeHTML(entityType)}', entity_id: '${escapeHTML(entityId)}', document_number: '${escapeHTML(docNum || '')}', issuer: '${escapeHTML(issuer || '')}', valid_until: '${escapeHTML(validUntil || '')}' })" title="Nenhum PDF anexado — clique para enviar" style="display:inline-flex; align-items:center; gap:4px; padding:2px 7px; border-radius:4px; font-size:10px; font-weight:700; background:${st.bg}; color:${st.color}; border:1px solid ${st.border}; cursor:pointer;">PDF Pendente • Anexar</button>`;
+  }
+  return `<span style="display:inline-flex; align-items:center; padding:2px 7px; border-radius:4px; font-size:10px; font-weight:700; background:${st.bg}; color:${st.color}; border:1px solid ${st.border};">PDF Pendente</span>`;
+}
+
+window.allCertificatesData = [];
+window.allPendingCertificates = [];
+
+async function loadCertificates() {
+  try {
+    const res = await fetch('/api/pharma/certificates');
+    if (!res.ok) return;
+    const data = await res.json();
+    window.allCertificatesData = data.certificates || [];
+    window.allPendingCertificates = data.pending || [];
+    const sum = data.summary || { valid: 0, expiring: 0, expired: 0, pending: 0 };
+
+    const setTxt = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = String(val); };
+    setTxt('cert-kpi-valid', sum.valid || 0);
+    setTxt('cert-kpi-expiring', sum.expiring || 0);
+    setTxt('cert-kpi-expired', sum.expired || 0);
+    setTxt('cert-kpi-pending', sum.pending || 0);
+
+    renderPendingCertificatesTable();
+    renderCertificatesTable();
+  } catch (e) {
+    console.error('Erro ao carregar certificados:', e);
+  }
+}
+
+function formatCertEntityType(t) {
+  switch (t) {
+    case 'SENSOR': return 'Sensor RBC';
+    case 'CHAMBER': return 'Câmara Fria';
+    case 'PRODUCT': return 'Medicamento';
+    case 'FACILITY': return 'Unidade';
+    default: return t || '-';
+  }
+}
+
+function renderPendingCertificatesTable() {
+  const panel = document.getElementById('cert-pending-panel');
+  const tbody = document.getElementById('cert-pending-tbody');
+  const badge = document.getElementById('cert-pending-count-badge');
+  if (!panel || !tbody) return;
+
+  const list = window.allPendingCertificates || [];
+  if (list.length === 0) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = 'block';
+  if (badge) badge.textContent = `${list.length} pendente${list.length > 1 ? 's' : ''}`;
+
+  const canUpload = currentUser && (currentUser.role === 'tecnico' || currentUser.role === 'admin');
+  tbody.innerHTML = list.map(p => `
+    <tr>
+      <td><span class="tag-badge tag-blue" style="font-size:10.5px;">${escapeHTML(formatCertEntityType(p.entity_type))}</span></td>
+      <td><strong style="color:#F8FAFC;">${escapeHTML(p.entity_label)}</strong></td>
+      <td><code style="color:#C4B5FD;">${escapeHTML(p.suggested_number || '-')}</code><div style="font-size:11px; color:#94A3B8;">${escapeHTML(p.suggested_issuer || '')}</div></td>
+      <td style="font-family:monospace; color:#CBD5E1;">${formatDateBR(p.suggested_valid_until)}</td>
+      <td style="text-align:center;"><span class="badge-status" style="background:rgba(139,92,246,0.16); color:#C4B5FD; border:1px solid rgba(139,92,246,0.4); font-size:10.5px;">PENDENTE</span></td>
+      <td style="text-align:right;">
+        ${canUpload ? `<button type="button" class="btn-action-entry" style="height:28px; padding:0 10px; font-size:11px;" onclick="openUploadCertificateModal({ entity_type: '${escapeHTML(p.entity_type)}', entity_id: '${escapeHTML(p.entity_id)}', document_number: '${escapeHTML(p.suggested_number || '')}', issuer: '${escapeHTML(p.suggested_issuer || '')}', issued_at: '${escapeHTML(p.suggested_issued_at || '')}', valid_until: '${escapeHTML(p.suggested_valid_until || '')}' })">Anexar PDF</button>` : '<span style="font-size:11px; color:#64748B;">Somente RT/Admin</span>'}
+      </td>
+    </tr>
+  `).join('');
+}
+
+function renderCertificatesTable() {
+  const tbody = document.getElementById('certificates-table-body');
+  if (!tbody) return;
+  const entityF = document.getElementById('filter-cert-entity') ? document.getElementById('filter-cert-entity').value : 'ALL';
+  const statusF = document.getElementById('filter-cert-status') ? document.getElementById('filter-cert-status').value : 'ALL';
+  const q = document.getElementById('filter-cert-search') ? document.getElementById('filter-cert-search').value.trim().toLowerCase() : '';
+
+  const filtered = (window.allCertificatesData || []).filter(c => {
+    if (entityF !== 'ALL' && c.entity_type !== entityF) return false;
+    if (statusF !== 'ALL' && c.status !== statusF) return false;
+    if (q) {
+      const hay = `${c.id} ${c.entity_label} ${c.document_number} ${c.issuer} ${c.original_filename} ${c.sha256_hash}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#94A3B8; padding:28px; font-size:13px;">Nenhum certificado PDF encontrado para os filtros selecionados.</td></tr>';
+    return;
+  }
+
+  const canManage = currentUser && (currentUser.role === 'tecnico' || currentUser.role === 'admin');
+  tbody.innerHTML = filtered.map(c => {
+    const st = getCertStatusStyle(c.status);
+    const daysMsg = c.status === 'VENCIDO'
+      ? `Vencido há ${Math.abs(c.days_remaining)}d`
+      : `${c.days_remaining}d restantes`;
+    const shortHash = c.sha256_hash ? c.sha256_hash.substring(0, 16) + '...' : '-';
+    const safeTitle = escapeHTML(`${c.document_number} — ${c.entity_label}`);
+    return `
+      <tr>
+        <td>
+          <span class="tag-badge tag-blue" style="font-size:10px; margin-bottom:3px; display:inline-block;">${escapeHTML(formatCertEntityType(c.entity_type))}</span>
+          <div style="font-weight:700; color:#F8FAFC; font-size:12.5px;">${escapeHTML(c.entity_label)}</div>
+        </td>
+        <td>
+          <strong style="color:#C4B5FD; font-family:monospace;">${escapeHTML(c.document_number)}</strong>
+          <div style="font-size:11px; color:#94A3B8;">${escapeHTML(c.original_filename)} (${formatBytesHuman(c.file_size_bytes)})</div>
+        </td>
+        <td style="color:#E2E8F0; font-size:12px;">${escapeHTML(c.issuer)}</td>
+        <td style="font-family:monospace; font-size:11.5px;">
+          <div style="color:#94A3B8;">Emissão: ${formatDateBR(c.issued_at)}</div>
+          <div style="color:#F8FAFC; font-weight:700;">Validade: ${formatDateBR(c.valid_until)}</div>
+          <div style="font-size:10.5px; color:${st.color};">${daysMsg}</div>
+        </td>
+        <td style="text-align:center;">
+          <span style="display:inline-block; padding:3px 9px; border-radius:5px; font-size:11px; font-weight:700; background:${st.bg}; color:${st.color}; border:1px solid ${st.border}; white-space:nowrap;">${st.label}</span>
+        </td>
+        <td>
+          <span style="display:inline-block; padding:2px 7px; border-radius:4px; font-size:10.5px; font-weight:700; background:rgba(56,189,248,0.14); color:#38BDF8; border:1px solid rgba(56,189,248,0.35);">v${c.current_version} (${c.versions_count} reg.)</span>
+          <div style="margin-top:4px;">
+            <code title="${escapeHTML(c.sha256_hash)}" onclick="copyTextToClipboard('${escapeHTML(c.sha256_hash)}', 'Hash SHA-256')" style="font-size:10.5px; color:#6EE7B7; background:rgba(16,185,129,0.08); padding:2px 6px; border-radius:4px; cursor:pointer;">${shortHash}</code>
+          </div>
+        </td>
+        <td style="font-size:11.5px;">
+          <div style="color:#F1F5F9; font-weight:600;">${escapeHTML(c.uploaded_by_name || c.uploaded_by)}</div>
+          <div style="color:#94A3B8; font-family:monospace; font-size:10.5px;">${formatBrasiliaDateTime(c.uploaded_at)}</div>
+        </td>
+        <td style="text-align:right; white-space:nowrap;">
+          <div style="display:inline-flex; gap:5px; flex-wrap:wrap; justify-content:flex-end;">
+            <button type="button" class="btn-action-secondary" style="padding:4px 8px; font-size:11px; color:#38BDF8; border-color:rgba(56,189,248,0.4);" onclick="openCertificateViewerModal('${escapeHTML(c.id)}', ${c.current_version}, '${safeTitle}', '${escapeHTML(c.sha256_hash)}')">Visualizar</button>
+            <a href="/api/pharma/certificates/file?id=${encodeURIComponent(c.id)}&version=${c.current_version}&mode=download" class="btn-action-secondary" style="padding:4px 8px; font-size:11px; text-decoration:none;">Baixar</a>
+            <button type="button" class="btn-action-secondary" style="padding:4px 8px; font-size:11px;" onclick="openCertificateHistoryModal('${escapeHTML(c.id)}')">Histórico</button>
+            ${canManage ? `<button type="button" class="btn-action-secondary" style="padding:4px 8px; font-size:11px; color:#FBBF24; border-color:rgba(245,158,11,0.4);" onclick="openReplaceCertificateModal('${escapeHTML(c.id)}')">Substituir</button>` : ''}
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function copyTextToClipboard(text, label) {
+  if (!text) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => showToast(`${label || 'Texto'} copiado!`, 'success')).catch(() => {});
+  }
+}
+
+async function openUploadCertificateModal(prefill) {
+  const m = document.getElementById('modal-cert-upload');
+  if (!m) return;
+  const f = document.getElementById('form-cert-upload');
+  if (f) f.reset();
+
+  document.getElementById('cert-upload-mode').value = 'create';
+  document.getElementById('cert-replace-id').value = '';
+  document.getElementById('modal-cert-upload-title').textContent = 'Enviar Certificado do Órgão Regulador (PDF)';
+  document.getElementById('btn-submit-cert-upload').textContent = 'Validar e Salvar Certificado PDF';
+  document.getElementById('cert-entity-selector-block').style.display = 'block';
+  document.getElementById('cert-replace-banner').style.display = 'none';
+  document.getElementById('cert-replace-reason-group').style.display = 'none';
+  document.getElementById('cert-replace-reason').required = false;
+
+  setupSignatureField('cert-resp-name', 'cert-password');
+  const prev = document.getElementById('cert-file-preview');
+  if (prev) {
+    prev.style.color = '#94A3B8';
+    prev.textContent = 'Validação rigorosa no servidor: extensão .pdf, MIME application/pdf, cabeçalho %PDF-, marcador %%EOF e hash SHA-256.';
+  }
+
+  // Garante listas carregadas para o seletor
+  if (!window.allMetrologySensors || window.allMetrologySensors.length === 0) {
+    try { const r = await fetch('/api/pharma/sensors'); if (r.ok) window.allMetrologySensors = await r.json(); } catch (e) {}
+  }
+  if (!chambersData || chambersData.length === 0) {
+    try { const r = await fetch('/api/pharma/chambers'); if (r.ok) chambersData = await r.json(); } catch (e) {}
+  }
+  if (!window.allPharmaProducts || window.allPharmaProducts.length === 0) {
+    try { const r = await fetch('/api/pharma/products'); if (r.ok) window.allPharmaProducts = await r.json(); } catch (e) {}
+  }
+
+  const entTypeEl = document.getElementById('cert-entity-type');
+  entTypeEl.value = (prefill && prefill.entity_type) ? prefill.entity_type : 'SENSOR';
+  onCertEntityTypeChange(prefill ? prefill.entity_id : null);
+
+  const today = new Date().toISOString().split('T')[0];
+  const nextYear = new Date();
+  nextYear.setFullYear(nextYear.getFullYear() + 1);
+  document.getElementById('cert-issued-at').value = (prefill && prefill.issued_at) ? prefill.issued_at : today;
+  document.getElementById('cert-valid-until').value = (prefill && prefill.valid_until) ? prefill.valid_until : nextYear.toISOString().split('T')[0];
+  if (prefill && prefill.document_number) document.getElementById('cert-doc-number').value = prefill.document_number;
+  if (prefill && prefill.issuer) document.getElementById('cert-issuer').value = prefill.issuer;
+
+  m.classList.add('active');
+}
+
+function openReplaceCertificateModal(certId) {
+  const cert = (window.allCertificatesData || []).find(c => c.id === certId);
+  if (!cert) return;
+  const m = document.getElementById('modal-cert-upload');
+  if (!m) return;
+  const f = document.getElementById('form-cert-upload');
+  if (f) f.reset();
+
+  document.getElementById('cert-upload-mode').value = 'replace';
+  document.getElementById('cert-replace-id').value = cert.id;
+  document.getElementById('modal-cert-upload-title').textContent = `Substituir Certificado (v${cert.current_version} → v${cert.current_version + 1}) — ${cert.entity_label}`;
+  document.getElementById('btn-submit-cert-upload').textContent = `Salvar Nova Versão (v${cert.current_version + 1})`;
+  document.getElementById('cert-entity-selector-block').style.display = 'none';
+  document.getElementById('cert-replace-banner').style.display = 'block';
+  document.getElementById('cert-replace-reason-group').style.display = 'block';
+  document.getElementById('cert-replace-reason').required = true;
+
+  document.getElementById('cert-doc-number').value = cert.document_number || '';
+  document.getElementById('cert-issuer').value = cert.issuer || '';
+  document.getElementById('cert-issued-at').value = new Date().toISOString().split('T')[0];
+  const nextYear = new Date();
+  nextYear.setFullYear(nextYear.getFullYear() + 1);
+  document.getElementById('cert-valid-until').value = nextYear.toISOString().split('T')[0];
+  document.getElementById('cert-notes').value = cert.notes || '';
+
+  setupSignatureField('cert-resp-name', 'cert-password');
+  m.classList.add('active');
+}
+
+function closeUploadCertificateModal() {
+  const m = document.getElementById('modal-cert-upload');
+  if (m) m.classList.remove('active');
+}
+
+function onCertEntityTypeChange(preselectedEntityId) {
+  const type = document.getElementById('cert-entity-type').value;
+  const selectWrap = document.getElementById('cert-entity-select-wrap');
+  const facWrap = document.getElementById('cert-entity-facility-wrap');
+  const sel = document.getElementById('cert-entity-id-select');
+
+  if (type === 'FACILITY') {
+    selectWrap.style.display = 'none';
+    facWrap.style.display = 'block';
+    document.getElementById('cert-issuer').value = document.getElementById('cert-issuer').value || 'ANVISA / Vigilância Sanitária (VISA)';
+    return;
+  }
+
+  selectWrap.style.display = 'block';
+  facWrap.style.display = 'none';
+  sel.innerHTML = '';
+
+  let items = [];
+  if (type === 'SENSOR') {
+    items = (window.allMetrologySensors || []).map(s => ({ id: s.id, label: `${s.id} — ${s.chamber_id} (${s.thermal_position})`, doc: s.cert_number, issuer: s.calibrated_by, valid: s.calib_valid_until }));
+  } else if (type === 'CHAMBER') {
+    items = (chambersData || []).map(c => ({ id: c.id, label: `${c.id} — ${c.name}`, doc: 'QUAL-DQ/IQ/OQ/PQ-' + c.id, issuer: 'Engenharia Clínica / Validação Térmica', valid: c.qualification_valid_until }));
+  } else if (type === 'PRODUCT') {
+    items = (window.allPharmaProducts || []).map(p => ({ id: String(p.id), label: `${p.trade_name} (ANVISA: ${p.anvisa_reg})`, doc: p.anvisa_reg, issuer: 'ANVISA — Agência Nacional de Vigilância Sanitária', valid: '' }));
+  }
+
+  if (items.length === 0) {
+    sel.innerHTML = '<option value="">Nenhum item ativo cadastrado nesta categoria</option>';
+    return;
+  }
+  items.forEach(it => {
+    const opt = document.createElement('option');
+    opt.value = it.id;
+    opt.textContent = it.label;
+    opt.dataset.doc = it.doc || '';
+    opt.dataset.issuer = it.issuer || '';
+    opt.dataset.valid = it.valid || '';
+    if (preselectedEntityId && String(it.id) === String(preselectedEntityId)) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  if (!preselectedEntityId) onCertEntityItemChange();
+}
+
+function onCertEntityItemChange() {
+  const sel = document.getElementById('cert-entity-id-select');
+  if (!sel || sel.selectedIndex < 0) return;
+  const opt = sel.options[sel.selectedIndex];
+  if (!opt) return;
+  if (opt.dataset.doc) document.getElementById('cert-doc-number').value = opt.dataset.doc;
+  if (opt.dataset.issuer) document.getElementById('cert-issuer').value = opt.dataset.issuer;
+  if (opt.dataset.valid) document.getElementById('cert-valid-until').value = opt.dataset.valid;
+}
+
+async function submitCertificateUpload() {
+  const mode = document.getElementById('cert-upload-mode').value;
+  const fileInput = document.getElementById('cert-file-input');
+  const file = fileInput && fileInput.files && fileInput.files[0];
+  if (!validatePDFClientSide(file)) return;
+
+  const pwd = document.getElementById('cert-password').value;
+  if (!pwd) {
+    showToast('Assinatura digital obrigatória (Chave Criptográfica Pessoal ou Pen Drive USB).', 'info');
+    return;
+  }
+
+  const btn = document.getElementById('btn-submit-cert-upload');
+  if (btn) { btn.disabled = true; btn.textContent = 'Validando PDF & SHA-256...'; }
+
+  try {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    fd.append('document_number', document.getElementById('cert-doc-number').value.trim());
+    fd.append('issuer', document.getElementById('cert-issuer').value.trim());
+    fd.append('issued_at', document.getElementById('cert-issued-at').value);
+    fd.append('valid_until', document.getElementById('cert-valid-until').value);
+    fd.append('notes', document.getElementById('cert-notes').value.trim());
+    fd.append('password', pwd);
+
+    let url = '/api/pharma/certificates';
+    if (mode === 'replace') {
+      url = '/api/pharma/certificates/replace';
+      fd.append('certificate_id', document.getElementById('cert-replace-id').value);
+      fd.append('replace_reason', document.getElementById('cert-replace-reason').value.trim());
+    } else {
+      const entType = document.getElementById('cert-entity-type').value;
+      fd.append('entity_type', entType);
+      if (entType === 'FACILITY') {
+        const facName = document.getElementById('cert-entity-facility-name').value.trim();
+        if (!facName) {
+          showToast('Informe a identificação da licença / unidade.', 'error');
+          return;
+        }
+        fd.append('entity_id', 'FAC-' + Date.now());
+        fd.append('entity_label', facName);
+      } else {
+        const entId = document.getElementById('cert-entity-id-select').value;
+        if (!entId) {
+          showToast('Selecione o item vinculado ao certificado.', 'error');
+          return;
+        }
+        fd.append('entity_id', entId);
+      }
+    }
+
+    const res = await fetch(url, { method: 'POST', body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast('Falha na validação do certificado: ' + (data.error || 'Erro desconhecido'), 'error');
+      return;
+    }
+
+    showToast(mode === 'replace' ? 'Nova versão do certificado salva com histórico preservado!' : 'Certificado PDF validado e salvo com integridade SHA-256!', 'success');
+    closeUploadCertificateModal();
+    loadCertificates();
+    loadMetrology();
+    loadChambers(false);
+    loadProducts();
+    loadKPIs();
+  } catch (e) {
+    showToast('Erro de conexão ao enviar certificado PDF.', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = mode === 'replace' ? 'Salvar Nova Versão' : 'Validar e Salvar Certificado PDF';
+    }
+  }
+}
+
+function openCertificateViewerModal(certId, version, title, sha256) {
+  const m = document.getElementById('modal-cert-viewer');
+  const iframe = document.getElementById('cert-viewer-iframe');
+  const titleEl = document.getElementById('cert-viewer-title');
+  const metaEl = document.getElementById('cert-viewer-meta');
+  const dlLink = document.getElementById('cert-viewer-download-link');
+  if (!m || !iframe) return;
+
+  const vQuery = version ? `&version=${encodeURIComponent(version)}` : '';
+  const inlineUrl = `/api/pharma/certificates/file?id=${encodeURIComponent(certId)}${vQuery}&mode=inline`;
+  const downloadUrl = `/api/pharma/certificates/file?id=${encodeURIComponent(certId)}${vQuery}&mode=download`;
+
+  if (titleEl) titleEl.textContent = title || `Certificado ${certId}`;
+  if (metaEl) metaEl.textContent = `ID: ${certId} • Versão: v${version || 1} • SHA-256: ${sha256 || 'Verificado no servidor'}`;
+  if (dlLink) dlLink.href = downloadUrl;
+  iframe.src = inlineUrl;
+  m.classList.add('active');
+}
+
+function closeCertificateViewerModal() {
+  const m = document.getElementById('modal-cert-viewer');
+  const iframe = document.getElementById('cert-viewer-iframe');
+  if (iframe) iframe.src = 'about:blank';
+  if (m) m.classList.remove('active');
+}
+
+async function openCertificateHistoryModal(certId) {
+  const m = document.getElementById('modal-cert-history');
+  const body = document.getElementById('cert-history-body');
+  const title = document.getElementById('cert-history-title');
+  if (!m || !body) return;
+  body.innerHTML = '<div style="text-align:center; padding:24px; color:#94A3B8;">Carregando trilha imutável de versões...</div>';
+  m.classList.add('active');
+
+  try {
+    const res = await fetch(`/api/pharma/certificates/versions?id=${encodeURIComponent(certId)}`);
+    const data = await res.json();
+    if (!res.ok) {
+      body.innerHTML = `<div style="color:#F87171; padding:16px;">${escapeHTML(data.error || 'Erro ao carregar histórico.')}</div>`;
+      return;
+    }
+    const cert = data.certificate;
+    const versions = data.versions || [];
+    if (title && cert) title.textContent = `Histórico Imutável — ${cert.document_number} (${cert.entity_label})`;
+
+    body.innerHTML = versions.map(v => `
+      <div style="background:${v.is_current ? 'rgba(16, 185, 129, 0.08)' : 'rgba(15, 23, 42, 0.65)'}; border:1px solid ${v.is_current ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255, 255, 255, 0.08)'}; border-radius:8px; padding:12px 14px; margin-bottom:10px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-family:monospace; font-weight:800; color:#38BDF8;">v${v.version_number}</span>
+            <strong style="color:#F8FAFC; font-size:13px;">${escapeHTML(v.original_filename)}</strong>
+            <span style="font-size:11px; color:#94A3B8;">(${formatBytesHuman(v.file_size_bytes)})</span>
+            ${v.is_current ? '<span class="badge-status liberado" style="font-size:10px;">VERSÃO ATIVA</span>' : '<span class="badge-status" style="background:rgba(148,163,184,0.12); color:#94A3B8; font-size:10px;">ARQUIVADA (AUDITORIA)</span>'}
+          </div>
+          <div style="display:flex; gap:6px;">
+            <button type="button" class="btn-action-secondary" style="padding:3px 9px; font-size:11px; color:#38BDF8;" onclick="openCertificateViewerModal('${escapeHTML(v.certificate_id)}', ${v.version_number}, '${escapeHTML(v.document_number)} (v${v.version_number})', '${escapeHTML(v.sha256_hash)}')">Visualizar</button>
+            <a href="/api/pharma/certificates/file?id=${encodeURIComponent(v.certificate_id)}&version=${v.version_number}&mode=download" class="btn-action-secondary" style="padding:3px 9px; font-size:11px; text-decoration:none;">Baixar</a>
+          </div>
+        </div>
+        <div style="font-size:11.5px; color:#CBD5E1; display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+          <div>Nº Doc: <strong>${escapeHTML(v.document_number)}</strong> | Emissor: ${escapeHTML(v.issuer)}</div>
+          <div>Vigência: <strong>${formatDateBR(v.issued_at)}</strong> a <strong>${formatDateBR(v.valid_until)}</strong></div>
+          <div>Enviado por: <strong>${escapeHTML(v.uploaded_by_name)}</strong> em ${formatBrasiliaDateTime(v.uploaded_at)}</div>
+          <div>SHA-256: <code style="color:#6EE7B7; font-size:10.5px;">${escapeHTML(v.sha256_hash.substring(0, 24))}...</code></div>
+        </div>
+        ${v.replace_reason ? `<div style="margin-top:6px; font-size:11.5px; color:#FDE68A;">Motivo da substituição: ${escapeHTML(v.replace_reason)}</div>` : ''}
+      </div>
+    `).join('');
+  } catch (e) {
+    body.innerHTML = '<div style="color:#F87171; padding:16px;">Erro de comunicação ao buscar versões do certificado.</div>';
+  }
+}
+
+function closeCertificateHistoryModal() {
+  const m = document.getElementById('modal-cert-history');
+  if (m) m.classList.remove('active');
+}
+
+
+// =============================================================================
+// AGENTE LOCAL USB (127.0.0.1:5177) — PROVISIONAMENTO & LOGIN PLUG-AND-PLAY
+// =============================================================================
+window.usbAgentState = {
+  ws: null,
+  connected: false,
+  drives: [],
+  pendingRPCs: new Map(),
+  reconnectTimer: null,
+  authInFlight: false,
+  lastAuthError: ''
+};
+window.usbSuppressAutoLoginUntilInsert = false;
+
+function initUSBAgentClient() {
+  connectUSBAgentWS();
+}
+
+function reconnectUSBAgent(manualClick) {
+  window.usbAgentState.lastAuthError = '';
+  if (window.usbAgentState.ws) {
+    try { window.usbAgentState.ws.close(); } catch (e) {}
+    window.usbAgentState.ws = null;
+  }
+  connectUSBAgentWS(manualClick);
+}
+
+function connectUSBAgentWS(manualClick) {
+  if (window.usbAgentState.reconnectTimer) {
+    clearTimeout(window.usbAgentState.reconnectTimer);
+    window.usbAgentState.reconnectTimer = null;
+  }
+  try {
+    const ws = new WebSocket('ws://127.0.0.1:5177/ws');
+    window.usbAgentState.ws = ws;
+
+    ws.onopen = () => {
+      window.usbAgentState.connected = true;
+      window.usbAgentState.lastAuthError = '';
+      renderUSBLoginPanel();
+      if (manualClick) {
+        usbAgentRPC('list_drives', {}).then(r => {
+          if (r && r.ok) {
+            window.usbAgentState.drives = r.drives || [];
+            renderUSBLoginPanel();
+          }
+        }).catch(() => {});
+      }
+    };
+
+    ws.onmessage = (ev) => {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+
+      if (msg.type === 'rpc_response' && msg.req_id && window.usbAgentState.pendingRPCs.has(msg.req_id)) {
+        const entry = window.usbAgentState.pendingRPCs.get(msg.req_id);
+        window.usbAgentState.pendingRPCs.delete(msg.req_id);
+        clearTimeout(entry.timer);
+        entry.resolve(msg);
+        return;
+      }
+
+      if (msg.type === 'drives_snapshot') {
+        window.usbAgentState.drives = msg.drives || [];
+        renderUSBLoginPanel();
+        syncProvisionSelectsIfOpen();
+        // Na abertura inicial da tela de login, se houver exatamente 1 pen drive válido e não acabamos de fazer logout
+        if (!currentUser && !window.usbSuppressAutoLoginUntilInsert) {
+          const validDrives = window.usbAgentState.drives.filter(d => d.key_status === 'VALID_FILE' && d.key_binding_match);
+          if (validDrives.length === 1 && window.usbAgentState.drives.length === 1) {
+            attemptUSBLoginWithDrive(validDrives[0], true);
+          }
+        }
+        return;
+      }
+
+      if (msg.type === 'drive_inserted') {
+        window.usbAgentState.drives = msg.drives || [];
+        window.usbAgentState.lastAuthError = '';
+        window.usbSuppressAutoLoginUntilInsert = false;
+        syncProvisionSelectsIfOpen();
+        renderUSBLoginPanel();
+
+        if (!currentUser) {
+          // Fecha splash se ainda estiver rodando para responder instantaneamente ao pen drive
+          if (typeof finishBootSplash === 'function') finishBootSplash();
+          const inserted = msg.drive;
+          const validDrives = window.usbAgentState.drives.filter(d => d.key_status === 'VALID_FILE' && d.key_binding_match);
+          if (validDrives.length > 1) {
+            showToast(`${validDrives.length} pen drives com chave detectados. Selecione qual credencial deseja usar.`, 'info');
+            renderUSBLoginPanel();
+          } else if (inserted && inserted.key_status === 'VALID_FILE' && inserted.key_binding_match) {
+            attemptUSBLoginWithDrive(inserted, true);
+          } else if (inserted) {
+            handleInvalidInsertedDriveMessage(inserted);
+          }
+        }
+        return;
+      }
+
+      if (msg.type === 'drive_removed') {
+        window.usbAgentState.drives = msg.drives || [];
+        window.usbAgentState.lastAuthError = '';
+        syncProvisionSelectsIfOpen();
+        renderUSBLoginPanel();
+      }
+    };
+
+    ws.onclose = () => {
+      window.usbAgentState.connected = false;
+      window.usbAgentState.ws = null;
+      // Rejeita RPCs pendentes
+      window.usbAgentState.pendingRPCs.forEach(entry => {
+        clearTimeout(entry.timer);
+        entry.reject(new Error('Conexão com agente local USB encerrada.'));
+      });
+      window.usbAgentState.pendingRPCs.clear();
+      renderUSBLoginPanel();
+      window.usbAgentState.reconnectTimer = setTimeout(() => connectUSBAgentWS(false), 3500);
+    };
+
+    ws.onerror = () => {
+      // onclose cuidará da reconexão silenciosa
+    };
+  } catch (e) {
+    window.usbAgentState.connected = false;
+    renderUSBLoginPanel();
+    window.usbAgentState.reconnectTimer = setTimeout(() => connectUSBAgentWS(false), 4000);
+  }
+}
+
+function usbAgentRPC(action, params = {}, timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    const ws = window.usbAgentState.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      reject(new Error('Agente local USB (127.0.0.1:5177) não está conectado.'));
+      return;
+    }
+    const reqId = 'req_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    const timer = setTimeout(() => {
+      window.usbAgentState.pendingRPCs.delete(reqId);
+      reject(new Error('Tempo esgotado na comunicação com o agente local USB.'));
+    }, timeoutMs);
+    window.usbAgentState.pendingRPCs.set(reqId, { resolve, reject, timer });
+    ws.send(JSON.stringify(Object.assign({ req_id: reqId, action }, params)));
+  });
+}
+
+function handleInvalidInsertedDriveMessage(drive) {
+  let msg = '';
+  if (drive.key_status === 'NO_KEY') {
+    msg = `Pen drive '${drive.label}' (${drive.id}) conectado, mas não possui chave ColdChain (.coldchain/credential.cckey).`;
+  } else if (drive.key_status === 'CORRUPTED') {
+    msg = `Pen drive '${drive.label}' (${drive.id}): arquivo de chave corrompido ou adulterado.`;
+  } else if (drive.key_status === 'BINDING_MISMATCH') {
+    msg = `BLOQUEADO: a chave no pen drive '${drive.label}' (${drive.id}) não corresponde ao serial físico original (possível clonagem).`;
+  } else if (drive.key_status === 'PERMISSION_DENIED') {
+    msg = `Erro de permissão de leitura no pen drive '${drive.label}' (${drive.id}).`;
+  }
+  if (msg) {
+    window.usbAgentState.lastAuthError = msg;
+    renderUSBLoginPanel();
+    showToast(msg, 'error');
+  }
+}
+
+function renderUSBLoginPanel() {
+  const dot = document.getElementById('usb-login-agent-dot');
+  const statusBox = document.getElementById('usb-login-status-box');
+  const drivesList = document.getElementById('usb-login-drives-list');
+  if (!statusBox) return;
+
+  if (!window.usbAgentState.connected) {
+    if (dot) dot.style.background = '#F59E0B';
+    statusBox.style.borderColor = 'rgba(245, 158, 11, 0.35)';
+    statusBox.style.color = '#FCD34D';
+    statusBox.innerHTML = 'Agente USB local desconectado (<code>127.0.0.1:5177</code>). Execute <code>coldchain-usb-agent</code> nesta máquina para habilitar o login automático ao espetar o pen drive.';
+    if (drivesList) { drivesList.style.display = 'none'; drivesList.innerHTML = ''; }
+    return;
+  }
+
+  if (dot) dot.style.background = '#10B981';
+  const drives = window.usbAgentState.drives || [];
+
+  if (window.usbAgentState.authInFlight) {
+    statusBox.style.borderColor = 'rgba(56, 189, 248, 0.5)';
+    statusBox.style.color = '#38BDF8';
+    statusBox.innerHTML = 'Validando assinatura criptográfica Ed25519 do pen drive com o servidor...';
+  } else if (window.usbAgentState.lastAuthError) {
+    statusBox.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+    statusBox.style.color = '#FCA5A5';
+    statusBox.innerHTML = `<strong>Falha na autenticação USB:</strong> ${escapeHTML(window.usbAgentState.lastAuthError)}`;
+  } else if (drives.length === 0) {
+    statusBox.style.borderColor = 'rgba(16, 185, 129, 0.35)';
+    statusBox.style.color = '#A7F3D0';
+    statusBox.innerHTML = 'Agente USB ativo — <strong>espete seu pen drive criptográfico</strong> para entrar automaticamente sem digitar a chave.';
+  } else {
+    const validDrives = drives.filter(d => d.key_status === 'VALID_FILE' && d.key_binding_match);
+    if (validDrives.length > 1) {
+      statusBox.style.borderColor = 'rgba(56, 189, 248, 0.45)';
+      statusBox.style.color = '#BAE6FD';
+      statusBox.innerHTML = `<strong>${validDrives.length} pen drives com credencial detectados simultaneamente.</strong> Selecione abaixo qual deseja autenticar:`;
+    } else if (validDrives.length === 1) {
+      statusBox.style.borderColor = 'rgba(16, 185, 129, 0.45)';
+      statusBox.style.color = '#6EE7B7';
+      statusBox.innerHTML = `Pen drive com chave de <strong>${escapeHTML(validDrives[0].key_username)}</strong> detectado. Clique abaixo para autenticar ou reconecte para login automático:`;
+    } else {
+      statusBox.style.borderColor = 'rgba(245, 158, 11, 0.45)';
+      statusBox.style.color = '#FDE68A';
+      statusBox.innerHTML = `${drives.length} pen drive(s) USB detectado(s), porém nenhum contém uma credencial ColdChain válida para este hardware.`;
+    }
+  }
+
+  if (drivesList) {
+    if (drives.length === 0) {
+      drivesList.style.display = 'none';
+      drivesList.innerHTML = '';
+    } else {
+      drivesList.style.display = 'flex';
+      drivesList.innerHTML = drives.map(d => {
+        const isReady = d.key_status === 'VALID_FILE' && d.key_binding_match;
+        let detailText = '';
+        let badgeHtml = '';
+        if (isReady) {
+          detailText = `Usuário: <strong>${escapeHTML(d.key_username)}</strong> • Serial: ${escapeHTML(d.serial_masked)}`;
+          badgeHtml = `<button type="button" onclick="attemptUSBLoginById('${escapeHTML(d.id)}')" style="background:#059669; border:1px solid #10B981; color:#FFFFFF; font-size:11px; font-weight:700; padding:5px 10px; border-radius:6px; cursor:pointer; white-space:nowrap;">Entrar com USB</button>`;
+        } else if (d.key_status === 'NO_KEY') {
+          detailText = 'Sem arquivo de chave (.coldchain/credential.cckey)';
+          badgeHtml = '<span style="font-size:10px; color:#FBBF24; font-weight:700;">SEM CHAVE</span>';
+        } else if (d.key_status === 'BINDING_MISMATCH') {
+          detailText = 'Serial físico divergente (possível clonagem bloqueada)';
+          badgeHtml = '<span style="font-size:10px; color:#F87171; font-weight:700;">CLONAGEM</span>';
+        } else if (d.key_status === 'CORRUPTED') {
+          detailText = 'Arquivo de chave corrompido ou adulterado';
+          badgeHtml = '<span style="font-size:10px; color:#F87171; font-weight:700;">CORROMPIDO</span>';
+        } else {
+          detailText = escapeHTML(d.key_error || 'Falha de leitura/permissão');
+          badgeHtml = '<span style="font-size:10px; color:#F87171; font-weight:700;">ERRO I/O</span>';
+        }
+        return `
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; background:rgba(15,23,42,0.85); border:1px solid ${isReady ? 'rgba(16,185,129,0.4)' : 'rgba(148,163,184,0.2)'}; border-radius:7px; padding:8px 10px;">
+            <div style="min-width:0;">
+              <div style="font-size:12px; font-weight:700; color:#F8FAFC;">${escapeHTML(d.label)} <span style="color:#38BDF8; font-family:monospace;">(${escapeHTML(d.id)})</span></div>
+              <div style="font-size:10.5px; color:#94A3B8; margin-top:2px;">${detailText}</div>
+            </div>
+            ${badgeHtml}
+          </div>
+        `;
+      }).join('');
+    }
+  }
+}
+
+function attemptUSBLoginById(driveId) {
+  const d = (window.usbAgentState.drives || []).find(x => x.id === driveId);
+  if (d) attemptUSBLoginWithDrive(d, false);
+}
+
+async function attemptUSBLoginWithDrive(drive, isAuto) {
+  if (!drive || window.usbAgentState.authInFlight || currentUser) return;
+  if (drive.key_status !== 'VALID_FILE' || !drive.key_binding_match) {
+    handleInvalidInsertedDriveMessage(drive);
+    return;
+  }
+
+  window.usbAgentState.authInFlight = true;
+  window.usbAgentState.lastAuthError = '';
+  renderUSBLoginPanel();
+
+  try {
+    // 1. Solicita desafio criptográfico de uso único ao servidor
+    const chRes = await fetch('/api/auth/usb/challenge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key_id: drive.key_id, purpose: 'LOGIN' })
+    });
+    const chData = await chRes.json().catch(() => ({}));
+    if (!chRes.ok) {
+      window.usbAgentState.lastAuthError = chData.error || 'Chave USB recusada pelo servidor.';
+      showToast(window.usbAgentState.lastAuthError, 'error');
+      return;
+    }
+
+    // 2. Agente local assina o desafio com a chave Ed25519 do pen drive (chave privada nunca sai do agente)
+    const signResp = await usbAgentRPC('sign_challenge', {
+      drive_id: drive.id,
+      challenge_id: chData.challenge_id,
+      nonce_b64: chData.nonce_b64,
+      purpose: 'LOGIN'
+    });
+    if (!signResp || !signResp.ok) {
+      window.usbAgentState.lastAuthError = (signResp && signResp.error) || 'Falha ao assinar desafio no pen drive.';
+      showToast(window.usbAgentState.lastAuthError, 'error');
+      return;
+    }
+
+    // 3. Envia assinatura Ed25519 + hash de vínculo ao servidor para autenticação final
+    const loginRes = await fetch('/api/auth/usb/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        challenge_id: chData.challenge_id,
+        key_id: signResp.key_id,
+        signature_b64: signResp.signature_b64,
+        device_binding_hash: signResp.device_binding_hash
+      })
+    });
+    const loginData = await loginRes.json().catch(() => ({}));
+    if (!loginRes.ok) {
+      window.usbAgentState.lastAuthError = loginData.error || 'Falha na autenticação criptográfica USB.';
+      showToast(window.usbAgentState.lastAuthError, 'error');
+      return;
+    }
+
+    currentUser = loginData.user;
+    showApp();
+    showToast(`Autenticação automática via Pen Drive USB concluída (${currentUser.name})!`, 'success');
+  } catch (e) {
+    window.usbAgentState.lastAuthError = e.message || 'Erro de comunicação durante autenticação USB.';
+    if (!isAuto) showToast(window.usbAgentState.lastAuthError, 'error');
+  } finally {
+    window.usbAgentState.authInFlight = false;
+    renderUSBLoginPanel();
+  }
+}
+
+// =============================================================================
+// ASSINATURA 21 CFR PART 11 VIA PEN DRIVE USB EM MODAIS REGULATÓRIOS
+// =============================================================================
+async function signFieldWithUSB(targetInputId, btnEl) {
+  if (!currentUser) {
+    showToast('Sessão não autenticada.', 'error');
+    return;
+  }
+  if (!window.usbAgentState.connected) {
+    showToast('Agente USB local (127.0.0.1:5177) não está conectado nesta máquina.', 'error');
+    return;
+  }
+  const origText = btnEl ? btnEl.textContent : '';
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = 'Assinando...'; }
+  try {
+    const listResp = await usbAgentRPC('list_drives', {});
+    const drives = (listResp && listResp.drives) ? listResp.drives : [];
+    const matching = drives.filter(d =>
+      d.key_status === 'VALID_FILE' &&
+      d.key_binding_match &&
+      String(d.key_username || '').toLowerCase() === String(currentUser.username || '').toLowerCase()
+    );
+    if (matching.length === 0) {
+      showToast(`Nenhum pen drive USB válido pertencente a '${currentUser.username}' foi encontrado conectado.`, 'error');
+      return;
+    }
+    const drive = matching[0];
+    const chRes = await fetch('/api/auth/usb/challenge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key_id: drive.key_id, purpose: 'SIGN_ACTION' })
+    });
+    const chData = await chRes.json().catch(() => ({}));
+    if (!chRes.ok) {
+      showToast(chData.error || 'Chave USB não autorizada para assinatura.', 'error');
+      return;
+    }
+    const signResp = await usbAgentRPC('sign_challenge', {
+      drive_id: drive.id,
+      challenge_id: chData.challenge_id,
+      nonce_b64: chData.nonce_b64,
+      purpose: 'SIGN_ACTION'
+    });
+    if (!signResp || !signResp.ok) {
+      showToast((signResp && signResp.error) || 'Falha ao assinar com pen drive.', 'error');
+      return;
+    }
+    const tokRes = await fetch('/api/auth/usb/sign-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        challenge_id: chData.challenge_id,
+        key_id: signResp.key_id,
+        signature_b64: signResp.signature_b64,
+        device_binding_hash: signResp.device_binding_hash
+      })
+    });
+    const tokData = await tokRes.json().catch(() => ({}));
+    if (!tokRes.ok || !tokData.sig_token) {
+      showToast(tokData.error || 'Servidor rejeitou a assinatura do pen drive.', 'error');
+      return;
+    }
+    const inp = document.getElementById(targetInputId);
+    if (inp) inp.value = tokData.sig_token;
+    showToast(`Assinatura 21 CFR Part 11 validada via Pen Drive (${drive.label})!`, 'success');
+  } catch (e) {
+    showToast(e.message || 'Erro ao assinar com pen drive USB.', 'error');
+  } finally {
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = origText; }
+  }
+}
+
+// =============================================================================
+// PROVISIONAMENTO E REVOGAÇÃO DE CHAVES USB (ADMIN)
+// =============================================================================
+function toggleNewUserUSBSection() {
+  const chk = document.getElementById('new-user-usb-enabled');
+  const cfg = document.getElementById('new-user-usb-config');
+  if (!chk || !cfg) return;
+  cfg.style.display = chk.checked ? 'block' : 'none';
+  if (chk.checked) {
+    refreshUSBDrivesForProvision('new-user-usb-drive', 'new-user-usb-status');
+  }
+}
+
+function syncProvisionSelectsIfOpen() {
+  const mNew = document.getElementById('modal-new-user');
+  if (mNew && mNew.classList.contains('active')) {
+    populateUSBDriveSelect('new-user-usb-drive', 'new-user-usb-status', window.usbAgentState.drives || []);
+  }
+  const mManage = document.getElementById('modal-user-usb-keys');
+  if (mManage && mManage.classList.contains('active')) {
+    populateUSBDriveSelect('manage-usb-drive-select', 'manage-usb-agent-status', window.usbAgentState.drives || []);
+  }
+}
+
+async function refreshUSBDrivesForProvision(selectId, statusId) {
+  const statusEl = document.getElementById(statusId);
+  if (!window.usbAgentState.connected) {
+    if (statusEl) {
+      statusEl.style.color = '#FBBF24';
+      statusEl.innerHTML = 'Agente local USB desconectado (<code>127.0.0.1:5177</code>). Inicie <code>coldchain-usb-agent</code> para detectar pen drives.';
+    }
+    populateUSBDriveSelect(selectId, statusId, []);
+    return;
+  }
+  try {
+    const resp = await usbAgentRPC('list_drives', {});
+    const drives = (resp && resp.ok && resp.drives) ? resp.drives : [];
+    window.usbAgentState.drives = drives;
+    populateUSBDriveSelect(selectId, statusId, drives);
+  } catch (e) {
+    if (statusEl) {
+      statusEl.style.color = '#F87171';
+      statusEl.textContent = e.message || 'Erro ao consultar pen drives conectados.';
+    }
+  }
+}
+
+function populateUSBDriveSelect(selectId, statusId, drives) {
+  const sel = document.getElementById(selectId);
+  const statusEl = document.getElementById(statusId);
+  if (!sel) return;
+
+  if (!window.usbAgentState.connected) {
+    sel.innerHTML = '<option value="">Agente USB local offline (127.0.0.1:5177)</option>';
+    return;
+  }
+  if (!drives || drives.length === 0) {
+    sel.innerHTML = '<option value="">Nenhum pen drive USB removível conectado</option>';
+    if (statusEl) {
+      statusEl.style.color = '#FBBF24';
+      statusEl.textContent = 'Nenhum pen drive USB removível detectado. Espete um pen drive e clique em "Detectar USB". (Discos internos/SO são ocultados por segurança.)';
+    }
+    return;
+  }
+
+  sel.innerHTML = drives.map(d => {
+    const rwTag = d.writable ? 'Gravável' : 'SOMENTE LEITURA';
+    const bindTag = d.binding_mode === 'HARDWARE_SERIAL' ? 'Serial Físico USB' : 'UUID Volume (genérico)';
+    const keyTag = d.key_status === 'VALID_FILE' ? ` [JÁ TEM CHAVE: ${d.key_username}]` : '';
+    return `<option value="${escapeHTML(d.id)}" ${!d.writable ? 'disabled' : ''}>${escapeHTML(d.id)} — ${escapeHTML(d.label)} (${formatBytesHuman(d.free_bytes)} livres | ${bindTag} | ${rwTag})${escapeHTML(keyTag)}</option>`;
+  }).join('');
+
+  if (statusEl) {
+    const hasVolOnly = drives.some(d => d.binding_mode !== 'HARDWARE_SERIAL');
+    statusEl.style.color = '#34D399';
+    statusEl.innerHTML = `${drives.length} pen drive(s) USB removível(is) validado(s) (discos internos bloqueados).${hasVolOnly ? ' <span style="color:#FBBF24;">Aviso: unidades sem serial físico usam UUID de volume.</span>' : ''}`;
+  }
+}
+
+async function openUserUSBKeysModal(username, fullName) {
+  const m = document.getElementById('modal-user-usb-keys');
+  if (!m) return;
+  document.getElementById('usb-manage-username').value = username;
+  document.getElementById('modal-usb-keys-title').textContent = `Chaves USB — ${fullName} (${username})`;
+  const ov = document.getElementById('manage-usb-overwrite');
+  if (ov) ov.checked = false;
+  const rp = document.getElementById('manage-usb-revoke-prev');
+  if (rp) rp.checked = false;
+
+  m.classList.add('active');
+  refreshUSBDrivesForProvision('manage-usb-drive-select', 'manage-usb-agent-status');
+  await loadUserUSBKeysList(username);
+}
+
+function closeUserUSBKeysModal() {
+  const m = document.getElementById('modal-user-usb-keys');
+  if (m) m.classList.remove('active');
+}
+
+async function loadUserUSBKeysList(username) {
+  const container = document.getElementById('manage-usb-keys-list');
+  if (!container) return;
+  container.innerHTML = '<div style="text-align:center; padding:18px; color:#94A3B8; font-size:12px;">Carregando chaves públicas registradas...</div>';
+  try {
+    const res = await fetch(`/api/admin/users/usb-keys?username=${encodeURIComponent(username)}`);
+    const keys = await res.json();
+    if (!res.ok) {
+      container.innerHTML = `<div style="color:#F87171; font-size:12px;">${escapeHTML(keys.error || 'Erro ao carregar chaves USB.')}</div>`;
+      return;
+    }
+    if (!keys || keys.length === 0) {
+      container.innerHTML = '<div style="text-align:center; padding:18px; color:#64748B; font-size:12px; border:1px dashed rgba(255,255,255,0.1); border-radius:8px;">Nenhuma chave USB vinculada a este usuário ainda.</div>';
+      return;
+    }
+    container.innerHTML = keys.map(k => {
+      const isActive = k.status === 'ACTIVE';
+      return `
+        <div style="background:${isActive ? 'rgba(15,23,42,0.85)' : 'rgba(239,68,68,0.06)'}; border:1px solid ${isActive ? 'rgba(16,185,129,0.35)' : 'rgba(239,68,68,0.3)'}; border-radius:8px; padding:10px 12px; margin-bottom:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+            <div>
+              <code style="color:#38BDF8; font-weight:700; font-size:12px;">${escapeHTML(k.id)}</code>
+              <span style="margin-left:6px; font-size:10.5px; font-weight:700; padding:2px 6px; border-radius:4px; background:${isActive ? 'rgba(16,185,129,0.16)' : 'rgba(239,68,68,0.16)'}; color:${isActive ? '#34D399' : '#F87171'};">${isActive ? 'ATIVA' : 'REVOGADA'}</span>
+              <span style="margin-left:6px; font-size:10.5px; color:#94A3B8;">${escapeHTML(k.algorithm)} • ${escapeHTML(k.binding_mode)}</span>
+            </div>
+            ${isActive ? `<button type="button" class="btn-user-delete" style="height:26px; font-size:11px;" onclick="toggleRevokeUSBForm('${escapeHTML(k.id)}')">Revogar Chave</button>` : ''}
+          </div>
+          ${isActive ? `
+            <div id="revoke-form-${escapeHTML(k.id)}" style="display:none; margin-top:8px; padding-top:8px; border-top:1px solid rgba(239,68,68,0.25);">
+              <div style="display:flex; gap:6px; align-items:center;">
+                <input type="text" id="revoke-reason-${escapeHTML(k.id)}" class="form-control" value="Perda / extravio do pen drive" placeholder="Motivo da revogação..." style="flex:1; height:32px; font-size:11.5px;">
+                <button type="button" class="btn-user-delete" style="height:32px; padding:0 12px; font-size:11px; background:#DC2626; color:#FFFFFF;" onclick="revokeUserUSBKey('${escapeHTML(k.id)}', '${escapeHTML(k.username)}')">Confirmar Revogação</button>
+              </div>
+            </div>
+          ` : ''}
+          <div style="font-size:11px; color:#CBD5E1; margin-top:6px; display:grid; grid-template-columns:1fr 1fr; gap:4px;">
+            <div>Pen Drive: <strong>${escapeHTML(k.drive_label || '-')}</strong> (${escapeHTML(k.usb_vendor_product || 'USB')})</div>
+            <div>Serial Hardware: <code style="color:#C4B5FD;">${escapeHTML(k.usb_serial_masked || 'N/D')}</code></div>
+            <div>Provisionada em: ${formatBrasiliaDateTime(k.created_at)}</div>
+            <div>Último uso: ${k.last_used_at ? formatBrasiliaDateTime(k.last_used_at) : 'Nunca utilizada'}</div>
+          </div>
+          ${!isActive ? `<div style="margin-top:5px; font-size:11px; color:#FCA5A5;">Revogada por <strong>${escapeHTML(k.revoked_by)}</strong> em ${formatBrasiliaDateTime(k.revoked_at)} — Motivo: ${escapeHTML(k.revoked_reason)}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    container.innerHTML = '<div style="color:#F87171; font-size:12px;">Erro de comunicação ao buscar chaves USB.</div>';
+  }
+}
+
+async function provisionUSBForExistingUser() {
+  const username = document.getElementById('usb-manage-username').value;
+  const driveId = document.getElementById('manage-usb-drive-select').value;
+  const overwrite = document.getElementById('manage-usb-overwrite').checked;
+  const revokePrev = document.getElementById('manage-usb-revoke-prev').checked;
+  const btn = document.getElementById('btn-provision-existing-user-usb');
+
+  if (!window.usbAgentState.connected) {
+    showToast('Agente local USB (127.0.0.1:5177) não está rodando nesta máquina.', 'error');
+    return;
+  }
+  if (!driveId) {
+    showToast('Selecione um pen drive USB removível gravável.', 'info');
+    return;
+  }
+  if (btn) { btn.disabled = true; btn.textContent = 'Gravando e verificando...'; }
+
+  try {
+    const prov = await usbAgentRPC('provision_key', { drive_id: driveId, username: username, overwrite: overwrite });
+    if (!prov || !prov.ok) {
+      showToast((prov && prov.error) || 'Falha ao gravar chave no pen drive.', 'error');
+      return;
+    }
+    const regRes = await fetch('/api/admin/users/usb-keys/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: username,
+        key_id: prov.key_id,
+        public_key_b64: prov.public_key_b64,
+        algorithm: prov.algorithm,
+        binding_mode: prov.binding_mode,
+        device_binding_hash: prov.device_binding_hash,
+        usb_vendor_product: prov.usb_vendor_product,
+        usb_serial_masked: prov.usb_serial_masked,
+        drive_label: prov.drive_label,
+        file_sha256: prov.file_sha256,
+        revoke_previous: revokePrev
+      })
+    });
+    const regData = await regRes.json().catch(() => ({}));
+    if (!regRes.ok) {
+      showToast(regData.error || 'Erro ao registrar chave pública no servidor.', 'error');
+      return;
+    }
+    showToast(`Chave Ed25519 gravada em ${prov.drive_label} (${prov.drive_id}) e verificada via SHA-256!`, 'success');
+    await loadUserUSBKeysList(username);
+    refreshUSBDrivesForProvision('manage-usb-drive-select', 'manage-usb-agent-status');
+    loadUsers();
+  } catch (e) {
+    showToast(e.message || 'Erro ao provisionar chave USB.', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Gravar Chave no Pen Drive'; }
+  }
+}
+
+function toggleRevokeUSBForm(keyId) {
+  const el = document.getElementById('revoke-form-' + keyId);
+  if (!el) return;
+  el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
+}
+
+async function revokeUserUSBKey(keyId, username) {
+  const inp = document.getElementById('revoke-reason-' + keyId);
+  const reason = inp ? inp.value.trim() : 'Revogação administrativa';
+  if (!reason) {
+    showToast('Informe o motivo da revogação da chave USB.', 'info');
+    return;
+  }
+  try {
+    const res = await fetch('/api/admin/users/usb-keys/revoke', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key_id: keyId, reason: reason })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(data.error || 'Erro ao revogar chave USB.', 'error');
+      return;
+    }
+    showToast(`Chave USB ${keyId} revogada imediatamente (${data.killed_sessions || 0} sessão(ões) encerrada(s))!`, 'success');
+    await loadUserUSBKeysList(username);
+    loadUsers();
+  } catch (e) {
+    showToast('Erro de comunicação ao revogar chave USB.', 'error');
+  }
+}

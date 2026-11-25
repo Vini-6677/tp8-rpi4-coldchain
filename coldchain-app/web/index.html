@@ -1823,6 +1823,23 @@
         </div>
         <button type="submit" class="btn-login" id="btn-login-submit">Autenticar no Sistema</button>
       </form>
+
+      <!-- LOGIN AUTOMÁTICO PLUG-AND-PLAY VIA PEN DRIVE CRIPTOGRÁFICO (Ed25519) -->
+      <div id="usb-login-panel" style="margin-top: 18px; padding-top: 16px; border-top: 1px solid rgba(255, 255, 255, 0.09);">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span id="usb-login-agent-dot" style="width: 8px; height: 8px; border-radius: 50%; background: #64748B; display: inline-block;"></span>
+            <span style="font-size: 11.5px; font-weight: 700; color: #E2E8F0; text-transform: uppercase; letter-spacing: 0.4px;">Chave em Pen Drive USB</span>
+          </div>
+          <button type="button" onclick="reconnectUSBAgent(true)" style="background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); color: #38BDF8; font-size: 10.5px; font-weight: 600; padding: 3px 8px; border-radius: 5px; cursor: pointer;">
+            Verificar USB
+          </button>
+        </div>
+        <div id="usb-login-status-box" style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(148, 163, 184, 0.22); border-radius: 8px; padding: 10px 12px; font-size: 12px; color: #94A3B8; line-height: 1.45;">
+          Conectando ao agente local USB (127.0.0.1:5177)...
+        </div>
+        <div id="usb-login-drives-list" style="display: none; margin-top: 10px; flex-direction: column; gap: 8px;"></div>
+      </div>
     </div>
   </div>
 
@@ -1839,6 +1856,7 @@
         <button class="nav-tab-btn" id="tab-btn-stock" onclick="switchTab('stock')">Estoque & Validades</button>
         <button class="nav-tab-btn" id="tab-btn-excursions" onclick="switchTab('excursions')">Alarmes & Excursões</button>
         <button class="nav-tab-btn" id="tab-btn-metrology" onclick="switchTab('metrology')">Metrologia RBC</button>
+        <button class="nav-tab-btn" id="tab-btn-certificates" onclick="switchTab('certificates')">Certificados</button>
         <button class="nav-tab-btn" id="tab-btn-ledger" onclick="switchTab('ledger')">Auditoria & Ledger</button>
         <button class="nav-tab-btn" id="tab-btn-users" onclick="switchTab('users')" style="display: none;">Usuários</button>
       </nav>
@@ -2161,6 +2179,119 @@
       </section>
 
       <!-- =====================================================================
+           SEÇÃO 4B: CERTIFICADOS REGULATÓRIOS (UPLOAD PDF, INTEGRIDADE SHA-256 E AUDITORIA)
+           ===================================================================== -->
+      <section id="section-certificates" class="tab-section">
+        <div class="actions-bar" style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <div>
+            <div style="font-size: 16px; font-weight: 700; color: #FFFFFF;">Certificados Regulatórios (PDF do Órgão Regulador)</div>
+            <div style="font-size: 12px; color: #94A3B8; margin-top: 2px;">Armazenamento persistente com validação rigorosa (%PDF-, MIME, tamanho), hash SHA-256 e trilha imutável de versões</div>
+          </div>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <button type="button" class="btn-action-secondary" onclick="loadCertificates()">Atualizar</button>
+            <button type="button" class="btn-action-entry" id="btn-open-upload-cert" onclick="openUploadCertificateModal()" style="display: none;">
+              + Enviar Certificado (PDF)
+            </button>
+          </div>
+        </div>
+
+        <!-- KPIs de Conformidade Documental -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px;">
+          <div class="detail-panel" style="padding: 14px 16px; margin-bottom: 0; border-left: 3px solid #10B981;">
+            <div style="font-size: 11px; color: #94A3B8; text-transform: uppercase; font-weight: 700;">Válidos</div>
+            <div id="cert-kpi-valid" style="font-size: 24px; font-weight: 800; color: #34D399; margin-top: 4px;">0</div>
+            <div style="font-size: 11px; color: #64748B;">PDF verificado &gt; 30 dias</div>
+          </div>
+          <div class="detail-panel" style="padding: 14px 16px; margin-bottom: 0; border-left: 3px solid #F59E0B;">
+            <div style="font-size: 11px; color: #94A3B8; text-transform: uppercase; font-weight: 700;">Próximo do Vencimento</div>
+            <div id="cert-kpi-expiring" style="font-size: 24px; font-weight: 800; color: #FBBF24; margin-top: 4px;">0</div>
+            <div style="font-size: 11px; color: #64748B;">Vence em até 30 dias</div>
+          </div>
+          <div class="detail-panel" style="padding: 14px 16px; margin-bottom: 0; border-left: 3px solid #EF4444;">
+            <div style="font-size: 11px; color: #94A3B8; text-transform: uppercase; font-weight: 700;">Vencidos</div>
+            <div id="cert-kpi-expired" style="font-size: 24px; font-weight: 800; color: #F87171; margin-top: 4px;">0</div>
+            <div style="font-size: 11px; color: #64748B;">Exigem renovação imediata</div>
+          </div>
+          <div class="detail-panel" style="padding: 14px 16px; margin-bottom: 0; border-left: 3px solid #8B5CF6;">
+            <div style="font-size: 11px; color: #94A3B8; text-transform: uppercase; font-weight: 700;">Pendentes de PDF</div>
+            <div id="cert-kpi-pending" style="font-size: 24px; font-weight: 800; color: #C4B5FD; margin-top: 4px;">0</div>
+            <div style="font-size: 11px; color: #64748B;">Itens ativos sem arquivo anexado</div>
+          </div>
+        </div>
+
+        <!-- Pendências Documentais (Sensores, Câmaras, Medicamentos sem PDF) -->
+        <div id="cert-pending-panel" class="detail-panel" style="margin-bottom: 18px; display: none; border: 1px solid rgba(245, 158, 11, 0.35);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div style="font-size: 13.5px; font-weight: 700; color: #FBBF24; display: flex; align-items: center; gap: 8px;">
+              <span style="width: 8px; height: 8px; border-radius: 50%; background: #F59E0B; display: inline-block;"></span>
+              Pendências Documentais — Itens Ativos Aguardando PDF Oficial
+            </div>
+            <span id="cert-pending-count-badge" class="badge-status quarentena" style="font-size: 11px;">0 pendentes</span>
+          </div>
+          <div class="data-table-wrapper" style="max-height: 240px; overflow-y: auto;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th style="width: 120px;">Categoria</th>
+                  <th>Item / Entidade</th>
+                  <th>Documento Esperado</th>
+                  <th>Validade Prevista</th>
+                  <th style="width: 110px; text-align: center;">Status</th>
+                  <th style="width: 140px; text-align: right;">Ação</th>
+                </tr>
+              </thead>
+              <tbody id="cert-pending-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Acervo Principal de Certificados PDF -->
+        <div class="detail-panel">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px;">
+            <div class="panel-title" style="margin-bottom: 0;">Acervo de Certificados PDF Auditados</div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+              <select id="filter-cert-entity" class="form-control" style="width: 185px; height: 36px; padding: 0 10px; font-size: 12px;" onchange="renderCertificatesTable()">
+                <option value="ALL">Todas as Entidades</option>
+                <option value="SENSOR">Sensores RBC</option>
+                <option value="CHAMBER">Câmaras Frias (DQ/IQ/OQ/PQ)</option>
+                <option value="PRODUCT">Medicamentos (ANVISA)</option>
+                <option value="FACILITY">Licenças da Unidade</option>
+              </select>
+              <select id="filter-cert-status" class="form-control" style="width: 185px; height: 36px; padding: 0 10px; font-size: 12px;" onchange="renderCertificatesTable()">
+                <option value="ALL">Todos os Status</option>
+                <option value="VALIDO">Válidos</option>
+                <option value="PROXIMO_VENCIMENTO">Próximo do Vencimento</option>
+                <option value="VENCIDO">Vencidos</option>
+              </select>
+              <input type="text" id="filter-cert-search" class="form-control" style="width: 220px; height: 36px; padding: 0 12px; font-size: 12px;" placeholder="Buscar nº, órgão, SHA-256..." oninput="renderCertificatesTable()">
+            </div>
+          </div>
+
+          <div class="data-table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Item / Entidade Vinculada</th>
+                  <th>Documento &amp; Arquivo</th>
+                  <th>Órgão Regulador / Emissor</th>
+                  <th>Emissão / Validade</th>
+                  <th style="text-align: center;">Status Real</th>
+                  <th>Versão &amp; SHA-256</th>
+                  <th>Responsável / Envio</th>
+                  <th style="text-align: right; width: 250px;">Operações</th>
+                </tr>
+              </thead>
+              <tbody id="certificates-table-body">
+                <tr>
+                  <td colspan="8" style="text-align: center; color: #94A3B8; padding: 24px;">Carregando certificados...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- =====================================================================
            SEÇÃO 5: AUDITORIA ALCOA+ & LEDGER CRIPTOGRÁFICO
            ===================================================================== -->
       <section id="section-ledger" class="tab-section">
@@ -2265,9 +2396,9 @@
                   <th style="width: 140px;">Login</th>
                   <th>Nome Completo</th>
                   <th style="width: 160px; text-align: center;">Perfil Hospitalar</th>
-                  <th style="width: 180px; text-align: center;">Chave Criptográfica</th>
-                  <th style="width: 110px; text-align: center;">Status</th>
-                  <th style="text-align: right; width: 190px;">Ações de Controle</th>
+                  <th style="width: 210px; text-align: center;">Credenciais / Pen Drive USB</th>
+                  <th style="width: 100px; text-align: center;">Status</th>
+                  <th style="text-align: right; width: 250px;">Ações de Controle</th>
                 </tr>
               </thead>
               <tbody id="users-table-body">
@@ -2359,11 +2490,13 @@
             <input type="text" id="entry-resp-name" class="form-control" readonly style="opacity: 0.85; background: #0B1120; height: 40px; padding: 0 12px;">
           </div>
           <div class="form-group" style="margin-bottom: 0;">
-            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Assinatura Digital (Chave Criptográfica Pessoal)</label>
-            <input type="password" id="entry-password" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...)" required style="height: 40px; padding: 0 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 0;">Assinatura Digital (21 CFR Part 11)</label>
+              <button type="button" onclick="signFieldWithUSB('entry-password', this)" style="background: rgba(16, 185, 129, 0.14); border: 1px solid rgba(16, 185, 129, 0.4); color: #34D399; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px; cursor: pointer;">Assinar c/ Pen Drive</button>
+            </div>
+            <input type="password" id="entry-password" class="form-control" placeholder="Digite sua Chave Criptográfica (CC-KEY-...) ou use Pen Drive" required style="height: 40px; padding: 0 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
-              <span style="font-size: 10px; color: #94A3B8;">Apenas chave gerada (senha não aceita)</span>
-              
+              <span style="font-size: 10px; color: #94A3B8;">Chave pessoal (CC-KEY) ou Pen Drive USB (senha não aceita)</span>
             </div>
           </div>
         </div>
@@ -2431,11 +2564,13 @@
             <input type="text" id="exit-resp-name" class="form-control" readonly style="opacity: 0.85; background: #0B1120; height: 40px; padding: 0 12px;">
           </div>
           <div class="form-group" style="margin-bottom: 0;">
-            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Assinatura Digital (Chave Criptográfica Pessoal)</label>
-            <input type="password" id="exit-password" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...)" required style="height: 40px; padding: 0 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 0;">Assinatura Digital (21 CFR Part 11)</label>
+              <button type="button" onclick="signFieldWithUSB('exit-password', this)" style="background: rgba(16, 185, 129, 0.14); border: 1px solid rgba(16, 185, 129, 0.4); color: #34D399; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px; cursor: pointer;">Assinar c/ Pen Drive</button>
+            </div>
+            <input type="password" id="exit-password" class="form-control" placeholder="Digite sua Chave Criptográfica (CC-KEY-...) ou use Pen Drive" required style="height: 40px; padding: 0 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
-              <span style="font-size: 10px; color: #94A3B8;">Apenas chave gerada (senha não aceita)</span>
-              
+              <span style="font-size: 10px; color: #94A3B8;">Chave pessoal (CC-KEY) ou Pen Drive USB (senha não aceita)</span>
             </div>
           </div>
         </div>
@@ -2541,12 +2676,14 @@
         </div>
 
         <div class="form-group" style="margin-bottom: 16px;">
-          <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Assinatura Digital (Chave Criptográfica Pessoal 21 CFR Part 11)</label>
-          <input type="password" id="transfer-password" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...) para assinar" required autocomplete="current-password" style="height: 40px; padding: 0 12px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
-              <span style="font-size: 10px; color: #94A3B8;">Apenas chave gerada (senha não aceita)</span>
-              
-            </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 0;">Assinatura Digital (Chave Pessoal ou Pen Drive — 21 CFR Part 11)</label>
+            <button type="button" onclick="signFieldWithUSB('transfer-password', this)" style="background: rgba(16, 185, 129, 0.14); border: 1px solid rgba(16, 185, 129, 0.4); color: #34D399; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px; cursor: pointer;">Assinar c/ Pen Drive</button>
+          </div>
+          <input type="password" id="transfer-password" class="form-control" placeholder="Digite sua Chave Criptográfica (CC-KEY-...) ou use Pen Drive" required autocomplete="current-password" style="height: 40px; padding: 0 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+            <span style="font-size: 10px; color: #94A3B8;">Chave pessoal (CC-KEY) ou Pen Drive USB (senha não aceita)</span>
+          </div>
         </div>
 
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
@@ -2605,9 +2742,12 @@
         </div>
 
         <div class="form-group">
-          <label class="form-label">Assinatura Digital (Chave Criptográfica Pessoal CC-KEY-...)</label>
-          <input type="password" id="dec-signature" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...)" required style="height: 40px; padding: 0 12px;">
-          <div style="font-size: 11px; color: #94A3B8; margin-top: 4px;">Assinatura estrita: a senha de login não é aceita (21 CFR Part 11). Use sua chave gerada.</div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label class="form-label" style="margin-bottom: 0;">Assinatura Digital (Chave Pessoal CC-KEY-... ou Pen Drive)</label>
+            <button type="button" onclick="signFieldWithUSB('dec-signature', this)" style="background: rgba(16, 185, 129, 0.14); border: 1px solid rgba(16, 185, 129, 0.4); color: #34D399; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px; cursor: pointer;">Assinar c/ Pen Drive</button>
+          </div>
+          <input type="password" id="dec-signature" class="form-control" placeholder="Digite sua Chave Criptográfica (CC-KEY-...) ou use Pen Drive" required style="height: 40px; padding: 0 12px;">
+          <div style="font-size: 11px; color: #94A3B8; margin-top: 4px;">Assinatura estrita: a senha de login não é aceita (21 CFR Part 11). Use sua chave pessoal ou Pen Drive USB.</div>
         </div>
 
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
@@ -2641,9 +2781,12 @@
         </div>
 
         <div class="form-group" style="margin-top: 14px;">
-          <label class="form-label">Assinatura Digital (Chave Criptográfica Pessoal CC-KEY-...)</label>
-          <input type="password" id="resolve-alarm-signature" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...)" required style="font-size: 13.5px; height: 40px; padding: 0 12px;">
-          <div style="font-size: 11px; color: #94A3B8; margin-top: 4px;">Assinatura estrita: a senha de login não é aceita (21 CFR Part 11). Use sua chave gerada.</div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label class="form-label" style="margin-bottom: 0;">Assinatura Digital (Chave Pessoal CC-KEY-... ou Pen Drive)</label>
+            <button type="button" onclick="signFieldWithUSB('resolve-alarm-signature', this)" style="background: rgba(16, 185, 129, 0.14); border: 1px solid rgba(16, 185, 129, 0.4); color: #34D399; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px; cursor: pointer;">Assinar c/ Pen Drive</button>
+          </div>
+          <input type="password" id="resolve-alarm-signature" class="form-control" placeholder="Digite sua Chave Criptográfica (CC-KEY-...) ou use Pen Drive" required style="font-size: 13.5px; height: 40px; padding: 0 12px;">
+          <div style="font-size: 11px; color: #94A3B8; margin-top: 4px;">Assinatura estrita: a senha de login não é aceita (21 CFR Part 11). Use sua chave pessoal ou Pen Drive USB.</div>
         </div>
 
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
@@ -2717,17 +2860,35 @@
           </div>
         </div>
 
+        <div style="background: rgba(56, 189, 248, 0.06); border: 1px dashed rgba(56, 189, 248, 0.35); border-radius: 8px; padding: 12px 14px; margin: 12px 0;">
+          <div style="font-size: 11.5px; font-weight: 700; color: #38BDF8; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 8px;">
+            Certificado de Registro ANVISA em PDF (Opcional no cadastro — máx. 10 MB)
+          </div>
+          <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px; align-items: end;">
+            <div>
+              <input type="file" id="prod-cert-pdf" accept=".pdf,application/pdf" class="form-control" style="padding: 7px 10px; font-size: 12px;" onchange="previewSelectedPDF('prod-cert-pdf', 'prod-cert-pdf-info')">
+              <div id="prod-cert-pdf-info" style="font-size: 11px; color: #94A3B8; margin-top: 4px;">Anexe o PDF do órgão regulador ou envie depois na aba Certificados.</div>
+            </div>
+            <div>
+              <label class="form-label" style="font-size: 10.5px;">Validade do Registro</label>
+              <input type="date" id="prod-cert-valid" class="form-control" style="height: 36px; font-size: 12px;">
+            </div>
+          </div>
+        </div>
+
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; margin-bottom: 16px;">
           <div class="form-group" style="margin-bottom: 0;">
             <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Responsável Técnico</label>
             <input type="text" id="new-product-resp-name" class="form-control" readonly style="opacity: 0.85; background: #0B1120; height: 40px; padding: 0 12px;">
           </div>
           <div class="form-group" style="margin-bottom: 0;">
-            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Assinatura Digital (Chave Criptográfica Pessoal)</label>
-            <input type="password" id="new-product-password" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...)" required style="height: 40px; padding: 0 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 0;">Assinatura Digital (21 CFR Part 11)</label>
+              <button type="button" onclick="signFieldWithUSB('new-product-password', this)" style="background: rgba(16, 185, 129, 0.14); border: 1px solid rgba(16, 185, 129, 0.4); color: #34D399; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px; cursor: pointer;">Assinar c/ Pen Drive</button>
+            </div>
+            <input type="password" id="new-product-password" class="form-control" placeholder="Digite sua Chave Criptográfica (CC-KEY-...) ou use Pen Drive" required style="height: 40px; padding: 0 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
-              <span style="font-size: 10px; color: #94A3B8;">Apenas chave gerada (senha não aceita)</span>
-              
+              <span style="font-size: 10px; color: #94A3B8;">Chave pessoal ou Pen Drive USB (senha não aceita)</span>
             </div>
           </div>
         </div>
@@ -2800,17 +2961,31 @@
           </div>
         </div>
 
+        <div style="background: rgba(56, 189, 248, 0.06); border: 1px dashed rgba(56, 189, 248, 0.35); border-radius: 8px; padding: 12px 14px; margin: 12px 0;">
+          <div style="font-size: 11.5px; font-weight: 700; color: #38BDF8; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 8px;">
+            Laudo / Certificado de Qualificação Térmica em PDF (Opcional no cadastro — máx. 10 MB)
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px;">
+            <input type="text" id="ch-cert-number" class="form-control" placeholder="Nº do Laudo (ex: QUAL-2026/01)" style="height: 36px; font-size: 12px;">
+            <input type="text" id="ch-cert-issuer" class="form-control" placeholder="Órgão / Empresa Validadora" value="Engenharia Clínica / Validação Térmica" style="height: 36px; font-size: 12px;">
+          </div>
+          <input type="file" id="ch-cert-pdf" accept=".pdf,application/pdf" class="form-control" style="padding: 7px 10px; font-size: 12px;" onchange="previewSelectedPDF('ch-cert-pdf', 'ch-cert-pdf-info')">
+          <div id="ch-cert-pdf-info" style="font-size: 11px; color: #94A3B8; margin-top: 4px;">Anexe o PDF agora para já ativar o status Válido ou envie depois na aba Certificados.</div>
+        </div>
+
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; margin-bottom: 16px;">
           <div class="form-group" style="margin-bottom: 0;">
             <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Responsável Técnico</label>
             <input type="text" id="new-chamber-resp-name" class="form-control" readonly style="opacity: 0.85; background: #0B1120; height: 40px; padding: 0 12px;">
           </div>
           <div class="form-group" style="margin-bottom: 0;">
-            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Assinatura Digital (Chave Criptográfica Pessoal)</label>
-            <input type="password" id="new-chamber-password" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...)" required style="height: 40px; padding: 0 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 0;">Assinatura Digital (21 CFR Part 11)</label>
+              <button type="button" onclick="signFieldWithUSB('new-chamber-password', this)" style="background: rgba(16, 185, 129, 0.14); border: 1px solid rgba(16, 185, 129, 0.4); color: #34D399; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px; cursor: pointer;">Assinar c/ Pen Drive</button>
+            </div>
+            <input type="password" id="new-chamber-password" class="form-control" placeholder="Digite sua Chave Criptográfica (CC-KEY-...) ou use Pen Drive" required style="height: 40px; padding: 0 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
-              <span style="font-size: 10px; color: #94A3B8;">Apenas chave gerada (senha não aceita)</span>
-              
+              <span style="font-size: 10px; color: #94A3B8;">Chave pessoal ou Pen Drive USB (senha não aceita)</span>
             </div>
           </div>
         </div>
@@ -2883,17 +3058,35 @@
           </div>
         </div>
 
+        <div style="background: rgba(56, 189, 248, 0.06); border: 1px dashed rgba(56, 189, 248, 0.35); border-radius: 8px; padding: 12px 14px; margin: 12px 0;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font-size: 11.5px; font-weight: 700; color: #38BDF8; text-transform: uppercase; letter-spacing: 0.4px;">
+              Certificado RBC em PDF do Órgão Regulador / Laboratório (máx. 10 MB)
+            </span>
+            <span style="font-size: 10px; color: #94A3B8; background: rgba(15,23,42,0.7); padding: 2px 6px; border-radius: 4px;">SHA-256 + Ledger WORM</span>
+          </div>
+          <input type="file" id="sensor-cert-pdf" accept=".pdf,application/pdf" class="form-control" style="padding: 7px 10px; font-size: 12px;" onchange="previewSelectedPDF('sensor-cert-pdf', 'sensor-cert-pdf-info')">
+          <div id="sensor-cert-pdf-info" style="font-size: 11px; color: #94A3B8; margin-top: 5px;">
+            Anexe o arquivo PDF oficial aqui ao criar/recalibrar o sensor. Na recalibração, a versão anterior fica preservada na trilha de auditoria.
+          </div>
+          <div id="sensor-cert-replace-reason-wrap" style="display: none; margin-top: 8px;">
+            <input type="text" id="sensor-cert-replace-reason" class="form-control" placeholder="Motivo da atualização do certificado (ex: Recalibração anual RBC 2026)" style="height: 34px; font-size: 12px;">
+          </div>
+        </div>
+
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; margin-bottom: 16px;">
           <div class="form-group" style="margin-bottom: 0;">
             <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Responsável Técnico</label>
             <input type="text" id="sensor-resp-name" class="form-control" readonly style="opacity: 0.85; background: #0B1120; height: 40px; padding: 0 12px;">
           </div>
           <div class="form-group" style="margin-bottom: 0;">
-            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Assinatura Digital (Chave Criptográfica Pessoal)</label>
-            <input type="password" id="sensor-password" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...)" required style="height: 40px; padding: 0 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 0;">Assinatura Digital (21 CFR Part 11)</label>
+              <button type="button" onclick="signFieldWithUSB('sensor-password', this)" style="background: rgba(16, 185, 129, 0.14); border: 1px solid rgba(16, 185, 129, 0.4); color: #34D399; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px; cursor: pointer;">Assinar c/ Pen Drive</button>
+            </div>
+            <input type="password" id="sensor-password" class="form-control" placeholder="Digite sua Chave Criptográfica (CC-KEY-...) ou use Pen Drive" required style="height: 40px; padding: 0 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
-              <span style="font-size: 10px; color: #94A3B8;">Apenas chave gerada (senha não aceita)</span>
-              
+              <span style="font-size: 10px; color: #94A3B8;">Chave pessoal ou Pen Drive USB (senha não aceita)</span>
             </div>
           </div>
         </div>
@@ -2981,11 +3174,13 @@
             <input type="text" id="decom-sensor-resp-name" class="form-control" readonly style="opacity: 0.85; background: #0B1120; height: 40px; padding: 0 12px;">
           </div>
           <div class="form-group" style="margin-bottom: 0;">
-            <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Assinatura Digital (Chave Criptográfica Pessoal)</label>
-            <input type="password" id="decom-sensor-password" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...)" required style="height: 40px; padding: 0 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 0;">Assinatura Digital (21 CFR Part 11)</label>
+              <button type="button" onclick="signFieldWithUSB('decom-sensor-password', this)" style="background: rgba(16, 185, 129, 0.14); border: 1px solid rgba(16, 185, 129, 0.4); color: #34D399; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px; cursor: pointer;">Assinar c/ Pen Drive</button>
+            </div>
+            <input type="password" id="decom-sensor-password" class="form-control" placeholder="Digite sua Chave Criptográfica (CC-KEY-...) ou use Pen Drive" required style="height: 40px; padding: 0 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
-              <span style="font-size: 10px; color: #94A3B8;">Apenas chave gerada (senha não aceita)</span>
-              
+              <span style="font-size: 10px; color: #94A3B8;">Chave pessoal (CC-KEY) ou Pen Drive USB (senha não aceita)</span>
             </div>
           </div>
         </div>
@@ -3087,13 +3282,16 @@
           </div>
           <div class="form-group" style="margin-bottom: 0;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-              <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 0;">Assinatura Digital (Chave Criptográfica)</label>
-              <button type="button" onclick="togglePasswordVisibility('decom-password', this)" style="background: transparent; border: none; color: #94A3B8; cursor: pointer; font-size: 12px; padding: 0;" title="Mostrar/Ocultar Chave">Mostrar</button>
-            </div>
-            <input type="password" id="decom-password" class="form-control" placeholder="Digite sua Chave Criptográfica Pessoal (CC-KEY-...)" required style="height: 40px; padding: 0 12px; font-family: monospace;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
-              <span style="font-size: 10px; color: #94A3B8;">Apenas chave gerada (senha não aceita)</span>
+              <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 0;">Assinatura Digital (21 CFR Part 11)</label>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <button type="button" onclick="signFieldWithUSB('decom-password', this)" style="background: rgba(16, 185, 129, 0.14); border: 1px solid rgba(16, 185, 129, 0.4); color: #34D399; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px; cursor: pointer;">Assinar c/ Pen Drive</button>
+                <button type="button" onclick="togglePasswordVisibility('decom-password', this)" style="background: transparent; border: none; color: #94A3B8; cursor: pointer; font-size: 12px; padding: 0;" title="Mostrar/Ocultar Chave">Mostrar</button>
               </div>
+            </div>
+            <input type="password" id="decom-password" class="form-control" placeholder="Digite sua Chave Criptográfica (CC-KEY-...) ou use Pen Drive" required style="height: 40px; padding: 0 12px; font-family: monospace;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+              <span style="font-size: 10px; color: #94A3B8;">Chave pessoal (CC-KEY) ou Pen Drive USB (senha não aceita)</span>
+            </div>
           </div>
         </div>
 
@@ -3143,9 +3341,35 @@
           </div>
         </div>
 
-        <div class="form-group" style="margin-bottom: 18px;">
+        <div class="form-group" style="margin-bottom: 14px;">
           <label class="form-label" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #94A3B8; margin-bottom: 6px; display: block;">Senha Inicial Provisória</label>
           <input type="password" id="new-user-password" class="form-control" placeholder="Digite uma senha provisória para entrega ao profissional" required style="height: 40px; padding: 0 12px;">
+        </div>
+
+        <!-- PROVISIONAMENTO DIRETO DE CHAVE CRIPTOGRÁFICA EM PEN DRIVE USB -->
+        <div style="background: rgba(16, 185, 129, 0.06); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700; color: #34D399; cursor: pointer;">
+              <input type="checkbox" id="new-user-usb-enabled" onchange="toggleNewUserUSBSection()">
+              Gravar chave criptográfica (Ed25519) diretamente em Pen Drive USB
+            </label>
+            <button type="button" onclick="refreshUSBDrivesForProvision('new-user-usb-drive', 'new-user-usb-status')" style="background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.35); color: #38BDF8; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 5px; cursor: pointer;">
+              Detectar USB
+            </button>
+          </div>
+          <div style="font-size: 11px; color: #94A3B8; line-height: 1.4; margin-bottom: 8px;">
+            Discos internos e partições do SO são filtrados rigorosamente. Apenas a <strong>chave pública</strong> é salva no servidor; a chave privada cifrada permanece exclusivamente no pen drive com verificação pós-escrita (<code>fsync</code> + SHA-256).
+          </div>
+          <div id="new-user-usb-config" style="display: none;">
+            <div id="new-user-usb-status" style="font-size: 11.5px; color: #CBD5E1; margin-bottom: 8px;"></div>
+            <select id="new-user-usb-drive" class="form-control" style="height: 38px; font-size: 12px; margin-bottom: 8px;">
+              <option value="">Nenhum pen drive USB removível detectado</option>
+            </select>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #FBBF24; cursor: pointer;">
+              <input type="checkbox" id="new-user-usb-overwrite">
+              Sobrescrever arquivo de chave se este pen drive já possuir um
+            </label>
+          </div>
         </div>
 
         <div style="display: flex; justify-content: flex-end; gap: 10px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
@@ -3257,6 +3481,202 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=pharma_v45"></script>
+  <!-- =========================================================================
+       MODAL: ENVIO / SUBSTITUIÇÃO DE CERTIFICADO REGULATÓRIO (PDF)
+       ========================================================================= -->
+  <div id="modal-cert-upload" class="modal-backdrop">
+    <div class="modal-box" style="max-width: 620px;">
+      <div class="modal-header">
+        <div class="modal-title" id="modal-cert-upload-title">Enviar Certificado do Órgão Regulador (PDF)</div>
+        <button class="btn-close-modal" onclick="closeUploadCertificateModal()">&times;</button>
+      </div>
+
+      <form id="form-cert-upload" onsubmit="event.preventDefault(); submitCertificateUpload();">
+        <input type="hidden" id="cert-upload-mode" value="create">
+        <input type="hidden" id="cert-replace-id" value="">
+
+        <div id="cert-entity-selector-block">
+          <div style="display: grid; grid-template-columns: 1fr 1.5fr; gap: 12px;">
+            <div class="form-group">
+              <label class="form-label">Entidade Vinculada</label>
+              <select id="cert-entity-type" class="form-control" onchange="onCertEntityTypeChange()" required>
+                <option value="SENSOR">Sensor Metrológico RBC</option>
+                <option value="CHAMBER">Câmara Fria / Qualificação Térmica</option>
+                <option value="PRODUCT">Medicamento (Registro ANVISA)</option>
+                <option value="FACILITY">Licença Institucional da Unidade</option>
+              </select>
+            </div>
+            <div class="form-group" id="cert-entity-select-wrap">
+              <label class="form-label">Item Correspondente</label>
+              <select id="cert-entity-id-select" class="form-control" onchange="onCertEntityItemChange()"></select>
+            </div>
+            <div class="form-group" id="cert-entity-facility-wrap" style="display: none;">
+              <label class="form-label">Identificação da Licença / Unidade</label>
+              <input type="text" id="cert-entity-facility-name" class="form-control" placeholder="ex: AFE ANVISA — Matriz Hospitalar">
+            </div>
+          </div>
+        </div>
+
+        <div id="cert-replace-banner" style="display: none; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 12px; color: #FDE68A;">
+          <strong>Substituição Auditável:</strong> A versão atual do PDF será preservada integralmente no histórico com seu hash SHA-256 original (sem exclusão silenciosa).
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Número do Certificado / Registro</label>
+            <input type="text" id="cert-doc-number" class="form-control" placeholder="ex: CAL-RBC-2026/001" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Órgão Regulador / Emissor</label>
+            <input type="text" id="cert-issuer" class="form-control" placeholder="ex: INMETRO / Cgcre RBC ou ANVISA" required>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Data de Emissão</label>
+            <input type="date" id="cert-issued-at" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Data de Validade</label>
+            <input type="date" id="cert-valid-until" class="form-control" required>
+          </div>
+        </div>
+
+        <div class="form-group" id="cert-replace-reason-group" style="display: none;">
+          <label class="form-label">Motivo / Justificativa da Substituição (Obrigatório)</label>
+          <input type="text" id="cert-replace-reason" class="form-control" placeholder="ex: Renovação anual de calibração RBC emitida em 2026">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Arquivo PDF Oficial do Órgão Regulador (extensão .pdf, máx. 10 MB)</label>
+          <input type="file" id="cert-file-input" accept=".pdf,application/pdf" class="form-control" style="padding: 8px 10px;" required onchange="previewSelectedPDF('cert-file-input', 'cert-file-preview')">
+          <div id="cert-file-preview" style="font-size: 11px; color: #94A3B8; margin-top: 4px;">
+            Validação rigorosa no servidor: extensão <code>.pdf</code>, MIME <code>application/pdf</code>, cabeçalho binário <code>%PDF-</code>, marcador <code>%%EOF</code> e hash SHA-256.
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Observações Técnicas (Opcional)</label>
+          <input type="text" id="cert-notes" class="form-control" placeholder="ex: Incerteza expandida ±0,15°C (k=2), acreditação CRL-0412">
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 12px;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label">Responsável pelo Envio</label>
+            <input type="text" id="cert-resp-name" class="form-control" readonly style="opacity: 0.85; background: #0B1120; height: 40px;">
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label class="form-label" style="margin-bottom: 0;">Assinatura Digital (21 CFR Part 11)</label>
+              <button type="button" onclick="signFieldWithUSB('cert-password', this)" style="background: rgba(16, 185, 129, 0.14); border: 1px solid rgba(16, 185, 129, 0.4); color: #34D399; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px; cursor: pointer;">Assinar c/ Pen Drive</button>
+            </div>
+            <input type="password" id="cert-password" class="form-control" placeholder="Chave pessoal (CC-KEY-...) ou Pen Drive" required style="height: 40px;">
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+          <button type="button" class="btn-cancel" onclick="closeUploadCertificateModal()">Cancelar</button>
+          <button type="submit" class="btn-primary" id="btn-submit-cert-upload">Validar e Salvar Certificado PDF</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL: VISUALIZADOR INLINE DE PDF DO CERTIFICADO
+       ========================================================================= -->
+  <div id="modal-cert-viewer" class="modal-backdrop">
+    <div class="modal-box" style="max-width: 960px; width: 94vw; height: 88vh; display: flex; flex-direction: column;">
+      <div class="modal-header" style="flex-shrink: 0;">
+        <div>
+          <div class="modal-title" id="cert-viewer-title">Visualização de Certificado PDF</div>
+          <div id="cert-viewer-meta" style="font-size: 11.5px; color: #94A3B8; margin-top: 3px; font-family: monospace;">SHA-256: --</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <a id="cert-viewer-download-link" href="#" class="btn-action-secondary" style="text-decoration: none; font-size: 12px; padding: 6px 12px;">Baixar PDF Original</a>
+          <button class="btn-close-modal" onclick="closeCertificateViewerModal()">&times;</button>
+        </div>
+      </div>
+      <div style="flex: 1; background: #0B1120; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; overflow: hidden; margin-top: 10px;">
+        <iframe id="cert-viewer-iframe" title="Visualizador de Certificado PDF" style="width: 100%; height: 100%; border: none; background: #FFFFFF;"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL: HISTÓRICO IMUTÁVEL DE VERSÕES DO CERTIFICADO (TRILHA DE AUDITORIA)
+       ========================================================================= -->
+  <div id="modal-cert-history" class="modal-backdrop">
+    <div class="modal-box" style="max-width: 760px;">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title" id="cert-history-title">Histórico de Versões do Certificado</div>
+          <div id="cert-history-subtitle" style="font-size: 12px; color: #94A3B8; margin-top: 2px;">Trilha imutável de auditoria (nenhuma versão é apagada)</div>
+        </div>
+        <button class="btn-close-modal" onclick="closeCertificateHistoryModal()">&times;</button>
+      </div>
+      <div id="cert-history-body" style="max-height: 62vh; overflow-y: auto; margin-top: 12px;"></div>
+      <div style="display: flex; justify-content: flex-end; margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08);">
+        <button type="button" class="btn-cancel" onclick="closeCertificateHistoryModal()">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL: GESTÃO E REVOGAÇÃO DE CHAVES USB POR USUÁRIO (ADMIN ONLY)
+       ========================================================================= -->
+  <div id="modal-user-usb-keys" class="modal-backdrop">
+    <div class="modal-box" style="max-width: 720px;">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title" id="modal-usb-keys-title">Chaves Criptográficas em Pen Drive USB</div>
+          <div id="modal-usb-keys-subtitle" style="font-size: 12px; color: #94A3B8; margin-top: 2px;">Provisionamento Ed25519 vinculado ao hardware e revogação instantânea</div>
+        </div>
+        <button class="btn-close-modal" onclick="closeUserUSBKeysModal()">&times;</button>
+      </div>
+
+      <input type="hidden" id="usb-manage-username" value="">
+
+      <!-- Novo Provisionamento em Pen Drive -->
+      <div style="background: rgba(16, 185, 129, 0.06); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span style="font-size: 12px; font-weight: 700; color: #34D399; text-transform: uppercase;">Emitir / Gravar Nova Chave em Pen Drive Conectado</span>
+          <button type="button" onclick="refreshUSBDrivesForProvision('manage-usb-drive-select', 'manage-usb-agent-status')" style="background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.35); color: #38BDF8; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 5px; cursor: pointer;">
+            Atualizar Pen Drives
+          </button>
+        </div>
+        <div id="manage-usb-agent-status" style="font-size: 11.5px; color: #CBD5E1; margin-bottom: 8px;">Verificando agente USB...</div>
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <select id="manage-usb-drive-select" class="form-control" style="flex: 1; min-width: 220px; height: 38px; font-size: 12px;">
+            <option value="">Nenhum pen drive USB detectado</option>
+          </select>
+          <button type="button" id="btn-provision-existing-user-usb" onclick="provisionUSBForExistingUser()" class="btn-primary" style="height: 38px; padding: 0 16px; font-size: 12.5px; background: #059669; border-color: #10B981;">
+            Gravar Chave no Pen Drive
+          </button>
+        </div>
+        <div style="display: flex; gap: 16px; margin-top: 8px; flex-wrap: wrap;">
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #FBBF24; cursor: pointer;">
+            <input type="checkbox" id="manage-usb-overwrite">
+            Sobrescrever chave existente no pen drive
+          </label>
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #94A3B8; cursor: pointer;">
+            <input type="checkbox" id="manage-usb-revoke-prev">
+            Revogar chaves USB anteriores deste usuário
+          </label>
+        </div>
+      </div>
+
+      <!-- Lista de Chaves USB Vinculadas -->
+      <div style="font-size: 12.5px; font-weight: 700; color: #E2E8F0; margin-bottom: 8px;">Chaves Registradas no Servidor (Apenas Chaves Públicas)</div>
+      <div id="manage-usb-keys-list" style="max-height: 40vh; overflow-y: auto;"></div>
+
+      <div style="display: flex; justify-content: flex-end; margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08);">
+        <button type="button" class="btn-cancel" onclick="closeUserUSBKeysModal()">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=pharma_v46"></script>
 </body>
 </html>
