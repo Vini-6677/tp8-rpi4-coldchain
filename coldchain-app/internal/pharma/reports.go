@@ -44,6 +44,7 @@ type DossierReportData struct {
 	Sensors         []Sensor
 	Lots            []Lot
 	Excursions      []Excursion
+	Certificates    []Certificate
 	QualityDossier  QualityDossier
 	AuditLogs       []DossierAuditItem
 	LedgerGenesis   string
@@ -93,6 +94,8 @@ func FetchDossierReportDataWithIssuer(db *sql.DB, signer SignerInterface, issuer
 		return nil, fmt.Errorf("erro ao obter dossiê de qualidade: %w", err)
 	}
 
+	certificates, _ := ListCertificates(db, "", "", "")
+
 	if issuerName == "" || issuerRole == "" {
 		var dbRole, dbName, dbUsername string
 		_ = db.QueryRow("SELECT role, name, username FROM users WHERE role = 'tecnico' LIMIT 1").Scan(&dbRole, &dbName, &dbUsername)
@@ -134,6 +137,7 @@ func FetchDossierReportDataWithIssuer(db *sql.DB, signer SignerInterface, issuer
 		Sensors:         sensors,
 		Lots:            lots,
 		Excursions:      excursions,
+		Certificates:    certificates,
 		QualityDossier:  quality,
 		SignerAlgorithm: "ECDSA P-256 (secp256r1) + SHA-256",
 	}
@@ -244,7 +248,7 @@ func GenerateDossierCSV(data *DossierReportData) ([]byte, error) {
 
 	// SEÇÃO 2: SENSORES RBC
 	_ = writer.Write([]string{"[SECAO 2: INVENTARIO METROLOGICO DE SENSORES CALIBRADOS RBC]"})
-	_ = writer.Write([]string{"Tag Sensor", "Numero de Serie", "Camara", "Posicao Termica", "Certificado RBC", "Laboratorio Calibrador", "Validade Calibracao", "Status"})
+	_ = writer.Write([]string{"Tag Sensor", "Numero de Serie", "Camara", "Posicao Termica", "Certificado RBC", "Laboratorio Calibrador", "Validade Calibracao", "Status", "Status PDF", "SHA-256 Certificado"})
 	for _, s := range data.Sensors {
 		_ = writer.Write([]string{
 			sanitizeCSV(s.ID),
@@ -255,6 +259,31 @@ func GenerateDossierCSV(data *DossierReportData) ([]byte, error) {
 			sanitizeCSV(s.CalibratedBy),
 			sanitizeCSV(s.CalibValidUntil),
 			sanitizeCSV(s.Status),
+			sanitizeCSV(s.CertificateStatus),
+			sanitizeCSV(s.CertificateSHA256),
+		})
+	}
+	_ = writer.Write([]string{""})
+
+	// SEÇÃO 2B: CERTIFICADOS REGULATORIOS PDF ANEXADOS
+	_ = writer.Write([]string{"[SECAO 2B: CERTIFICADOS PDF DO ORGAO REGULADOR E INTEGRIDADE SHA-256]"})
+	_ = writer.Write([]string{"ID Certificado", "Entidade", "Item Vinculado", "Tipo", "Numero Documento", "Orgao Emissor", "Emissao", "Validade", "Status Real", "Versao", "Arquivo", "SHA-256", "Responsavel", "Timestamp Envio"})
+	for _, cert := range data.Certificates {
+		_ = writer.Write([]string{
+			sanitizeCSV(cert.ID),
+			sanitizeCSV(cert.EntityType),
+			sanitizeCSV(cert.EntityLabel),
+			sanitizeCSV(cert.DocType),
+			sanitizeCSV(cert.DocumentNumber),
+			sanitizeCSV(cert.Issuer),
+			sanitizeCSV(cert.IssuedAt),
+			sanitizeCSV(cert.ValidUntil),
+			sanitizeCSV(cert.StatusLabel),
+			fmt.Sprintf("v%d", cert.CurrentVersion),
+			sanitizeCSV(cert.OriginalFilename),
+			sanitizeCSV(cert.SHA256Hash),
+			sanitizeCSV(cert.UploadedByName),
+			sanitizeCSV(cert.UploadedAt),
 		})
 	}
 	_ = writer.Write([]string{""})
@@ -808,7 +837,8 @@ func GenerateDossierPDF(data *DossierReportData) ([]byte, error) {
 		p1.WriteString(fmt.Sprintf("BT /F2 7.5 Tf %s rg 505 %.2f Td (%s) Tj ET\n", statusColor, sensY, toPDFASCII(s.Status)))
 		sensY -= 13.0
 	}
-	p1.WriteString(fmt.Sprintf("BT /F1 7 Tf 0.5 0.55 0.6 rg 45 %.2f Td (Nota: Inventario metrologico ativo com %d sensores RBC calibrados e monitorados continuamente) Tj ET\n", sensY-2, len(data.Sensors)))
+	p1.WriteString(fmt.Sprintf("BT /F1 7 Tf 0.5 0.55 0.6 rg 45 %.2f Td (Nota: %d sensores monitorados | Certificados PDF: %d validos, %d vencendo, %d vencidos, %d pendentes) Tj ET\n",
+		sensY-2, len(data.Sensors), data.KPIs.ValidCertificates, data.KPIs.ExpiringCertificates, data.KPIs.ExpiredCertificates, data.KPIs.PendingCertificates))
 
 	// SEÇÃO 3: RASTREABILIDADE DE LOTES (FEFO/PVPS)
 	lotsTopY := sensY - 22.0
@@ -1199,6 +1229,48 @@ func GenerateDossierHTML(data *DossierReportData) string {
       </tr>`, s.ID, s.SerialNumber, s.ChamberID, s.ThermalPosition, s.CertNumber, s.CalibratedBy, s.CalibValidUntil, s.Status))
 	}
 
+	sb.WriteString(`</tbody>
+  </table>
+
+  <div class="sec-title">2B. Certificados PDF do Órgão Regulador (Integridade SHA-256)</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Entidade</th>
+        <th>Documento</th>
+        <th>Órgão Emissor</th>
+        <th>Validade</th>
+        <th>Status Real</th>
+        <th>Versão</th>
+        <th>SHA-256</th>
+      </tr>
+    </thead>
+    <tbody>`)
+	if len(data.Certificates) == 0 {
+		sb.WriteString(`<tr><td colspan="7" style="text-align:center; color:#64748b;">Nenhum certificado PDF anexado até o momento.</td></tr>`)
+	} else {
+		for _, cert := range data.Certificates {
+			tagClass := "tag-green"
+			if cert.Status == CertStatusExpired {
+				tagClass = "tag-red"
+			} else if cert.Status == CertStatusExpiring {
+				tagClass = "tag-amber"
+			}
+			shortHash := cert.SHA256Hash
+			if len(shortHash) > 16 {
+				shortHash = shortHash[:16] + "..."
+			}
+			sb.WriteString(fmt.Sprintf(`<tr>
+        <td><strong>%s</strong></td>
+        <td>%s</td>
+        <td>%s</td>
+        <td>%s</td>
+        <td><span class="tag %s">%s</span></td>
+        <td>v%d</td>
+        <td><code>%s</code></td>
+      </tr>`, cert.EntityLabel, cert.DocumentNumber, cert.Issuer, cert.ValidUntil, tagClass, cert.StatusLabel, cert.CurrentVersion, shortHash))
+		}
+	}
 	sb.WriteString(`</tbody>
   </table>
 

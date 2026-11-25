@@ -196,6 +196,11 @@ func InitPharmaSchema(db *sql.DB) error {
 	_, _ = db.Exec("ALTER TABLE chambers ADD COLUMN decommissioned_by TEXT;")
 	_, _ = db.Exec("ALTER TABLE chambers ADD COLUMN decommission_reason TEXT;")
 
+	// Schema de Certificados Regulatórios PDF versionados e imutáveis
+	if err := InitCertificatesSchema(db); err != nil {
+		return fmt.Errorf("falha ao criar schema de certificados: %w", err)
+	}
+
 	// Schema limpo para produção: sem câmaras, sensores, medicamentos ou histórico fictício
 	return seedQualityData(db)
 }
@@ -581,6 +586,24 @@ func GetChambers(db *sql.DB) ([]Chamber, error) {
 
 		list = append(list, c)
 	}
+
+	// Enriquece cada câmara com o status real do certificado PDF de qualificação
+	certMap := GetEntityCertificatesMap(db)
+	for i := range list {
+		if cert, ok := certMap[CertEntityChamber+":"+list[i].ID]; ok {
+			list[i].CertificateID = cert.ID
+			list[i].CertificateStatus = cert.Status
+			list[i].CertificateStatusLabel = cert.StatusLabel
+			list[i].CertificateFilename = cert.OriginalFilename
+			list[i].CertificateSHA256 = cert.SHA256Hash
+			list[i].CertificateValidUntil = cert.ValidUntil
+			list[i].CertificateVersion = cert.CurrentVersion
+			list[i].CertificateDaysRemaining = cert.DaysRemaining
+		} else {
+			list[i].CertificateStatus = CertStatusPending
+			list[i].CertificateStatusLabel = "Pendente"
+		}
+	}
 	return list, nil
 }
 
@@ -603,6 +626,7 @@ func GetSensors(db *sql.DB, chamberID string) ([]Sensor, error) {
 	}
 	defer rows.Close()
 
+	now := time.Now()
 	list := []Sensor{}
 	for rows.Next() {
 		var s Sensor
@@ -611,7 +635,36 @@ func GetSensors(db *sql.DB, chamberID string) ([]Sensor, error) {
 			&s.BatteryPct, &s.CurrentTemp, &s.CurrentHumidity, &s.LastSeen); err != nil {
 			return nil, err
 		}
+		// Recalcula status metrológico real com base na validade atual
+		if s.CalibValidUntil != "" {
+			st, _, _ := ComputeCertificateStatus(s.CalibValidUntil, now)
+			switch st {
+			case CertStatusExpired:
+				s.Status = "Vencido (Calibração Obrigatória)"
+			case CertStatusExpiring:
+				s.Status = "Atenção: Vencendo em breve"
+			case CertStatusValid:
+				s.Status = "Ativo"
+			}
+		}
 		list = append(list, s)
+	}
+
+	certMap := GetEntityCertificatesMap(db)
+	for i := range list {
+		if cert, ok := certMap[CertEntitySensor+":"+list[i].ID]; ok {
+			list[i].CertificateID = cert.ID
+			list[i].CertificateStatus = cert.Status
+			list[i].CertificateStatusLabel = cert.StatusLabel
+			list[i].CertificateFilename = cert.OriginalFilename
+			list[i].CertificateSHA256 = cert.SHA256Hash
+			list[i].CertificateValidUntil = cert.ValidUntil
+			list[i].CertificateVersion = cert.CurrentVersion
+			list[i].CertificateDaysRemaining = cert.DaysRemaining
+		} else {
+			list[i].CertificateStatus = CertStatusPending
+			list[i].CertificateStatusLabel = "Pendente"
+		}
 	}
 	return list, nil
 }
@@ -634,6 +687,24 @@ func GetProducts(db *sql.DB) ([]Product, error) {
 			return nil, err
 		}
 		list = append(list, p)
+	}
+
+	certMap := GetEntityCertificatesMap(db)
+	for i := range list {
+		key := fmt.Sprintf("%s:%d", CertEntityProduct, list[i].ID)
+		if cert, ok := certMap[key]; ok {
+			list[i].CertificateID = cert.ID
+			list[i].CertificateStatus = cert.Status
+			list[i].CertificateStatusLabel = cert.StatusLabel
+			list[i].CertificateFilename = cert.OriginalFilename
+			list[i].CertificateSHA256 = cert.SHA256Hash
+			list[i].CertificateValidUntil = cert.ValidUntil
+			list[i].CertificateVersion = cert.CurrentVersion
+			list[i].CertificateDaysRemaining = cert.DaysRemaining
+		} else {
+			list[i].CertificateStatus = CertStatusPending
+			list[i].CertificateStatusLabel = "Pendente"
+		}
 	}
 	return list, nil
 }
@@ -1198,13 +1269,26 @@ func GetPharmaKPIs(db *sql.DB) (PharmaKPIs, error) {
 		kpi.LastAuditDate = lastAudit.String
 	}
 
+	// 7.1 Resumo real dos Certificados PDF Regulatórios
+	if certSum, err := GetCertificateSummary(db); err == nil {
+		kpi.TotalCertificates = certSum.Total
+		kpi.ValidCertificates = certSum.Valid
+		kpi.ExpiringCertificates = certSum.Expiring
+		kpi.ExpiredCertificates = certSum.Expired
+		kpi.PendingCertificates = certSum.Pending
+	}
+
 	// 8. Avaliação Dinâmica de Conformidade Sanitária (RDC 430 & RDC 197)
 	if kpi.ActiveAlarms > 0 && kpi.ExcursionRatePct > 0 {
 		kpi.ComplianceStatus = "CRÍTICO: Excursão Térmica Ativa e Lote em Quarentena"
 	} else if kpi.ActiveAlarms > 0 {
 		kpi.ComplianceStatus = "ALERTA: Alarme Operacional Pendente de Ação Imediata"
+	} else if kpi.ExpiredCertificates > 0 {
+		kpi.ComplianceStatus = fmt.Sprintf("ALERTA: %d Certificado(s) Regulatório(s) Vencido(s)", kpi.ExpiredCertificates)
 	} else if kpi.ExpiringSensors > 0 {
 		kpi.ComplianceStatus = "ATENÇÃO: Sensores com Calibração RBC Vencendo (<30 dias)"
+	} else if kpi.ExpiringCertificates > 0 {
+		kpi.ComplianceStatus = fmt.Sprintf("ATENÇÃO: %d Certificado(s) Regulatório(s) Vencendo (<30 dias)", kpi.ExpiringCertificates)
 	} else if kpi.AvailabilityPct < 99.5 {
 		kpi.ComplianceStatus = "ALERTA: Disponibilidade Térmica Abaixo da Meta Regulamentar (99.5%)"
 	} else {
@@ -1273,12 +1357,54 @@ func GetQualityDossier(db *sql.DB) (QualityDossier, error) {
 		}
 	}
 
+	// Avaliação dinâmica real de certificados vinculados para o Checklist RDC 430
+	sensorsList, _ := GetSensors(db, "")
+	chambersList, _ := GetChambers(db)
+
+	sensorCertValid := 0
+	sensorCertMissing := 0
+	sensorCertExpired := 0
+	for _, s := range sensorsList {
+		switch s.CertificateStatus {
+		case CertStatusValid, CertStatusExpiring:
+			sensorCertValid++
+		case CertStatusExpired:
+			sensorCertExpired++
+		default:
+			sensorCertMissing++
+		}
+	}
+	rbcCompliant := len(sensorsList) == 0 || (sensorCertExpired == 0 && sensorCertMissing == 0)
+	rbcEvidence := "Nenhum sensor ativo cadastrado"
+	if len(sensorsList) > 0 {
+		rbcEvidence = fmt.Sprintf("%d/%d sensores com PDF RBC vigente (%d pendente(s), %d vencido(s))", sensorCertValid, len(sensorsList), sensorCertMissing, sensorCertExpired)
+	}
+
+	chamberCertValid := 0
+	chamberCertMissing := 0
+	chamberCertExpired := 0
+	for _, ch := range chambersList {
+		switch ch.CertificateStatus {
+		case CertStatusValid, CertStatusExpiring:
+			chamberCertValid++
+		case CertStatusExpired:
+			chamberCertExpired++
+		default:
+			chamberCertMissing++
+		}
+	}
+	qualCompliant := len(chambersList) == 0 || (chamberCertExpired == 0 && chamberCertMissing == 0)
+	qualEvidence := "Nenhuma câmara ativa cadastrada"
+	if len(chambersList) > 0 {
+		qualEvidence = fmt.Sprintf("%d/%d câmaras com Laudo PDF DQ/IQ/OQ/PQ vigente (%d pendente(s), %d vencido(s))", chamberCertValid, len(chambersList), chamberCertMissing, chamberCertExpired)
+	}
+
 	// 4. Checklist de Autoinspeção Sanitária RDC 430
 	dossier.ChecklistItems = []ChecklistItem{
 		{Item: "1. Monitoramento Ininterrupto 24/7", Requirement: "Art. 15 da RDC 430 - Leitura contínua sem lacunas de dados", Evidence: "Ledger ALCOA+ e banco SQLite WAL com histórico ativo", Compliant: true},
 		{Item: "2. Frequência de Medição Sanitária", Requirement: "Refrigerados ≤ 5 min; Ambiente controlado ≤ 15 min", Evidence: "Leituras em tempo real a cada 3 segundos com retenção contínua", Compliant: true},
-		{Item: "3. Calibração Periódica RBC", Requirement: "Certificados de calibração vigentes emitidos por rede acreditada", Evidence: "Sensores vinculados a certificados RBC rastreáveis Cgcre", Compliant: true},
-		{Item: "4. Qualificação DQ/IQ/OQ/PQ", Requirement: "Art. 12 da RDC 430 - Mapeamento térmico de pontos críticos", Evidence: "Laudos vigentes cadastrados para todas as áreas de estocagem", Compliant: true},
+		{Item: "3. Calibração Periódica RBC", Requirement: "Certificados de calibração vigentes emitidos por rede acreditada", Evidence: rbcEvidence, Compliant: rbcCompliant},
+		{Item: "4. Qualificação DQ/IQ/OQ/PQ", Requirement: "Art. 12 da RDC 430 - Mapeamento térmico de pontos críticos", Evidence: qualEvidence, Compliant: qualCompliant},
 		{Item: "5. Gestão de Alarmes & Escalonamento", Requirement: "Alarmes sonoros/visuais e notificação remota 24 horas", Evidence: "Regra de escalonamento em 3 níveis (Operador, Supervisor, RT)", Compliant: true},
 		{Item: "6. Segregação Automática de Lotes", Requirement: "Art. 38 da RDC 430 - Quarentena imediata em excursões térmicas", Evidence: "Mecanismo automático de transição de status para 'quarentena'", Compliant: true},
 		{Item: "7. Assinatura Eletrônica na Decisão", Requirement: "Validação pericial com assinatura digital na liberação/descarte", Evidence: "Hash ECDSA P-256 gravado no Ledger Criptográfico", Compliant: true},

@@ -18,42 +18,66 @@ type Chamber struct {
 	MinTemp24h           float64  `json:"min_temp_24h"`
 	MaxTemp24h           float64  `json:"max_temp_24h"`
 	OpenAlarmsCount      int      `json:"open_alarms_count"`
-	QuarantinedLotsCount int      `json:"quarantined_lots_count"`
-	LastReadingTime      string   `json:"last_reading_time"`
-	CreatedAt            string   `json:"created_at"`
+	QuarantinedLotsCount     int      `json:"quarantined_lots_count"`
+	LastReadingTime          string   `json:"last_reading_time"`
+	CreatedAt                string   `json:"created_at"`
+	CertificateID            string   `json:"certificate_id,omitempty"`
+	CertificateStatus        string   `json:"certificate_status,omitempty"`
+	CertificateStatusLabel   string   `json:"certificate_status_label,omitempty"`
+	CertificateFilename      string   `json:"certificate_filename,omitempty"`
+	CertificateSHA256        string   `json:"certificate_sha256,omitempty"`
+	CertificateValidUntil    string   `json:"certificate_valid_until,omitempty"`
+	CertificateVersion       int      `json:"certificate_version,omitempty"`
+	CertificateDaysRemaining int      `json:"certificate_days_remaining,omitempty"`
 }
 
 // Sensor representa um sensor metrológico físico vinculado a um ponto do mapeamento térmico.
 type Sensor struct {
-	ID              string  `json:"id"`
-	ChamberID       string  `json:"chamber_id"`
-	SerialNumber    string  `json:"serial_number"`
-	ThermalPosition string  `json:"thermal_position"` // Ex: "Ponto Mais Quente (Superior Frontal)"
-	CertNumber      string  `json:"cert_number"`
-	CalibratedBy    string  `json:"calibrated_by"`
-	CalibratedAt    string  `json:"calibrated_at"`
-	CalibValidUntil string  `json:"calib_valid_until"`
-	Status          string  `json:"status"` // "Ativo", "Vencendo", "Vencido"
-	BatteryPct      int     `json:"battery_pct"`
-	CurrentTemp     float64 `json:"current_temp"`
-	CurrentHumidity float64 `json:"current_humidity"`
-	LastSeen        string  `json:"last_seen"`
+	ID                       string  `json:"id"`
+	ChamberID                string  `json:"chamber_id"`
+	SerialNumber             string  `json:"serial_number"`
+	ThermalPosition          string  `json:"thermal_position"` // Ex: "Ponto Mais Quente (Superior Frontal)"
+	CertNumber               string  `json:"cert_number"`
+	CalibratedBy             string  `json:"calibrated_by"`
+	CalibratedAt             string  `json:"calibrated_at"`
+	CalibValidUntil          string  `json:"calib_valid_until"`
+	Status                   string  `json:"status"` // "Ativo", "Vencendo", "Vencido"
+	BatteryPct               int     `json:"battery_pct"`
+	CurrentTemp              float64 `json:"current_temp"`
+	CurrentHumidity          float64 `json:"current_humidity"`
+	LastSeen                 string  `json:"last_seen"`
+	CertificateID            string  `json:"certificate_id,omitempty"`
+	CertificateStatus        string  `json:"certificate_status,omitempty"`
+	CertificateStatusLabel   string  `json:"certificate_status_label,omitempty"`
+	CertificateFilename      string  `json:"certificate_filename,omitempty"`
+	CertificateSHA256        string  `json:"certificate_sha256,omitempty"`
+	CertificateValidUntil    string  `json:"certificate_valid_until,omitempty"`
+	CertificateVersion       int     `json:"certificate_version,omitempty"`
+	CertificateDaysRemaining int     `json:"certificate_days_remaining,omitempty"`
 }
 
 // Product representa o cadastro de medicamento no catálogo ANVISA.
 type Product struct {
-	ID             int64   `json:"id"`
-	TradeName      string  `json:"trade_name"`
-	DCB            string  `json:"dcb"`
-	Presentation   string  `json:"presentation"`
-	Manufacturer   string  `json:"manufacturer"`
-	AnvisaReg      string  `json:"anvisa_reg"`
-	TempMin        float64 `json:"temp_min"`
-	TempMax        float64 `json:"temp_max"`
-	HumidityMin    float64 `json:"humidity_min"`
-	HumidityMax    float64 `json:"humidity_max"`
-	Photosensitive int     `json:"photosensitive"` // 1 = Sim, 0 = Não
-	CreatedAt      string  `json:"created_at"`
+	ID                       int64   `json:"id"`
+	TradeName                string  `json:"trade_name"`
+	DCB                      string  `json:"dcb"`
+	Presentation             string  `json:"presentation"`
+	Manufacturer             string  `json:"manufacturer"`
+	AnvisaReg                string  `json:"anvisa_reg"`
+	TempMin                  float64 `json:"temp_min"`
+	TempMax                  float64 `json:"temp_max"`
+	HumidityMin              float64 `json:"humidity_min"`
+	HumidityMax              float64 `json:"humidity_max"`
+	Photosensitive           int     `json:"photosensitive"` // 1 = Sim, 0 = Não
+	CreatedAt                string  `json:"created_at"`
+	CertificateID            string  `json:"certificate_id,omitempty"`
+	CertificateStatus        string  `json:"certificate_status,omitempty"`
+	CertificateStatusLabel   string  `json:"certificate_status_label,omitempty"`
+	CertificateFilename      string  `json:"certificate_filename,omitempty"`
+	CertificateSHA256        string  `json:"certificate_sha256,omitempty"`
+	CertificateValidUntil    string  `json:"certificate_valid_until,omitempty"`
+	CertificateVersion       int     `json:"certificate_version,omitempty"`
+	CertificateDaysRemaining int     `json:"certificate_days_remaining,omitempty"`
 }
 
 // Lot representa um lote físico armazenado com controle estrito de validade e FEFO/PVPS.
@@ -195,6 +219,11 @@ type PharmaKPIs struct {
 	TotalSensors           int     `json:"total_sensors"`
 	CalibratedSensors      int     `json:"calibrated_sensors"`
 	ExpiringSensors        int     `json:"expiring_sensors"`
+	TotalCertificates      int     `json:"total_certificates"`
+	ValidCertificates      int     `json:"valid_certificates"`
+	ExpiringCertificates   int     `json:"expiring_certificates"`
+	ExpiredCertificates    int     `json:"expired_certificates"`
+	PendingCertificates    int     `json:"pending_certificates"`
 	RetentionYears         int     `json:"retention_years"`            // 5 anos (RDC 430 Art. 60)
 	LastAuditDate          string  `json:"last_audit_date"`
 	ComplianceStatus       string  `json:"compliance_status"`         // "100% Conforme"

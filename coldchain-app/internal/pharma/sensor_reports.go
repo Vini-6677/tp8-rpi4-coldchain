@@ -582,12 +582,27 @@ func GenerateSensorHistoryPDF(data *SensorHistoryReportData) ([]byte, error) {
 		if len(sPos) > 30 {
 			sPos = sPos[:28] + ".."
 		}
+		certStatusPDF := "PENDENTE PDF"
+		switch s.CertificateStatus {
+		case CertStatusValid:
+			certStatusPDF = "VALIDO RBC"
+		case CertStatusExpiring:
+			certStatusPDF = "VENCENDO"
+		case CertStatusExpired:
+			certStatusPDF = "VENCIDO"
+		default:
+			if strings.Contains(s.Status, "Vencido") {
+				certStatusPDF = "VENCIDO"
+			} else if strings.Contains(s.Status, "Vencendo") {
+				certStatusPDF = "VENCENDO"
+			}
+		}
 		p1.WriteString("0.10 0.15 0.20 rg\n")
 		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 35 %d Td (%s) Tj ET\n", yS, toPDFASCII(s.ID)))
 		p1.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 105 %d Td (%s) Tj ET\n", yS, toPDFASCII(s.SerialNumber)))
 		p1.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 210 %d Td (%s) Tj ET\n", yS, toPDFASCII(s.CertNumber)))
 		p1.WriteString(fmt.Sprintf("BT /F2 7.5 Tf 340 %d Td (%s) Tj ET\n", yS, toPDFASCII(sPos)))
-		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 500 %d Td (CALIBRADO RBC) Tj ET\n", yS))
+		p1.WriteString(fmt.Sprintf("BT /F1 7.5 Tf 500 %d Td (%s) Tj ET\n", yS, toPDFASCII(certStatusPDF)))
 		yS -= 16
 	}
 
