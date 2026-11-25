@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"coldchain-app/internal/ledger"
+	"coldchain-app/internal/pharma"
 	"coldchain-app/internal/usbkey"
 	"encoding/json"
 	"mime/multipart"
@@ -41,14 +42,15 @@ func setupIntegrationApp(t *testing.T) (*App, http.Handler) {
 	}
 
 	app := &App{
-		db:           db,
-		certDir:      filepath.Join(tmpDir, "certificates"),
-		ledger:       led,
-		signer:       signer,
-		subscribers:  make(map[chan Telemetry]struct{}),
-		latestSeq:    make(map[string]int64),
-		devicesSeen:  make(map[string]time.Time),
-		usbSigTokens: make(map[string]usbSigTokenEntry),
+		db:              db,
+		certDir:         filepath.Join(tmpDir, "certificates"),
+		ledger:          led,
+		signer:          signer,
+		subscribers:     make(map[chan Telemetry]struct{}),
+		latestSeq:       make(map[string]int64),
+		devicesSeen:     make(map[string]time.Time),
+		hardwareSensors: make(map[string]time.Time),
+		usbSigTokens:    make(map[string]usbSigTokenEntry),
 	}
 	return app, app.routes()
 }
@@ -434,5 +436,117 @@ func TestUSBKeyProvisionLoginCloneProtectionSignAndRevocation(t *testing.T) {
 	handler.ServeHTTP(wCC, reqCC)
 	if wCC.Code != http.StatusOK {
 		t.Fatalf("login clássico com CC-KEY deveria continuar funcionando: %d %s", wCC.Code, wCC.Body.String())
+	}
+}
+
+type fakeMQTTMessage struct {
+	topic   string
+	payload []byte
+}
+
+func (m fakeMQTTMessage) Duplicate() bool   { return false }
+func (m fakeMQTTMessage) Qos() byte         { return 1 }
+func (m fakeMQTTMessage) Retained() bool    { return false }
+func (m fakeMQTTMessage) Topic() string     { return m.topic }
+func (m fakeMQTTMessage) MessageID() uint16 { return 1 }
+func (m fakeMQTTMessage) Payload() []byte   { return m.payload }
+func (m fakeMQTTMessage) Ack()              {}
+
+func TestESP32RealHardwareTelemetryAndMockCoexistence(t *testing.T) {
+	app, handler := setupIntegrationApp(t)
+	adminCookie, adminKey := loginAdmin(t, handler)
+
+	// 1. Primeira leitura real do ESP32-S3 via MQTT auto-provisiona apenas CH-ESP32 + ESP32-SENSOR-01
+	app.onTelemetry(nil, fakeMQTTMessage{
+		topic:   "coldchain/esp32-sensor-01/telemetry",
+		payload: []byte(`{"ts":1764000001,"t":23.45,"h":51.2,"door":0,"seq":1,"sync":1,"fw":"esp32s3-1.0.0"}`),
+	})
+	app.flushBatch()
+
+	sensors, err := pharma.GetSensors(app.db, "")
+	if err != nil {
+		t.Fatalf("GetSensors falhou: %v", err)
+	}
+	if len(sensors) != 1 {
+		t.Fatalf("esperava exatamente 1 sensor real ESP32 na tela inicial, obteve %d: %+v", len(sensors), sensors)
+	}
+	if sensors[0].ID != "ESP32-SENSOR-01" || !sensors[0].IsHardware {
+		t.Fatalf("sensor real não identificado corretamente: %+v", sensors[0])
+	}
+	if sensors[0].CurrentTemp != 23.45 || sensors[0].CurrentHumidity != 51.2 {
+		t.Fatalf("leitura real não sincronizada: T=%.2f H=%.1f", sensors[0].CurrentTemp, sensors[0].CurrentHumidity)
+	}
+
+	// 2. Segunda leitura real atualiza o sensor físico e aparece em GET /api/pharma/readings
+	app.onTelemetry(nil, fakeMQTTMessage{
+		topic:   "coldchain/esp32-sensor-01/telemetry",
+		payload: []byte(`{"ts":1764000004,"t":6.15,"h":48.0,"door":0,"seq":2,"sync":1,"fw":"esp32s3-1.0.0"}`),
+	})
+	app.flushBatch()
+
+	reqRead := httptest.NewRequest(http.MethodGet, "/api/pharma/readings?chamber=CH-ESP32&limit=20", nil)
+	reqRead.AddCookie(adminCookie)
+	wRead := httptest.NewRecorder()
+	handler.ServeHTTP(wRead, reqRead)
+	if wRead.Code != http.StatusOK {
+		t.Fatalf("GET /api/pharma/readings falhou: %d %s", wRead.Code, wRead.Body.String())
+	}
+	var hwReadings []struct {
+		SensorID string  `json:"sensor_id"`
+		Temp     float64 `json:"t"`
+		Seq      int64   `json:"seq"`
+	}
+	if err := json.Unmarshal(wRead.Body.Bytes(), &hwReadings); err != nil || len(hwReadings) != 2 {
+		t.Fatalf("esperava 2 leituras reais no SQLite, obteve %d (%v): %s", len(hwReadings), err, wRead.Body.String())
+	}
+
+	// 3. Inclui um sensor mock adicional via API (como o usuário fará na demonstração)
+	mockBody, _ := json.Marshal(map[string]any{
+		"id":                "S-MOCK-01",
+		"chamber_id":        "CH-ESP32",
+		"serial_number":     "SN-MOCK-01",
+		"thermal_position":  "Prateleira Mock Demonstracao",
+		"cert_number":       "CAL-MOCK-01",
+		"calibrated_by":     "LabMetrologia RBC",
+		"calibrated_at":     "2026-01-01",
+		"calib_valid_until": "2028-01-01",
+		"password":          adminKey,
+	})
+	reqMock := httptest.NewRequest(http.MethodPost, "/api/pharma/sensors", bytes.NewReader(mockBody))
+	reqMock.Header.Set("Content-Type", "application/json")
+	reqMock.AddCookie(adminCookie)
+	wMock := httptest.NewRecorder()
+	handler.ServeHTTP(wMock, reqMock)
+	if wMock.Code != http.StatusOK && wMock.Code != http.StatusCreated {
+		t.Fatalf("cadastro de sensor mock adicional falhou: %d %s", wMock.Code, wMock.Body.String())
+	}
+
+	// 4. Roda ticks do simulador de mocks e comprova:
+	//    - S-MOCK-01 recebe variação simulada normalmente
+	//    - ESP32-SENSOR-01 mantém 100% intacta sua temperatura real (6.15 °C)
+	app.runPharmaSimulatorTick(1)
+	app.runPharmaSimulatorTick(2)
+
+	sensorsAfter, err := pharma.GetSensors(app.db, "CH-ESP32")
+	if err != nil || len(sensorsAfter) != 2 {
+		t.Fatalf("esperava 2 sensores na CH-ESP32 após cadastro mock, obteve %d (%v)", len(sensorsAfter), err)
+	}
+	var espFound, mockFound bool
+	for _, s := range sensorsAfter {
+		if s.ID == "ESP32-SENSOR-01" {
+			espFound = true
+			if s.CurrentTemp != 6.15 || !s.IsHardware {
+				t.Fatalf("simulador corrompeu temperatura real do ESP32-S3! esperado 6.15, obteve %.2f (hw=%v)", s.CurrentTemp, s.IsHardware)
+			}
+		}
+		if s.ID == "S-MOCK-01" {
+			mockFound = true
+			if s.IsHardware {
+				t.Fatalf("sensor mock não deveria ser marcado como hardware")
+			}
+		}
+	}
+	if !espFound || !mockFound {
+		t.Fatalf("sensores esperados ausentes após simulação: esp=%v mock=%v", espFound, mockFound)
 	}
 }

@@ -46,6 +46,7 @@ type Sensor struct {
 	CurrentTemp              float64 `json:"current_temp"`
 	CurrentHumidity          float64 `json:"current_humidity"`
 	LastSeen                 string  `json:"last_seen"`
+	IsHardware               bool    `json:"is_hardware"`
 	CertificateID            string  `json:"certificate_id,omitempty"`
 	CertificateStatus        string  `json:"certificate_status,omitempty"`
 	CertificateStatusLabel   string  `json:"certificate_status_label,omitempty"`

@@ -471,6 +471,7 @@ async function loadChambers(renderDetail = true) {
       return;
     }
 
+    const prevSelected = selectedChamberId;
     if (!selectedChamberId && chambersData.length > 0) {
       selectedChamberId = chambersData[0].id;
     }
@@ -562,7 +563,7 @@ async function loadChambers(renderDetail = true) {
       container.appendChild(card);
     });
 
-    if (renderDetail) {
+    if (renderDetail || (!prevSelected && selectedChamberId)) {
       selectChamber(selectedChamberId);
     }
   } catch (e) {
@@ -628,8 +629,17 @@ function getSensorColor(sensorId, fallbackIndex = 0) {
 // ==============================================================================
 window.currentChartRange = '2h';
 window.sensorReadingsHistoryByChamber = {};
+window.hardwareReadingsBySensor = {};
 window.activeIsolatedSensorId = null;
 window.chartHoverState = null;
+
+function isHardwareSensor(s) {
+  if (!s) return false;
+  if (s.is_hardware) return true;
+  const idUp = String(s.id || '').toUpperCase();
+  const snUp = String(s.serial_number || '').toUpperCase();
+  return idUp.startsWith('ESP32') || snUp.startsWith('ESP32');
+}
 
 function getDurationMsForRange(range) {
   switch (range) {
@@ -799,9 +809,16 @@ function handleChartHover(clientX, clientY) {
 
   sensorsToRender.forEach((s, idx) => {
     const currentT = s.current_temp != null ? s.current_temp : 4.0;
-    const seed = (s.id.charCodeAt(1) || 1) * 3 + idx;
-    const noise = Math.sin((i + Date.now() / 15000) * 0.35 + seed) * 0.14;
-    const t = (i === numPoints - 1) ? currentT : (currentT + noise);
+    let t = currentT;
+    const hwPts = isHardwareSensor(s) ? (window.hardwareReadingsBySensor[s.id] || []) : [];
+    if (hwPts.length > 0) {
+      const hIdx = Math.min(hwPts.length - 1, Math.max(0, Math.round(ratio * (hwPts.length - 1))));
+      t = hwPts[hIdx].t != null ? hwPts[hIdx].t : currentT;
+    } else if (!isHardwareSensor(s)) {
+      const seed = (s.id.charCodeAt(1) || 1) * 3 + idx;
+      const noise = Math.sin((i + Date.now() / 15000) * 0.35 + seed) * 0.14;
+      t = (i === numPoints - 1) ? currentT : (currentT + noise);
+    }
     const y = Math.max(topMargin, Math.min(topMargin + plotH, getY(t)));
     const dist = Math.abs(y - mouseY);
 
@@ -852,8 +869,10 @@ function handleChartHover(clientX, clientY) {
         elTemp.style.color = isOutOfLimits ? '#EF4444' : '#FFFFFF';
       }
       if (elHum) {
-        const humVal = bestSensor.current_humidity != null ? Math.round(bestSensor.current_humidity) : 50;
-        elHum.innerText = `${humVal}% UR`;
+        const humText = (bestSensor.current_humidity != null && bestSensor.current_humidity >= 0)
+          ? `${Math.round(bestSensor.current_humidity)}% UR`
+          : '-- UR';
+        elHum.innerText = humText;
       }
       if (elMeta) {
         const rangeText = (targetMin != null && targetMax != null)
@@ -902,15 +921,67 @@ function recordSensorReadings(chamberId, sensors, currentChamber) {
   const targetMin = currentChamber && currentChamber.temp_min != null ? currentChamber.temp_min : 2.0;
   const targetMax = currentChamber && currentChamber.temp_max != null ? currentChamber.temp_max : 8.0;
 
+  const mockSensors = sensors.filter(s => !isHardwareSensor(s));
+  const hwSensors = sensors.filter(s => isHardwareSensor(s));
+
+  // Sensores físicos reais (ESP32-S3 MQTT): usa apenas leituras reais gravadas no SQLite (sem leituras sintéticas).
+  const hwHistory = [];
+  hwSensors.forEach(s => {
+    const pts = window.hardwareReadingsBySensor[s.id] || [];
+    if (pts.length > 0) {
+      pts.forEach(pt => {
+        const tsMs = pt.ts ? pt.ts * 1000 : now;
+        hwHistory.push({
+          id: `hw-${chamberId}-${s.id}-${pt.seq || tsMs}`,
+          timestamp: new Date(tsMs),
+          chamber_id: chamberId,
+          sensor_id: s.id,
+          serial_number: s.serial_number,
+          thermal_position: s.thermal_position,
+          temp: pt.t,
+          humidity: (pt.h != null && pt.h >= 0) ? Math.round(pt.h) : null,
+          cert_number: s.cert_number,
+          calib_valid_until: s.calib_valid_until,
+          target_min: targetMin,
+          target_max: targetMax,
+          is_hardware: true
+        });
+      });
+    } else if (s.current_temp != null) {
+      hwHistory.push({
+        id: `hw-${chamberId}-${s.id}-live`,
+        timestamp: new Date(now),
+        chamber_id: chamberId,
+        sensor_id: s.id,
+        serial_number: s.serial_number,
+        thermal_position: s.thermal_position,
+        temp: s.current_temp,
+        humidity: (s.current_humidity != null && s.current_humidity >= 0) ? Math.round(s.current_humidity) : null,
+        cert_number: s.cert_number,
+        calib_valid_until: s.calib_valid_until,
+        target_min: targetMin,
+        target_max: targetMax,
+        is_hardware: true
+      });
+    }
+  });
+
+  if (mockSensors.length === 0) {
+    hwHistory.sort((a, b) => b.timestamp - a.timestamp);
+    window.sensorReadingsHistoryByChamber[chamberId] = hwHistory;
+    window.totalReadingsCountByChamber[chamberId] = hwHistory.length;
+    return;
+  }
+
   if (!window.sensorReadingsHistoryByChamber[chamberId]) {
-    // Inicialização da base cronológica do histórico
-    const history = [];
+    // Inicialização da base cronológica do histórico para sensores mock
+    const history = [...hwHistory];
     const stepMinutes = 6;
     const totalSteps = 16;
 
     for (let step = totalSteps; step >= 1; step--) {
       const pastTime = new Date(now - step * stepMinutes * 60 * 1000);
-      sensors.forEach((s, idx) => {
+      mockSensors.forEach((s, idx) => {
         const seed = (s.id.charCodeAt(1) || 1) * 3 + idx;
         const noise = Math.sin(step * 0.35 + seed) * 0.14;
         const tVal = (s.current_temp != null ? s.current_temp : 4.0) + noise;
@@ -932,9 +1003,8 @@ function recordSensorReadings(chamberId, sensors, currentChamber) {
       });
     }
 
-    // Leitura atual
     const currentTime = new Date(now);
-    sensors.forEach(s => {
+    mockSensors.forEach(s => {
       history.push({
         id: `hist-${chamberId}-${s.id}-${currentTime.getTime()}`,
         timestamp: currentTime,
@@ -953,16 +1023,15 @@ function recordSensorReadings(chamberId, sensors, currentChamber) {
 
     history.sort((a, b) => b.timestamp - a.timestamp);
     window.sensorReadingsHistoryByChamber[chamberId] = history;
-    // Contador acumulado inicial (ex: 187 leituras)
     window.totalReadingsCountByChamber[chamberId] = history.length;
   } else {
-    // Nova leitura periódica em tempo real (avalia a cada ciclo de telemetria)
-    const history = window.sensorReadingsHistoryByChamber[chamberId];
-    const lastTimestamp = history.length > 0 ? history[0].timestamp.getTime() : 0;
-    if (now - lastTimestamp >= 3000) {
+    // Mantém histórico dos mocks e substitui as entradas reais pelos pontos atualizados do SQLite
+    const mockOnly = window.sensorReadingsHistoryByChamber[chamberId].filter(r => !r.is_hardware);
+    const lastMockTs = mockOnly.length > 0 ? mockOnly[0].timestamp.getTime() : 0;
+    if (now - lastMockTs >= 3000) {
       const currentTime = new Date(now);
-      sensors.forEach(s => {
-        history.unshift({
+      mockSensors.forEach(s => {
+        mockOnly.unshift({
           id: `hist-${chamberId}-${s.id}-${currentTime.getTime()}`,
           timestamp: currentTime,
           chamber_id: chamberId,
@@ -977,14 +1046,17 @@ function recordSensorReadings(chamberId, sensors, currentChamber) {
           target_max: targetMax
         });
       });
-      // Incrementa o contador total acumulado continuamente
-      window.totalReadingsCountByChamber[chamberId] = (window.totalReadingsCountByChamber[chamberId] || 200) + sensors.length;
-
-      // Mantém buffer em memória delimitado (FIFO) para performance
-      if (history.length > 250) {
-        history.length = 250;
+      if (mockOnly.length > 200) {
+        mockOnly.length = 200;
       }
+      window.totalReadingsCountByChamber[chamberId] = (window.totalReadingsCountByChamber[chamberId] || mockOnly.length) + mockSensors.length;
     }
+    const merged = [...hwHistory, ...mockOnly];
+    merged.sort((a, b) => b.timestamp - a.timestamp);
+    if (merged.length > 250) {
+      merged.length = 250;
+    }
+    window.sensorReadingsHistoryByChamber[chamberId] = merged;
   }
 }
 
@@ -1069,7 +1141,7 @@ function renderSensorHistoryTable() {
           </strong>
         </td>
         <td style="text-align: center;">
-          <span style="font-family: monospace; font-size: 12.5px; color: #E2E8F0;">${r.humidity}% UR</span>
+          <span style="font-family: monospace; font-size: 12.5px; color: #E2E8F0;">${r.humidity != null ? `${r.humidity}% UR` : '-- UR'}</span>
         </td>
         <td style="text-align: center;">
           ${isCompliant 
@@ -1140,6 +1212,27 @@ async function selectChamber(chamberId, forceHighlight = true) {
     if (!res.ok) return;
     sensorsData = (await res.json()) || [];
 
+    // Busca leituras reais gravadas no SQLite quando a câmara contém sensores físicos ESP32-S3
+    if (sensorsData.some(isHardwareSensor)) {
+      try {
+        const rRes = await fetch(`/api/pharma/readings?chamber=${encodeURIComponent(chamberId)}&limit=120`);
+        if (rRes.ok) {
+          const rows = (await rRes.json()) || [];
+          const bySensor = {};
+          rows.forEach(r => {
+            if (!bySensor[r.sensor_id]) bySensor[r.sensor_id] = [];
+            bySensor[r.sensor_id].push(r);
+          });
+          Object.keys(bySensor).forEach(sid => {
+            bySensor[sid].reverse(); // ordem cronológica crescente para o gráfico
+            window.hardwareReadingsBySensor[sid] = bySensor[sid];
+          });
+        }
+      } catch (err) {
+        console.warn('Falha ao buscar série real do sensor hardware:', err);
+      }
+    }
+
     if (elCountBadge) elCountBadge.innerText = `${sensorsData.length} Sensores RBC Ativos`;
     if (elGridTitle) elGridTitle.innerText = `Sensores Físicos Alocados no Mapeamento Térmico (${currentChamber.id})`;
     if (elGridCounter) {
@@ -1179,7 +1272,12 @@ async function selectChamber(chamberId, forceHighlight = true) {
         }
 
         const tempFormatted = s.current_temp != null ? s.current_temp.toFixed(1).replace('.', ',') : '--,-';
-        const humVal = s.current_humidity != null ? Math.round(s.current_humidity) : 50;
+        const humDisplay = (s.current_humidity != null && s.current_humidity >= 0)
+          ? `${Math.round(s.current_humidity)}%`
+          : '--';
+        const hwBadge = isHardwareSensor(s)
+          ? `<span style="display:inline-flex; align-items:center; gap:5px; padding:2px 7px; border-radius:999px; font-size:9.5px; font-weight:800; letter-spacing:0.3px; background:rgba(16,185,129,0.16); color:#34D399; border:1px solid rgba(16,185,129,0.45);"><span style="width:6px; height:6px; border-radius:50%; background:#10B981; display:inline-block;"></span>HARDWARE REAL • MQTT</span>`
+          : '';
 
         const card = document.createElement('div');
         card.className = 'sensor-item-card';
@@ -1196,9 +1294,10 @@ async function selectChamber(chamberId, forceHighlight = true) {
 
         card.innerHTML = `
           <div>
-            <div style="display:flex; align-items:center; gap:8px;">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
               <span class="sensor-pill-badge" style="border-color:${sensorCol}55; color:${sensorCol};">${s.id}</span>
               <span class="sensor-sn-text">${s.serial_number}</span>
+              ${hwBadge}
             </div>
             <div class="sensor-pos-title">${s.thermal_position}</div>
           </div>
@@ -1209,7 +1308,7 @@ async function selectChamber(chamberId, forceHighlight = true) {
               <span class="sensor-temp-unit">°C</span>
             </div>
             <div>
-              <div class="sensor-hum-value">${humVal}%</div>
+              <div class="sensor-hum-value">${humDisplay}</div>
               <div class="sensor-hum-label">UR</div>
             </div>
           </div>
@@ -1428,16 +1527,38 @@ function renderMultiSensorChart(sensors, currentChamber) {
     ctx.beginPath();
     const currentT = s.current_temp != null ? s.current_temp : 4.0;
     const pts = [];
-    for (let i = 0; i < numPoints; i++) {
-      const x = leftMargin + (i / (numPoints - 1)) * plotW;
-      const seed = (s.id.charCodeAt(1) || 1) * 3 + idx;
-      const noise = Math.sin((i + Date.now() / 15000) * 0.35 + seed) * 0.14;
-      const t = (i === numPoints - 1) ? currentT : (currentT + noise);
-      const y = Math.max(topMargin, Math.min(topMargin + plotH, getY(t)));
-      pts.push({ x, y });
+    const hwSeries = isHardwareSensor(s) ? (window.hardwareReadingsBySensor[s.id] || []) : [];
 
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+    if (isHardwareSensor(s)) {
+      if (hwSeries.length >= 2) {
+        const sliced = hwSeries.slice(-numPoints);
+        for (let i = 0; i < sliced.length; i++) {
+          const x = leftMargin + (i / (sliced.length - 1)) * plotW;
+          const t = sliced[i].t != null ? sliced[i].t : currentT;
+          const y = Math.max(topMargin, Math.min(topMargin + plotH, getY(t)));
+          pts.push({ x, y });
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+      } else {
+        const y = Math.max(topMargin, Math.min(topMargin + plotH, getY(currentT)));
+        pts.push({ x: leftMargin, y });
+        pts.push({ x: leftMargin + plotW, y });
+        ctx.moveTo(leftMargin, y);
+        ctx.lineTo(leftMargin + plotW, y);
+      }
+    } else {
+      for (let i = 0; i < numPoints; i++) {
+        const x = leftMargin + (i / (numPoints - 1)) * plotW;
+        const seed = (s.id.charCodeAt(1) || 1) * 3 + idx;
+        const noise = Math.sin((i + Date.now() / 15000) * 0.35 + seed) * 0.14;
+        const t = (i === numPoints - 1) ? currentT : (currentT + noise);
+        const y = Math.max(topMargin, Math.min(topMargin + plotH, getY(t)));
+        pts.push({ x, y });
+
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
     }
     ctx.stroke();
 
@@ -1876,9 +1997,13 @@ function renderMetrologyTable(list) {
       badgeClass = 'quarentena';
     }
 
+    const hwTag = isHardwareSensor(s)
+      ? `<div style="margin-top:4px;"><span style="display:inline-block; padding:2px 6px; border-radius:4px; font-size:9.5px; font-weight:700; background:rgba(16,185,129,0.14); color:#34D399; border:1px solid rgba(16,185,129,0.38);">HARDWARE REAL • MQTT</span></div>`
+      : '';
+
     tbody.innerHTML += `
       <tr>
-        <td><code style="color:#60A5FA; font-weight:700;">${s.id}</code></td>
+        <td><code style="color:#60A5FA; font-weight:700;">${s.id}</code>${hwTag}</td>
         <td><strong>${s.chamber_id}</strong></td>
         <td>${s.serial_number}</td>
         <td>${s.thermal_position}</td>
@@ -2478,12 +2603,23 @@ async function toggleBlockUser(userId, username, currentBlocked) {
 // -----------------------------------------------------------------------------
 // STREAMING SSE (SERVER-SENT EVENTS)
 // -----------------------------------------------------------------------------
+let lastSSERefreshAt = 0;
 function setupSSE() {
   const ev = new EventSource('/events');
   ev.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data);
-      // Atualiza telemetria em tempo real se necessário
+      if (data && data.type === 'telemetry' && currentUser && activeTab === 'chambers') {
+        const now = Date.now();
+        if (now - lastSSERefreshAt >= 1200) {
+          lastSSERefreshAt = now;
+          loadChambers(false).then(() => {
+            if (selectedChamberId) {
+              selectChamber(selectedChamberId, false);
+            }
+          });
+        }
+      }
     } catch (err) {}
   };
 }

@@ -196,6 +196,10 @@ func InitPharmaSchema(db *sql.DB) error {
 	_, _ = db.Exec("ALTER TABLE chambers ADD COLUMN decommissioned_by TEXT;")
 	_, _ = db.Exec("ALTER TABLE chambers ADD COLUMN decommission_reason TEXT;")
 
+	// Migrações incrementais para sensores (descomissionamento lógico e flag de telemetria física MQTT/ESP32)
+	_, _ = db.Exec("ALTER TABLE sensors ADD COLUMN decommissioned INTEGER NOT NULL DEFAULT 0;")
+	_, _ = db.Exec("ALTER TABLE sensors ADD COLUMN is_hardware INTEGER NOT NULL DEFAULT 0;")
+
 	// Schema de Certificados Regulatórios PDF versionados e imutáveis
 	if err := InitCertificatesSchema(db); err != nil {
 		return fmt.Errorf("falha ao criar schema de certificados: %w", err)
@@ -460,7 +464,7 @@ func GetChambers(db *sql.DB) ([]Chamber, error) {
 		       (SELECT COUNT(*) FROM lots l WHERE l.chamber_id = c.id AND l.status = 'quarentena') AS quarantined_lots,
 		       COALESCE(MAX(s.last_seen), c.created_at) AS last_seen
 		FROM chambers c
-		LEFT JOIN sensors s ON s.chamber_id = c.id
+		LEFT JOIN sensors s ON s.chamber_id = c.id AND COALESCE(s.decommissioned, 0) = 0
 		WHERE COALESCE(c.decommissioned, 0) = 0
 		GROUP BY c.id
 		ORDER BY c.id ASC
@@ -561,28 +565,51 @@ func GetChambers(db *sql.DB) ([]Chamber, error) {
 		_ = db.QueryRow(`
 			SELECT MIN(r.t), MAX(r.t)
 			FROM readings r
-			JOIN sensors s ON (r.device_id = s.id OR r.device_id = s.serial_number)
-			WHERE s.chamber_id = ?
+			JOIN sensors s ON (LOWER(r.device_id) = LOWER(s.id) OR LOWER(r.device_id) = LOWER(s.serial_number))
+			WHERE s.chamber_id = ? AND COALESCE(s.decommissioned, 0) = 0
 			  AND (r.ts >= strftime('%s', 'now', '-24 hours') OR r.created_at >= datetime('now', '-24 hours'))
 		`, c.ID).Scan(&readMin, &readMax)
 
-		if readMin.Valid && readMin.Float64 < baseMin24h {
-			baseMin24h = readMin.Float64
-		}
-		if readMax.Valid && readMax.Float64 > baseMax24h {
-			baseMax24h = readMax.Float64
-		}
+		// Se a câmara possui sensores físicos reais (ESP32/MQTT), prioriza 100% as leituras reais
+		// sem misturar faixa sintética de fallback.
+		var hwCount int
+		_ = db.QueryRow(`SELECT COUNT(*) FROM sensors WHERE chamber_id = ? AND COALESCE(decommissioned, 0) = 0 AND COALESCE(is_hardware, 0) = 1`, c.ID).Scan(&hwCount)
+		if hwCount > 0 && c.SensorCount > 0 {
+			realMin := c.MinTemp24h
+			realMax := c.MaxTemp24h
+			if readMin.Valid && readMin.Float64 < realMin {
+				realMin = readMin.Float64
+			}
+			if readMax.Valid && readMax.Float64 > realMax {
+				realMax = readMax.Float64
+			}
+			if excMinVal.Valid && excMinVal.Float64 < realMin {
+				realMin = excMinVal.Float64
+			}
+			if excPeakMax.Valid && excPeakMax.Float64 > realMax {
+				realMax = excPeakMax.Float64
+			}
+			c.MinTemp24h = realMin
+			c.MaxTemp24h = realMax
+		} else {
+			if readMin.Valid && readMin.Float64 < baseMin24h {
+				baseMin24h = readMin.Float64
+			}
+			if readMax.Valid && readMax.Float64 > baseMax24h {
+				baseMax24h = readMax.Float64
+			}
 
-		// 4. Garante que os limites das 24h englobem as leituras instantâneas dos sensores:
-		if c.MinTemp24h < baseMin24h {
-			baseMin24h = c.MinTemp24h
-		}
-		if c.MaxTemp24h > baseMax24h {
-			baseMax24h = c.MaxTemp24h
-		}
+			// 4. Garante que os limites das 24h englobem as leituras instantâneas dos sensores:
+			if c.MinTemp24h < baseMin24h {
+				baseMin24h = c.MinTemp24h
+			}
+			if c.MaxTemp24h > baseMax24h {
+				baseMax24h = c.MaxTemp24h
+			}
 
-		c.MinTemp24h = baseMin24h
-		c.MaxTemp24h = baseMax24h
+			c.MinTemp24h = baseMin24h
+			c.MaxTemp24h = baseMax24h
+		}
 
 		list = append(list, c)
 	}
@@ -611,11 +638,13 @@ func GetChambers(db *sql.DB) ([]Chamber, error) {
 func GetSensors(db *sql.DB, chamberID string) ([]Sensor, error) {
 	query := `SELECT id, chamber_id, serial_number, thermal_position, cert_number,
 	                 calibrated_by, calibrated_at, calib_valid_until, status,
-	                 battery_pct, current_temp, current_humidity, last_seen
-	          FROM sensors`
+	                 battery_pct, current_temp, current_humidity, last_seen,
+	                 COALESCE(is_hardware, 0)
+	          FROM sensors
+	          WHERE COALESCE(decommissioned, 0) = 0`
 	var args []interface{}
 	if chamberID != "" {
-		query += " WHERE chamber_id = ?"
+		query += " AND chamber_id = ?"
 		args = append(args, chamberID)
 	}
 	query += " ORDER BY id ASC"
@@ -630,11 +659,15 @@ func GetSensors(db *sql.DB, chamberID string) ([]Sensor, error) {
 	list := []Sensor{}
 	for rows.Next() {
 		var s Sensor
+		var isHW int
 		if err := rows.Scan(&s.ID, &s.ChamberID, &s.SerialNumber, &s.ThermalPosition, &s.CertNumber,
 			&s.CalibratedBy, &s.CalibratedAt, &s.CalibValidUntil, &s.Status,
-			&s.BatteryPct, &s.CurrentTemp, &s.CurrentHumidity, &s.LastSeen); err != nil {
+			&s.BatteryPct, &s.CurrentTemp, &s.CurrentHumidity, &s.LastSeen, &isHW); err != nil {
 			return nil, err
 		}
+		s.IsHardware = (isHW == 1) ||
+			strings.HasPrefix(strings.ToUpper(s.ID), "ESP32") ||
+			strings.HasPrefix(strings.ToUpper(s.SerialNumber), "ESP32")
 		// Recalcula status metrológico real com base na validade atual
 		if s.CalibValidUntil != "" {
 			st, _, _ := ComputeCertificateStatus(s.CalibValidUntil, now)
@@ -1647,10 +1680,18 @@ func RegisterSensor(db *sql.DB, s Sensor) (*Sensor, error) {
 		s.CurrentHumidity = 50.0
 	}
 
+	isHW := 0
+	if s.IsHardware ||
+		strings.HasPrefix(strings.ToUpper(s.ID), "ESP32") ||
+		strings.HasPrefix(strings.ToUpper(s.SerialNumber), "ESP32") {
+		isHW = 1
+		s.IsHardware = true
+	}
+
 	_, err = db.Exec(`INSERT INTO sensors (
-		id, chamber_id, serial_number, thermal_position, cert_number, calibrated_by, calibrated_at, calib_valid_until, status, battery_pct, current_temp, current_humidity, last_seen
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-		s.ID, s.ChamberID, s.SerialNumber, s.ThermalPosition, s.CertNumber, s.CalibratedBy, s.CalibratedAt, s.CalibValidUntil, s.Status, s.BatteryPct, s.CurrentTemp, s.CurrentHumidity)
+		id, chamber_id, serial_number, thermal_position, cert_number, calibrated_by, calibrated_at, calib_valid_until, status, battery_pct, current_temp, current_humidity, last_seen, is_hardware
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)`,
+		s.ID, s.ChamberID, s.SerialNumber, s.ThermalPosition, s.CertNumber, s.CalibratedBy, s.CalibratedAt, s.CalibValidUntil, s.Status, s.BatteryPct, s.CurrentTemp, s.CurrentHumidity, isHW)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao inserir sensor: %w", err)
 	}

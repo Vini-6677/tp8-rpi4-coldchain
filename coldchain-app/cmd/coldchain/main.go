@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -84,13 +85,14 @@ type App struct {
 	telemetryCount uint64
 	mqttClient     mqtt.Client
 	mu             sync.Mutex
-	subscribers    map[chan Telemetry]struct{}
-	latestSeq      map[string]int64
-	devicesSeen    map[string]time.Time
-	batchQueue     []Telemetry
-	batchMu        sync.Mutex
-	usbSigMu       sync.Mutex
-	usbSigTokens   map[string]usbSigTokenEntry
+	subscribers     map[chan Telemetry]struct{}
+	latestSeq       map[string]int64
+	devicesSeen     map[string]time.Time
+	hardwareSensors map[string]time.Time
+	batchQueue      []Telemetry
+	batchMu         sync.Mutex
+	usbSigMu        sync.Mutex
+	usbSigTokens    map[string]usbSigTokenEntry
 }
 
 func main() {
@@ -144,14 +146,15 @@ func main() {
 	_ = os.MkdirAll(certDir, 0700)
 
 	app := &App{
-		db:           db,
-		certDir:      certDir,
-		ledger:       led,
-		signer:       signer,
-		subscribers:  make(map[chan Telemetry]struct{}),
-		latestSeq:    make(map[string]int64),
-		devicesSeen:  make(map[string]time.Time),
-		usbSigTokens: make(map[string]usbSigTokenEntry),
+		db:              db,
+		certDir:         certDir,
+		ledger:          led,
+		signer:          signer,
+		subscribers:     make(map[chan Telemetry]struct{}),
+		latestSeq:       make(map[string]int64),
+		devicesSeen:     make(map[string]time.Time),
+		hardwareSensors: make(map[string]time.Time),
+		usbSigTokens:    make(map[string]usbSigTokenEntry),
 	}
 
 	// 2. Loop de commit de lotes em background (~1 segundo)
@@ -2940,6 +2943,65 @@ func (a *App) routes() http.Handler {
 	// 24. Chaves Criptográficas em Pen Drive USB (Provisionamento, Revogação e Login Plug-and-Play Ed25519)
 	a.registerUSBAuthRoutes(mux)
 
+	// 25. Leituras Reais de Sensores Físicos IoT/ESP32 (SQLite readings)
+	mux.HandleFunc("/api/pharma/readings", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if _, ok := a.getSession(r); !ok {
+			a.writeSessionExpired(w)
+			return
+		}
+		chamberID := strings.TrimSpace(r.URL.Query().Get("chamber"))
+		sensorID := strings.TrimSpace(r.URL.Query().Get("sensor"))
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		if limit <= 0 || limit > 500 {
+			limit = 120
+		}
+
+		type ReadingRow struct {
+			SensorID string  `json:"sensor_id"`
+			DeviceID string  `json:"device_id"`
+			Seq      int64   `json:"seq"`
+			TS       int64   `json:"ts"`
+			Temp     float64 `json:"t"`
+			Hum      float64 `json:"h"`
+			Door     int     `json:"door"`
+			FW       string  `json:"fw"`
+		}
+
+		query := `
+			SELECT s.id, r.device_id, r.seq, r.ts, r.t, r.h, r.door, COALESCE(r.fw, '')
+			FROM readings r
+			JOIN sensors s ON (LOWER(r.device_id) = LOWER(s.id) OR LOWER(r.device_id) = LOWER(s.serial_number))
+			WHERE COALESCE(s.decommissioned, 0) = 0 AND COALESCE(s.is_hardware, 0) = 1`
+		var args []any
+		if chamberID != "" {
+			query += " AND s.chamber_id = ?"
+			args = append(args, chamberID)
+		}
+		if sensorID != "" {
+			query += " AND LOWER(s.id) = LOWER(?)"
+			args = append(args, sensorID)
+		}
+		query += " ORDER BY r.ts DESC, r.seq DESC LIMIT ?"
+		args = append(args, limit)
+
+		rows, err := a.db.Query(query, args...)
+		if err != nil {
+			http.Error(w, "Erro ao consultar leituras reais", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		out := []ReadingRow{}
+		for rows.Next() {
+			var row ReadingRow
+			if err := rows.Scan(&row.SensorID, &row.DeviceID, &row.Seq, &row.TS, &row.Temp, &row.Hum, &row.Door, &row.FW); err == nil {
+				out = append(out, row)
+			}
+		}
+		json.NewEncoder(w).Encode(out)
+	})
+
 	return mux
 }
 
@@ -2959,6 +3021,14 @@ func (a *App) initMQTT(brokerURL string) {
 	opts.OnConnect = func(c mqtt.Client) {
 		slog.Info("Conectado ao Mosquitto MQTT", "broker", brokerURL)
 		c.Subscribe("coldchain/+/telemetry", 1, a.onTelemetry)
+		c.Subscribe("coldchain/+/status", 1, func(_ mqtt.Client, msg mqtt.Message) {
+			parts := strings.Split(msg.Topic(), "/")
+			dev := "desconhecido"
+			if len(parts) >= 3 {
+				dev = parts[1]
+			}
+			slog.Info("Status de dispositivo IoT MQTT atualizado", "device_id", dev, "status", strings.TrimSpace(string(msg.Payload())))
+		})
 	}
 
 	client := mqtt.NewClient(opts)
@@ -2968,16 +3038,73 @@ func (a *App) initMQTT(brokerURL string) {
 	a.mqttClient = client
 }
 
+func (a *App) isHardwareSensorID(sensorID, serialNumber string) bool {
+	upperID := strings.ToUpper(strings.TrimSpace(sensorID))
+	upperSN := strings.ToUpper(strings.TrimSpace(serialNumber))
+	if strings.HasPrefix(upperID, "ESP32") || strings.HasPrefix(upperSN, "ESP32") {
+		return true
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.hardwareSensors == nil {
+		return false
+	}
+	if _, ok := a.hardwareSensors[upperID]; ok {
+		return true
+	}
+	if upperSN != "" {
+		if _, ok := a.hardwareSensors[upperSN]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *App) markHardwareSensor(ids ...string) {
+	now := time.Now()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.hardwareSensors == nil {
+		a.hardwareSensors = make(map[string]time.Time)
+	}
+	for _, id := range ids {
+		norm := strings.ToUpper(strings.TrimSpace(id))
+		if norm != "" {
+			a.hardwareSensors[norm] = now
+		}
+	}
+}
+
 func (a *App) onTelemetry(client mqtt.Client, msg mqtt.Message) {
 	var t Telemetry
 	if err := json.Unmarshal(msg.Payload(), &t); err != nil {
+		slog.Warn("Payload MQTT inválido descartado", "topic", msg.Topic(), "erro", err)
 		return
 	}
 
 	parts := strings.Split(msg.Topic(), "/")
 	if len(parts) >= 3 {
-		t.DeviceID = parts[1]
+		t.DeviceID = strings.TrimSpace(parts[1])
 	}
+	if t.DeviceID == "" {
+		return
+	}
+	if math.IsNaN(t.T) || math.IsInf(t.T, 0) || t.T < -120.0 || t.T > 150.0 {
+		slog.Warn("Leitura térmica MQTT fora de faixa física descartada", "device_id", t.DeviceID, "temp", t.T)
+		return
+	}
+	if math.IsNaN(t.H) || math.IsInf(t.H, 0) {
+		t.H = -1.0
+	} else if t.H > 100.0 {
+		t.H = 100.0
+	} else if t.H < 0 {
+		t.H = -1.0
+	}
+	if t.TS <= 0 {
+		t.TS = time.Now().Unix()
+	}
+
+	a.markHardwareSensor(t.DeviceID)
 
 	a.mu.Lock()
 	a.devicesSeen[t.DeviceID] = time.Now()
@@ -2992,6 +3119,102 @@ func (a *App) onTelemetry(client mqtt.Client, msg mqtt.Message) {
 	a.batchMu.Lock()
 	a.batchQueue = append(a.batchQueue, t)
 	a.batchMu.Unlock()
+}
+
+func (a *App) syncHardwareSensorTelemetry(items []Telemetry) {
+	if len(items) == 0 || a.db == nil {
+		return
+	}
+
+	latestByDevice := make(map[string]Telemetry)
+	for _, it := range items {
+		dev := strings.TrimSpace(it.DeviceID)
+		if dev == "" {
+			continue
+		}
+		prev, exists := latestByDevice[dev]
+		if !exists || it.Seq >= prev.Seq || it.TS >= prev.TS {
+			latestByDevice[dev] = it
+		}
+	}
+
+	now := time.Now()
+	nowStr := now.UTC().Format("2006-01-02 15:04:05")
+	todayStr := now.Format("2006-01-02")
+	validUntilStr := now.AddDate(1, 0, 0).Format("2006-01-02")
+
+	for dev, it := range latestByDevice {
+		normID := strings.ToUpper(dev)
+
+		var existingID string
+		err := a.db.QueryRow(`
+			SELECT id FROM sensors
+			WHERE (LOWER(id) = LOWER(?) OR LOWER(serial_number) = LOWER(?))
+			  AND COALESCE(decommissioned, 0) = 0
+			LIMIT 1
+		`, normID, dev).Scan(&existingID)
+
+		if err == nil && existingID != "" {
+			_, uerr := a.db.Exec(`
+				UPDATE sensors
+				SET current_temp = ?, current_humidity = ?, last_seen = ?, is_hardware = 1
+				WHERE id = ?
+			`, it.T, it.H, nowStr, existingID)
+			if uerr != nil {
+				slog.Error("Erro ao atualizar telemetria do sensor físico", "sensor_id", existingID, "erro", uerr)
+			}
+			a.markHardwareSensor(existingID, dev)
+			continue
+		}
+
+		// Primeiro pacote recebido de um hardware real: vincula à primeira câmara ativa
+		// ou provisiona automaticamente a Câmara Fria Principal (CH-ESP32) se não houver nenhuma.
+		var targetChamberID string
+		err = a.db.QueryRow(`
+			SELECT id FROM chambers
+			WHERE COALESCE(decommissioned, 0) = 0
+			ORDER BY id ASC LIMIT 1
+		`).Scan(&targetChamberID)
+
+		if err != nil || targetChamberID == "" {
+			targetChamberID = "CH-ESP32"
+			_, cerr := a.db.Exec(`
+				INSERT OR IGNORE INTO chambers (
+					id, name, type, temp_min, temp_max, humidity_min, humidity_max,
+					alarm_delay_min, status, qualification_status, qualification_valid_until
+				) VALUES (?, ?, 'refrigerado', 2.0, 8.0, 30.0, 75.0, 5, 'OK', 'Qualificado (DQ/IQ/OQ/PQ)', ?)
+			`, targetChamberID, "Câmara Fria Principal — ESP32-S3 (Real)", validUntilStr)
+			if cerr != nil {
+				slog.Error("Erro ao auto-provisionar câmara para sensor ESP32-S3", "erro", cerr)
+				continue
+			}
+			a.logAudit("system-iot", "tecnico", "AUTOPROVISIONAMENTO_CAMARA_IOT",
+				fmt.Sprintf("Câmara '%s' criada automaticamente ao receber telemetria real MQTT do dispositivo '%s'", targetChamberID, dev),
+				"127.0.0.1")
+		}
+
+		_, ierr := a.db.Exec(`
+			INSERT OR REPLACE INTO sensors (
+				id, chamber_id, serial_number, thermal_position, cert_number,
+				calibrated_by, calibrated_at, calib_valid_until, status,
+				battery_pct, current_temp, current_humidity, last_seen,
+				decommissioned, is_hardware
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Ativo', 100, ?, ?, ?, 0, 1)
+		`, normID, targetChamberID, dev, "Sonda Física ESP32-S3 (Telemetria Real MQTT)",
+			"CAL-RBC-ESP32-01", "LabMetrologia RBC nº 412", todayStr, validUntilStr,
+			it.T, it.H, nowStr)
+		if ierr != nil {
+			slog.Error("Erro ao auto-provisionar sensor físico ESP32-S3", "sensor_id", normID, "erro", ierr)
+			continue
+		}
+
+		a.markHardwareSensor(normID, dev)
+		slog.Info("Sensor físico ESP32-S3 auto-provisionado via telemetria real MQTT",
+			"sensor_id", normID, "chamber_id", targetChamberID, "temp", it.T, "hum", it.H)
+		a.logAudit("system-iot", "tecnico", "AUTOPROVISIONAMENTO_SENSOR_IOT",
+			fmt.Sprintf("Sensor físico '%s' (serial '%s') vinculado à câmara '%s' via MQTT real (T=%.2f°C)", normID, dev, targetChamberID, it.T),
+			"127.0.0.1")
+	}
 }
 
 func (a *App) batchCommitLoop(ctx context.Context) {
@@ -3018,6 +3241,13 @@ func (a *App) flushBatch() {
 	a.batchQueue = nil
 	a.batchMu.Unlock()
 
+	nowUnix := time.Now().Unix()
+	for i := range items {
+		if items[i].TS <= 0 {
+			items[i].TS = nowUnix
+		}
+	}
+
 	tx, err := a.db.Begin()
 	if err != nil {
 		return
@@ -3040,6 +3270,9 @@ func (a *App) flushBatch() {
 	if err := tx.Commit(); err != nil {
 		return
 	}
+
+	// Sincroniza leitura real do hardware (ESP32-S3) diretamente na tabela sensors (sem ser sobrescrito por mocks)
+	a.syncHardwareSensorTelemetry(items)
 
 	// Registro Criptográfico Imutável no Ledger (ANVISA RDC 430/2020)
 	if a.ledger != nil {
@@ -3076,11 +3309,7 @@ func (a *App) flushBatch() {
 	}
 }
 
-func (a *App) pharmaSimulatorLoop(ctx context.Context) {
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
-
-	// Variação suave de temperatura para os sensores das Câmaras A e B
+func (a *App) runPharmaSimulatorTick(step int) {
 	offsets := map[string]float64{
 		"S01": 4.8, "S02": 3.2, "S03": 4.1, "S04": 4.3, "S05": 3.9,
 		"S06": 4.0, "S07": 4.4, "S08": 4.9, "S09": 3.7, "S10": 5.2,
@@ -3091,6 +3320,71 @@ func (a *App) pharmaSimulatorLoop(ctx context.Context) {
 		"S27": -72.4, "S28": -69.1,
 	}
 
+	nowStr := time.Now().UTC().Format("2006-01-02 15:04:05")
+
+	// Simula APENAS sensores mock (is_hardware = 0). Sensores físicos ESP32-S3/MQTT são preservados intactos.
+	rows, err := a.db.Query(`
+		SELECT s.id, COALESCE(s.serial_number, ''), c.temp_min, c.temp_max, c.humidity_min, c.humidity_max
+		FROM sensors s
+		JOIN chambers c ON s.chamber_id = c.id
+		WHERE COALESCE(c.decommissioned, 0) = 0
+		  AND COALESCE(c.status, '') != 'EXCURSAO'
+		  AND COALESCE(s.decommissioned, 0) = 0
+		  AND COALESCE(s.is_hardware, 0) = 0`)
+	if err != nil {
+		return
+	}
+
+	type sUpdate struct {
+		id string
+		t  float64
+		h  float64
+	}
+	var updates []sUpdate
+	for rows.Next() {
+		var sID, serial string
+		var tMin, tMax, hMin, hMax float64
+		if err := rows.Scan(&sID, &serial, &tMin, &tMax, &hMin, &hMax); err == nil {
+			if a.isHardwareSensorID(sID, serial) {
+				continue
+			}
+			baseTemp, exists := offsets[sID]
+			if !exists {
+				baseTemp = (tMin + tMax) / 2.0
+			}
+			baseHum := (hMin + hMax) / 2.0
+			if baseHum <= 0 {
+				baseHum = 50.0
+			}
+
+			charVal := 1
+			if len(sID) > 1 {
+				charVal = int(sID[len(sID)-1])
+			}
+			factor := float64((step*7+charVal)%10-5) * 0.03
+			tVal := baseTemp + factor
+			hVal := baseHum + float64((step*3+charVal)%8-4)*0.8
+			updates = append(updates, sUpdate{id: sID, t: tVal, h: hVal})
+		}
+	}
+	rows.Close()
+
+	nowUnix := time.Now().Unix()
+	for _, u := range updates {
+		_, _ = a.db.Exec(`UPDATE sensors
+			SET current_temp = ?, current_humidity = ?, last_seen = ?
+			WHERE id = ? AND COALESCE(is_hardware, 0) = 0`, u.t, u.h, nowStr, u.id)
+		if step%5 == 1 {
+			_, _ = a.db.Exec(`INSERT OR IGNORE INTO readings (device_id, seq, ts, t, h, door, sync, fw) VALUES (?, ?, ?, ?, ?, 0, 1, 'mock-sim')`,
+				u.id, nowUnix, nowUnix, u.t, u.h)
+		}
+	}
+}
+
+func (a *App) pharmaSimulatorLoop(ctx context.Context) {
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
 	step := 0
 	for {
 		select {
@@ -3098,56 +3392,7 @@ func (a *App) pharmaSimulatorLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			step++
-			nowStr := time.Now().Format("2006-01-02 15:04:05")
-
-			rows, err := a.db.Query(`
-				SELECT s.id, c.temp_min, c.temp_max, c.humidity_min, c.humidity_max 
-				FROM sensors s
-				JOIN chambers c ON s.chamber_id = c.id
-				WHERE COALESCE(c.decommissioned, 0) = 0 AND COALESCE(c.status, '') != 'EXCURSAO' AND COALESCE(s.decommissioned, 0) = 0`)
-			if err == nil {
-				type sUpdate struct {
-					id string
-					t  float64
-					h  float64
-				}
-				var updates []sUpdate
-				for rows.Next() {
-					var sID string
-					var tMin, tMax, hMin, hMax float64
-					if err := rows.Scan(&sID, &tMin, &tMax, &hMin, &hMax); err == nil {
-						baseTemp, exists := offsets[sID]
-						if !exists {
-							baseTemp = (tMin + tMax) / 2.0
-						}
-						baseHum := (hMin + hMax) / 2.0
-						if baseHum <= 0 {
-							baseHum = 50.0
-						}
-
-						charVal := 1
-						if len(sID) > 1 {
-							charVal = int(sID[len(sID)-1])
-						}
-						factor := float64((step*7+charVal)%10-5) * 0.03
-						tVal := baseTemp + factor
-						hVal := baseHum + float64((step*3+charVal)%8-4)*0.8
-						updates = append(updates, sUpdate{id: sID, t: tVal, h: hVal})
-					}
-				}
-				rows.Close()
-
-				nowUnix := time.Now().Unix()
-				for _, u := range updates {
-					_, _ = a.db.Exec(`UPDATE sensors 
-						SET current_temp = ?, current_humidity = ?, last_seen = ? 
-						WHERE id = ?`, u.t, u.h, nowStr, u.id)
-					if step%5 == 1 {
-						_, _ = a.db.Exec(`INSERT INTO readings (device_id, seq, ts, t, h, door) VALUES (?, ?, ?, ?, ?, 0)`,
-							u.id, nowUnix, nowUnix, u.t, u.h)
-					}
-				}
-			}
+			a.runPharmaSimulatorTick(step)
 		}
 	}
 }
